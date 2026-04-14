@@ -1,4 +1,7 @@
 // Basato su Dupuy 2018 (meta-analysis) + Wiewelhove 2019 + Leeder 2012.
+// NOTA: attualmente il promptBuilder attiva questo blocco solo per intensity="hard"
+// per contenere il budget token. I rami light/moderate sono disponibili se in futuro
+// vogliamo rendere il modulo attivo anche dopo sessioni meno intense.
 export function recoveryBlock(intensity: "light" | "moderate" | "hard"): string {
   let body = "";
   if (intensity === "hard") {

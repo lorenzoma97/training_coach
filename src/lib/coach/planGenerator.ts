@@ -3,7 +3,7 @@ import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, planAsPrompt } from "../diaryContext";
 import type { UserProfile, UserGoal, TrainingPlan } from "../types";
-import { buildConditionalPrompt, extractConditionsFromProfile, type BuildContext } from "./promptBuilder";
+import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 
 const sessionSchema = z.object({
   day: z.enum(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]),
@@ -63,7 +63,9 @@ Genera un microciclo di 2 settimane (weeks con weekNumber 1 e 2) che porti l'ute
 
   const bCtx: BuildContext = {
     profile,
-    hasRunningGoal: goals.some(g => /corsa|run|km|gara|10k|maratona/i.test(g.smartDescription)),
+    hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
+    // Il piano generato include sempre forza 2-3x/sett (see Rønnestad 2014); teniamo true per
+    // attivare il modulo strengthForEndurance quando il contesto corsa è presente.
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
   };
@@ -124,7 +126,9 @@ Se rilevi red flag, proponi deload esplicito nella settimana 1.
 
   const bCtx: BuildContext = {
     profile,
-    hasRunningGoal: goals.some(g => /corsa|run|km|gara|10k|maratona/i.test(g.smartDescription)),
+    hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
+    // Il piano generato include sempre forza 2-3x/sett (see Rønnestad 2014); teniamo true per
+    // attivare il modulo strengthForEndurance quando il contesto corsa è presente.
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
   };

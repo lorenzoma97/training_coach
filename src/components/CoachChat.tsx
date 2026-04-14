@@ -5,7 +5,7 @@ import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt } from 
 import { getJSON, setJSON } from "../lib/storage";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { retrieveRelevantChunks, chunksAsPromptBlock } from "../lib/knowledge";
-import { buildConditionalPrompt, extractConditionsFromProfile, type BuildContext } from "../lib/coach/promptBuilder";
+import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "../lib/coach/promptBuilder";
 import RichText from "./RichText";
 
 type Msg = { role: "user" | "model"; content: string };
@@ -66,7 +66,7 @@ export default function CoachChat() {
       // Injection condizionale: moduli basati sul profilo/contesto utente
       const bCtx: BuildContext = {
         profile: ctx.profile,
-        hasRunningGoal: ctx.goals.some(g => /corsa|run|km|gara|10k|maratona|half|mezza/i.test(g.smartDescription || "")),
+        hasRunningGoal: ctx.goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription || "")),
         hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
         detectedConditions: extractConditionsFromProfile(ctx.profile),
       };

@@ -2,6 +2,7 @@ import { CHUNKS, type KnowledgeChunk } from "./chunks";
 import { embedQuery, getCacheStatus, CACHE_KEY } from "./embedder";
 import { getJSON } from "../storage";
 import { hasApiKey } from "../gemini";
+import { getEmbeddingClient } from "../llm";
 import type { EmbeddingCache } from "./embedder";
 
 export interface RetrievalResult {
@@ -28,6 +29,8 @@ export async function retrieveRelevantChunks(params: {
   const { query, topK = 3, minScore = 0.55 } = params;
   if (!query.trim()) return [];
   if (!hasApiKey()) return [];
+  // Se il provider corrente non supporta embeddings, salta RAG silenziosamente.
+  if (!getEmbeddingClient()) return [];
   if (typeof navigator !== "undefined" && !navigator.onLine) return [];
 
   // NON generiamo embeddings in runtime chat: se la cache non è pronta, esci.

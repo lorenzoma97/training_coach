@@ -4,7 +4,7 @@ import { PROMPTS } from "./systemPrompts";
 import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt, formatDaysForLLM } from "../diaryContext";
 import type { SessionFeedback } from "../types";
 import { checkLocalRedFlags } from "./safetyRules";
-import { buildConditionalPrompt, extractConditionsFromProfile, type BuildContext, type WorkoutTypeId } from "./promptBuilder";
+import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext, type WorkoutTypeId } from "./promptBuilder";
 
 const schema = z.object({
   howItWent: z.string(),
@@ -79,7 +79,7 @@ Dai feedback strutturato. Se ci sono red flag locali, includili in redFlags e al
   const bCtx: BuildContext = {
     profile: ctx.profile,
     workoutType: wt,
-    hasRunningGoal: ctx.goals.some(g => /corsa|run|km|gara|10k|maratona|half|mezza/i.test((g.smartDescription || "") + " " + (g.kpi?.metric || ""))),
+    hasRunningGoal: ctx.goals.some(g => RUNNING_GOAL_RE.test((g.smartDescription || "") + " " + (g.kpi?.metric || ""))),
     hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
     daysToNearestRace,
     lastSessionIntensity: rpeNum >= 8 ? "hard" : rpeNum >= 5 ? "moderate" : "light",

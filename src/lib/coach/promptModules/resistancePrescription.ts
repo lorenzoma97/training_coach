@@ -1,5 +1,5 @@
 // Basato su ACSM Position Stand Ratamess 2009 + Schoenfeld 2017 + Grgic 2018.
-type Experience = "sedentary" | "occasional" | "regular" | "competitive";
+import type { Experience } from "../../types";
 
 export function resistancePrescriptionBlock(experience: Experience): string {
   const byLevel: Record<Experience, string> = {

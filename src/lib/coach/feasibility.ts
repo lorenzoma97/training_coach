@@ -3,7 +3,7 @@ import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt } from "../diaryContext";
 import type { UserProfile, FeasibilityCheck } from "../types";
-import { buildConditionalPrompt, extractConditionsFromProfile, type BuildContext } from "./promptBuilder";
+import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 
 const schema = z.object({
   realistic: z.boolean(),
@@ -46,7 +46,7 @@ Se è già realistico e SMART, "realistic" = true e "counterProposal" confermer�
 
   const bCtx: BuildContext = {
     profile,
-    hasRunningGoal: /corsa|run|km|gara/i.test(goalDescription),
+    hasRunningGoal: RUNNING_GOAL_RE.test(goalDescription),
     detectedConditions: extractConditionsFromProfile(profile),
   };
   const systemInstruction = PROMPTS.feasibility() + "\n\n" + buildConditionalPrompt(bCtx);

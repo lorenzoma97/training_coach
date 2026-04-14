@@ -223,9 +223,10 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
             <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 1 · Coach</div>
-            <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Chiave Gemini</h2>
+            <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Chiave LLM</h2>
             <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0, lineHeight: 1.5 }}>
-              Il coach usa Gemini 2.0 Flash di Google. La chiave è <b>gratuita</b> e si ottiene in 30 secondi.
+              Questa app supporta <b>Gemini</b>, <b>OpenAI</b> e <b>Anthropic</b>. Potrai cambiarli/configurarli dalle <b>Impostazioni</b> dopo l'onboarding.
+              Per un setup rapido, inserisci qui una chiave <b>Gemini</b> (gratuita, 30 secondi).
             </p>
           </div>
 
@@ -236,6 +237,9 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
               <li>Clicca <b>"Create API key"</b> e copiala</li>
               <li>Incollala qui sotto</li>
             </ol>
+            <div style={{ marginTop: "10px", fontSize: "12px", color: "#94A3B8", lineHeight: 1.5 }}>
+              Preferisci OpenAI o Anthropic? Prosegui con Gemini adesso, poi vai in <b>Impostazioni</b> per cambiare provider.
+            </div>
           </div>
 
           <div style={cardStyle}>

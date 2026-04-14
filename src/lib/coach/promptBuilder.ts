@@ -10,6 +10,10 @@ import { cadenceAdviceBlock } from "./promptModules/biomechanicsRunning";
 
 export type WorkoutTypeId = "corsa" | "forza_gambe" | "forza_upper" | "sport" | "mobilita";
 
+// Helper condiviso: rileva un obiettivo di corsa/gara da testo libero.
+// Usato da feasibility, planGenerator, sessionFeedback, weeklyReport e CoachChat.
+export const RUNNING_GOAL_RE = /corsa|run|km|gara|race|10k|5k|maratona|half|mezza/i;
+
 export interface BuildContext {
   profile: UserProfile | null;
   workoutType?: WorkoutTypeId;

@@ -1,113 +1,74 @@
-import { GoogleGenerativeAI, type GenerationConfig } from "@google/generative-ai";
-import { getJSON } from "./storage";
+// Retro-compatibilità: queste funzioni ora delegano all'astrazione LLM multi-provider.
+// File legacy — mantenuto per non rompere i chiamanti esistenti. I nuovi moduli
+// dovrebbero importare direttamente da "./llm".
 
-const MODEL_ID = "gemini-2.0-flash-exp";
+import {
+  generateJSON as llmGenerateJSON,
+  generateText as llmGenerateText,
+  streamChat as llmStreamChat,
+  pingCurrent,
+  hasLLMConfig,
+  getCurrentConfigSync,
+  setLLMConfig,
+  ADAPTERS,
+  LLMKeyMissingError,
+} from "./llm";
+import type {
+  GenerateJSONParams, GenerateTextParams, StreamChatParams,
+} from "./llm";
 
+const LEGACY_KEY = "gemini-api-key";
+
+/** @deprecated usa l'LLMConfig via Settings. Restituisce la chiave del provider corrente. */
 export function getApiKey(): string {
-  return (localStorage.getItem("gemini-api-key") || "").trim();
+  const cfg = getCurrentConfigSync();
+  if (cfg) return cfg.apiKey;
+  return (localStorage.getItem(LEGACY_KEY) || "").trim();
 }
 
+/** @deprecated Setta una chiave Gemini (fast-path setup iniziale). */
 export function setApiKey(key: string): void {
-  localStorage.setItem("gemini-api-key", key.trim());
+  const trimmed = key.trim();
+  localStorage.setItem(LEGACY_KEY, trimmed);
+  if (!trimmed) return;
+  // Mantiene una LLMConfig Gemini con modello di default se non ne esiste già una.
+  const cfg = getCurrentConfigSync();
+  if (!cfg || cfg.provider !== "gemini") {
+    void setLLMConfig({
+      provider: "gemini",
+      apiKey: trimmed,
+      modelId: ADAPTERS.gemini.defaultChatModel,
+    });
+  } else {
+    // Aggiorna la chiave mantenendo modello scelto
+    void setLLMConfig({ ...cfg, apiKey: trimmed });
+  }
 }
 
+/** True se esiste un provider LLM configurato (qualunque sia). */
 export function hasApiKey(): boolean {
-  // Gemini keys start with "AIza" and are ~39 chars — accettiamo qualsiasi stringa plausibile
-  const k = getApiKey();
+  if (hasLLMConfig()) return true;
+  const k = (localStorage.getItem(LEGACY_KEY) || "").trim();
   return k.length >= 20 && !k.includes(" ");
 }
 
-export class GeminiKeyMissingError extends Error {
-  constructor() { super("Chiave API Gemini non configurata. Vai in Impostazioni."); }
+/** Errore legacy: mantenuto per i chiamanti che lo catchano esplicitamente. */
+export class GeminiKeyMissingError extends LLMKeyMissingError {
+  constructor() { super(); this.name = "GeminiKeyMissingError"; }
 }
 
-function client() {
-  const key = getApiKey();
-  if (!hasApiKey()) throw new GeminiKeyMissingError();
-  return new GoogleGenerativeAI(key);
+export async function generateJSON<T>(params: GenerateJSONParams): Promise<T> {
+  return llmGenerateJSON<T>(params);
 }
 
-/** One-shot: genera JSON strutturato (response_mime_type). */
-export async function generateJSON<T>(params: {
-  systemInstruction: string;
-  userPrompt: string;
-  schemaHint?: string;
-  maxTokens?: number;
-}): Promise<T> {
-  const genAI = client();
-  const config: GenerationConfig = {
-    temperature: 0.6,
-    maxOutputTokens: params.maxTokens ?? 2048,
-    responseMimeType: "application/json",
-  };
-  const model = genAI.getGenerativeModel({
-    model: MODEL_ID,
-    systemInstruction: params.systemInstruction,
-    generationConfig: config,
-  });
-  const fullPrompt = params.schemaHint
-    ? `${params.userPrompt}\n\nRispondi SOLO con JSON valido secondo questo schema:\n${params.schemaHint}`
-    : params.userPrompt;
-  const result = await model.generateContent(fullPrompt);
-  const text = result.response.text();
-  try {
-    return JSON.parse(text) as T;
-  } catch (e) {
-    // Gemini a volte avvolge il JSON in ```json ... ``` nonostante response_mime_type
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      try { return JSON.parse(match[0]) as T; } catch { /* fallthrough */ }
-    }
-    throw new Error(`Risposta JSON non valida dal coach. Riprova.\n(raw: ${text.slice(0, 120)}...)`);
-  }
+export async function generateText(params: GenerateTextParams): Promise<string> {
+  return llmGenerateText(params);
 }
 
-/** One-shot: genera testo semplice (non streaming). */
-export async function generateText(params: {
-  systemInstruction: string;
-  userPrompt: string;
-  maxTokens?: number;
-}): Promise<string> {
-  const genAI = client();
-  const model = genAI.getGenerativeModel({
-    model: MODEL_ID,
-    systemInstruction: params.systemInstruction,
-    generationConfig: { temperature: 0.7, maxOutputTokens: params.maxTokens ?? 800 },
-  });
-  const result = await model.generateContent(params.userPrompt);
-  return result.response.text();
+export async function* streamChat(params: StreamChatParams): AsyncGenerator<string> {
+  for await (const chunk of llmStreamChat(params)) yield chunk;
 }
 
-/** Streaming per chat libera. Restituisce async iterable di chunk testuali. */
-export async function* streamChat(params: {
-  systemInstruction: string;
-  history: Array<{ role: "user" | "model"; parts: string }>;
-  userMessage: string;
-}): AsyncGenerator<string> {
-  const genAI = client();
-  const model = genAI.getGenerativeModel({
-    model: MODEL_ID,
-    systemInstruction: params.systemInstruction,
-    generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
-  });
-  const chat = model.startChat({
-    history: params.history.map(h => ({ role: h.role, parts: [{ text: h.parts }] })),
-  });
-  const result = await chat.sendMessageStream(params.userMessage);
-  for await (const chunk of result.stream) {
-    const t = chunk.text();
-    if (t) yield t;
-  }
-}
-
-/** Test rapido chiave API. */
 export async function pingApiKey(): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const genAI = client();
-    const model = genAI.getGenerativeModel({ model: MODEL_ID });
-    const r = await model.generateContent("ping");
-    return { ok: !!r.response.text() };
-  } catch (e: any) {
-    return { ok: false, error: e?.message || String(e) };
-  }
+  return pingCurrent();
 }
