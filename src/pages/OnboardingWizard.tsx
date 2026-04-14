@@ -85,6 +85,13 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         setInjuriesRaw((existing.injuries || []).join(", "));
         setEquipmentRaw((existing.equipment || []).join(", "));
         setPainAreasRaw((existing.painTrackingAreas || []).join(", "));
+        const days = existing.weekly_availability?.days;
+        setDaysRaw(days != null ? String(days) : "");
+        const hrs = existing.weekly_availability?.hoursPerSession ?? 1;
+        const hInt = Math.floor(hrs);
+        const mInt = Math.round((hrs - hInt) * 60);
+        setSessionHours(String(hInt));
+        setSessionMinutes(String(mInt));
       }
     })();
   }, []);
@@ -144,6 +151,12 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   const [equipmentRaw, setEquipmentRaw] = useState("");
   const [painAreasRaw, setPainAreasRaw] = useState("");
 
+  // Disponibilità settimanale: giorni come raw string (permette campo vuoto),
+  // ore + minuti selezionabili separatamente.
+  const [daysRaw, setDaysRaw] = useState("");
+  const [sessionHours, setSessionHours] = useState("1");
+  const [sessionMinutes, setSessionMinutes] = useState("0");
+
   const parseCSV = (s: string): string[] =>
     s.split(",").map(x => x.trim()).filter(Boolean);
 
@@ -178,10 +191,16 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     const equipmentFinal = parseCSV(equipmentRaw || (profile.equipment || []).join(", "));
     const painAreasFinal = parseCSV(painAreasRaw || (profile.painTrackingAreas || []).join(", "));
 
+    // Disponibilità: giorni raw + ore/minuti → weekly_availability
+    const daysFinal = Math.max(1, Math.min(7, parseInt(daysRaw, 10) || 3));
+    const hrsInt = Math.max(0, Math.min(4, parseInt(sessionHours, 10) || 0));
+    const minsInt = Math.max(0, Math.min(59, parseInt(sessionMinutes, 10) || 0));
+    const hoursPerSessionFinal = hrsInt + minsInt / 60 || 1;
+
     const full: UserProfile = {
       age: profile.age!, sex: profile.sex!, weight_kg: profile.weight_kg!, height_cm: profile.height_cm!,
       experience: profile.experience!, injuries: injuriesFinal, meds: profile.meds || "",
-      weekly_availability: profile.weekly_availability || { days: 3, hoursPerSession: 1 },
+      weekly_availability: { days: daysFinal, hoursPerSession: hoursPerSessionFinal },
       equipment: equipmentFinal, notes: profile.notes,
       painTrackingAreas: painAreasFinal,
       createdAt: now, updatedAt: now,
@@ -445,17 +464,38 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
 
           <div style={cardStyle}>
             <label style={labelStyle}>Disponibilità settimanale</label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
               <div>
-                <div style={{ fontSize: "11px", color: "#64748B", marginBottom: "4px" }}>Giorni</div>
-                <input type="number" min={1} max={7} style={inputStyle} value={profile.weekly_availability?.days ?? 3}
-                  onChange={e => setProfile(p => ({ ...p, weekly_availability: { ...p.weekly_availability!, days: parseNum(e.target.value) ?? 3 } }))} />
+                <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Giorni/sett</div>
+                <input
+                  type="number" min={1} max={7} style={inputStyle}
+                  value={daysRaw}
+                  onChange={e => setDaysRaw(e.target.value.replace(/[^\d]/g, ""))}
+                  placeholder="es. 3"
+                />
               </div>
               <div>
-                <div style={{ fontSize: "11px", color: "#64748B", marginBottom: "4px" }}>Ore/sessione</div>
-                <input type="number" step="0.5" min={0.25} max={3} style={inputStyle} value={profile.weekly_availability?.hoursPerSession ?? 1}
-                  onChange={e => setProfile(p => ({ ...p, weekly_availability: { ...p.weekly_availability!, hoursPerSession: parseNum(e.target.value) ?? 1 } }))} />
+                <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Ore/sessione</div>
+                <select value={sessionHours} onChange={e => setSessionHours(e.target.value)} style={{ ...inputStyle, fontFamily: "inherit" }}>
+                  <option value="0">0</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                </select>
               </div>
+              <div>
+                <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Minuti</div>
+                <select value={sessionMinutes} onChange={e => setSessionMinutes(e.target.value)} style={{ ...inputStyle, fontFamily: "inherit" }}>
+                  <option value="0">0</option>
+                  <option value="15">15</option>
+                  <option value="30">30</option>
+                  <option value="45">45</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ fontSize: "11px", color: "#64748B", marginTop: "6px" }}>
+              Durata tipica di una tua sessione (es. 1h 30min). Serve al coach per dimensionare il piano.
             </div>
           </div>
 
