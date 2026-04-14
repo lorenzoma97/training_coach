@@ -1,10 +1,84 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; min-height: 100vh; background: #0B0F1A; }
-body { font-family: 'DM Sans', -apple-system, sans-serif; color: #E2E8F0; -webkit-font-smoothing: antialiased; }
-button { font-family: inherit; }
-input, textarea, select { font-family: inherit; }
+body {
+  font-family: 'DM Sans', -apple-system, sans-serif;
+  color: #E2E8F0;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, input, textarea, select { font-family: inherit; }
+
+/* Focus visibile solo per navigazione tastiera (WCAG AA) */
+button:focus { outline: none; }
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid #E8553A;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline-offset: 0;
+  box-shadow: 0 0 0 2px #E8553A80;
+}
+
+/* Stati disabled coerenti */
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Placeholder input contrasto */
+::placeholder { color: #64748B; opacity: 0.8; }
+::-webkit-input-placeholder { color: #64748B; opacity: 0.8; }
+
+/* Touch target minimo per bottoni (a parte quelli chip piccoli con classe esplicita) */
+button { min-height: 40px; }
+
+/* Animazioni */
 @keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.15); border-top-color: #E8553A; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes writing { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+
+.spinner {
+  display: inline-block; width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.15);
+  border-top-color: #E8553A; border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+}
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.typing-dots::after {
+  content: "···";
+  display: inline-block;
+  animation: writing 1.2s infinite;
+  letter-spacing: 2px;
+  color: #64748B;
+  margin-left: 4px;
+}
+
+/* Rimuovi spinner su input[type=number] mobile (più pulito) */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] { -moz-appearance: textfield; }
+
+/* Scroll smooth nelle liste chat/feed */
+.scroll-area { scroll-behavior: smooth; }
+
+/* Utility: padding bottom per pagine principali (lascia spazio alla bottom nav + safe area iOS) */
+.page-pad-bottom {
+  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+}

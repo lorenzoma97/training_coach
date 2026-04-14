@@ -7,6 +7,7 @@ export type EventMap = {
   "plan:updated": { at: string };
   "goals:updated": { at: string };
   "profile:updated": { at: string };
+  "diary:openAdd": { type?: string; date?: string };
 };
 
 const listeners = new Map<keyof EventMap, Set<Handler<any>>>();

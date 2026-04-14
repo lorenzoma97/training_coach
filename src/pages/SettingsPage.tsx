@@ -101,18 +101,32 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       </div>
 
       <div style={cardStyle}>
-        <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "10px" }}>Gestione dati</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <button onClick={resetAll} style={{
-            padding: "12px 14px", background: "#1A1A2E",
+        <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "12px" }}>Gestione dati</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <button onClick={resetAll} disabled={resetting} style={{
+            padding: "14px", background: "#1A1A2E",
             border: "1px solid #F59E0B44", borderRadius: "10px",
-            color: "#F59E0B", fontWeight: 600, cursor: "pointer", fontSize: "13px", textAlign: "left",
-          }}>Reset profilo + coach (mantieni diario)</button>
+            cursor: resetting ? "wait" : "pointer", textAlign: "left",
+          }}>
+            <div style={{ color: "#F59E0B", fontWeight: 700, fontSize: "13px", marginBottom: "4px" }}>
+              🔄 Reset coach (mantieni diario)
+            </div>
+            <div style={{ color: "#94A3B8", fontSize: "12px", lineHeight: 1.4 }}>
+              Cancella: profilo, obiettivi, piano, chat e feed. <b>Diario e sessioni restano.</b>
+            </div>
+          </button>
           <button onClick={wipeDiary} style={{
-            padding: "12px 14px", background: "#1A1A2E",
+            padding: "14px", background: "#1A1A2E",
             border: "1px solid #EF444444", borderRadius: "10px",
-            color: "#EF4444", fontWeight: 600, cursor: "pointer", fontSize: "13px", textAlign: "left",
-          }}>Cancella tutto il diario</button>
+            cursor: "pointer", textAlign: "left",
+          }}>
+            <div style={{ color: "#EF4444", fontWeight: 700, fontSize: "13px", marginBottom: "4px" }}>
+              🗑 Cancella tutto il diario
+            </div>
+            <div style={{ color: "#94A3B8", fontSize: "12px", lineHeight: 1.4 }}>
+              Cancella TUTTE le sessioni e i check giornalieri. <b>Coach e profilo restano.</b>
+            </div>
+          </button>
         </div>
       </div>
 

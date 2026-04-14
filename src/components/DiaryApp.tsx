@@ -122,11 +122,11 @@ function FieldRow({ field, value, onChange }: { field: Field; value: any; onChan
 function PainPicker({ label, value, onChange }: { label: string; value: number | null; onChange: (v: number) => void }) {
   return (
     <div>
-      <div style={{ fontSize: "12px", color: "#94A3B8", fontWeight: 600, marginBottom: "8px", textAlign: "center" }}>{label}</div>
-      <div style={{ display: "flex", gap: "4px", justifyContent: "center" }}>
+      <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600, marginBottom: "8px", textAlign: "center" }}>{label}</div>
+      <div role="radiogroup" aria-label={`Dolore ${label}`} style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
         {PAIN_LEVELS.map(p => (
-          <button key={p.v} onClick={() => onChange(p.v)} style={{
-            width: "40px", height: "40px", borderRadius: "10px",
+          <button key={p.v} onClick={() => onChange(p.v)} aria-label={`${p.v}: ${p.desc}`} aria-pressed={value === p.v} style={{
+            width: "44px", height: "44px", borderRadius: "10px",
             border: value === p.v ? `2px solid ${p.color}` : "1px solid rgba(255,255,255,0.08)",
             background: value === p.v ? p.color + "30" : "#1A1A2E",
             color: p.color, fontSize: "16px", cursor: "pointer", fontWeight: 700,
@@ -170,6 +170,20 @@ export default function DiaryApp() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Deep link dal Piano coach: apre lo schermo "Aggiungi" con tipo preselezionato
+  useEffect(() => {
+    const off = events.on("diary:openAdd", ({ type, date }) => {
+      setAddDate(date || today());
+      setAddType(type || null);
+      setAddFields({});
+      setAddPain({ pre: null, during: null, post: null });
+      setAddRpe(null);
+      setAddNotes("");
+      setScreen("add");
+    });
+    return off;
+  }, []);
 
   const flash = (msg: string) => { setSaveMsg(msg); setTimeout(() => setSaveMsg(""), 2200); };
 
@@ -308,11 +322,13 @@ export default function DiaryApp() {
   return (
     <div style={{ minHeight: "100vh", color: "#E2E8F0", fontFamily: "'DM Sans', -apple-system, sans-serif" }}>
       {saveMsg && (
-        <div style={{
-          position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", zIndex: 999,
+        <div role="status" aria-live="polite" style={{
+          position: "fixed", top: "max(20px, calc(env(safe-area-inset-top, 0px) + 12px))",
+          left: "50%", transform: "translateX(-50%)", zIndex: 999,
           background: saveMsg.includes("obbligatori") ? "#7F1D1D" : "#14532D",
           color: "#FFF", padding: "12px 24px", borderRadius: "12px", fontSize: "14px", fontWeight: 700,
           boxShadow: "0 8px 30px rgba(0,0,0,0.5)", animation: "fadeIn 0.2s ease",
+          maxWidth: "90%", textAlign: "center",
         }}>{saveMsg}</div>
       )}
 
@@ -392,7 +408,7 @@ export default function DiaryApp() {
                         <div style={{ fontSize: "15px", fontWeight: 700, textTransform: "capitalize" }}>
                           {isToday ? "Oggi" : fmtDate(date)}
                         </div>
-                        <div style={{ fontSize: "12px", color: "#64748B", marginTop: "3px" }}>
+                        <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "3px" }}>
                           Tocca per dettagli
                         </div>
                       </div>
@@ -478,8 +494,8 @@ export default function DiaryApp() {
                   <div style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", marginBottom: "8px" }}>RPE — Sforzo Percepito</div>
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                     {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                      <button key={n} onClick={() => setAddRpe(n)} style={{
-                        width: "40px", height: "40px", borderRadius: "10px",
+                      <button key={n} onClick={() => setAddRpe(n)} aria-label={`RPE ${n}`} aria-pressed={addRpe === n} style={{
+                        width: "44px", height: "44px", borderRadius: "10px",
                         background: addRpe === n ? FATIGUE_COLORS(n) + "30" : "#1A1A2E",
                         border: addRpe === n ? `2px solid ${FATIGUE_COLORS(n)}` : "1px solid rgba(255,255,255,0.08)",
                         color: FATIGUE_COLORS(n), fontSize: "15px", fontWeight: 700, cursor: "pointer",
@@ -546,8 +562,8 @@ export default function DiaryApp() {
               <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "8px" }}>Stanchezza Generale</label>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                 {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                  <button key={n} onClick={() => setDailyFields(p => ({ ...p, fatigue: n }))} style={{
-                    width: "40px", height: "40px", borderRadius: "10px",
+                  <button key={n} onClick={() => setDailyFields(p => ({ ...p, fatigue: n }))} aria-label={`Stanchezza ${n}`} aria-pressed={dailyFields.fatigue === n} style={{
+                    width: "44px", height: "44px", borderRadius: "10px",
                     background: dailyFields.fatigue === n ? FATIGUE_COLORS(n) + "30" : "#1A1A2E",
                     border: dailyFields.fatigue === n ? `2px solid ${FATIGUE_COLORS(n)}` : "1px solid rgba(255,255,255,0.08)",
                     color: FATIGUE_COLORS(n), fontSize: "15px", fontWeight: 700, cursor: "pointer",
