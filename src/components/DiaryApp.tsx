@@ -173,7 +173,22 @@ export default function DiaryApp() {
   const [dailyFields, setDailyFields] = useState({
     weight: "", sleep: "", sleepQ: "", fatigue: null as number | null, meds: "",
     bodyFat: "", muscleMass: "", bodyWater: "",
+    cyclePhase: "" as "" | "mestruazione" | "follicolare" | "ovulatoria" | "luteinica" | "amenorrea" | "menopausa" | "contraccettivo",
   });
+
+  // Profilo per sapere se mostrare il tracker ciclo (solo sex=f)
+  const [profileSex, setProfileSex] = useState<string | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await storage.get("user-profile");
+        if (r) {
+          const p = JSON.parse(r.value);
+          setProfileSex(p?.sex || null);
+        }
+      } catch { /* silent */ }
+    })();
+  }, []);
 
   const [saveMsg, setSaveMsg] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -380,7 +395,7 @@ export default function DiaryApp() {
               flex: 1, padding: "16px", background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
               border: "none", borderRadius: "14px", color: "#FFF", fontSize: "15px", fontWeight: 700, cursor: "pointer",
             }}>+ Allenamento</button>
-            <button onClick={() => { setDailyDate(today()); setDailyFields({ weight: "", sleep: "", sleepQ: "", fatigue: null, meds: "", bodyFat: "", muscleMass: "", bodyWater: "" }); setScreen("daily"); }} style={{
+            <button onClick={() => { setDailyDate(today()); setDailyFields({ weight: "", sleep: "", sleepQ: "", fatigue: null, meds: "", bodyFat: "", muscleMass: "", bodyWater: "", cyclePhase: "" }); setScreen("daily"); }} style={{
               flex: 1, padding: "16px", background: "#16213E",
               border: "1px solid rgba(255,255,255,0.08)", borderRadius: "14px", color: "#E2E8F0",
               fontSize: "15px", fontWeight: 700, cursor: "pointer",
@@ -634,6 +649,31 @@ export default function DiaryApp() {
                 </div>
               </div>
             </details>
+
+            {profileSex === "f" && (
+              <div>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>
+                  🌸 Fase ciclo (opzionale)
+                </label>
+                <select
+                  value={dailyFields.cyclePhase}
+                  onChange={e => setDailyFields(p => ({ ...p, cyclePhase: e.target.value as typeof p.cyclePhase }))}
+                  style={inputStyle}
+                >
+                  <option value="">Non tracciato</option>
+                  <option value="mestruazione">Mestruazione</option>
+                  <option value="follicolare">Follicolare (dopo flusso, ovulazione vicina)</option>
+                  <option value="ovulatoria">Ovulatoria</option>
+                  <option value="luteinica">Luteinica (seconda metà)</option>
+                  <option value="amenorrea">⚠ Amenorrea (flusso saltato)</option>
+                  <option value="menopausa">Menopausa</option>
+                  <option value="contraccettivo">Contraccettivo ormonale</option>
+                </select>
+                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px", lineHeight: 1.4 }}>
+                  Il coach considera la fase per adattare suggerimenti. "Amenorrea" ripetuto triggers alert RED-S.
+                </div>
+              </div>
+            )}
 
             <button onClick={handleSaveDaily} disabled={saving} style={{
               width: "100%", padding: "16px", marginTop: "12px",

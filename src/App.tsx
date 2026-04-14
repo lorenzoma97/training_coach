@@ -3,6 +3,7 @@ import DiaryApp from "./components/DiaryApp";
 import CoachPage from "./pages/CoachPage";
 import SettingsPage from "./pages/SettingsPage";
 import OnboardingWizard from "./pages/OnboardingWizard";
+import TrendsPage from "./pages/TrendsPage";
 import ProactiveFeedback from "./components/ProactiveFeedback";
 import { getJSON, setJSON } from "./lib/storage";
 import { maybeRunWeeklyReport } from "./lib/scheduler";
@@ -10,7 +11,7 @@ import type { CoachFeedItem } from "./lib/types";
 import { useOnline } from "./lib/useOnline";
 import { events } from "./lib/events";
 
-type Tab = "diary" | "coach" | "settings";
+type Tab = "diary" | "trends" | "coach" | "settings";
 const LAST_SEEN_KEY = "coach-feed-last-seen";
 
 export default function App() {
@@ -106,6 +107,7 @@ export default function App() {
 
       <div className="page-pad-bottom">
         {tab === "diary" && <DiaryApp />}
+        {tab === "trends" && <TrendsPage />}
         {tab === "coach" && <CoachPage />}
         {tab === "settings" && <SettingsPage onResetOnboarding={() => setOnboarded(false)} />}
       </div>
@@ -123,8 +125,9 @@ export default function App() {
         <div style={{ display: "flex", gap: "6px", maxWidth: "560px", width: "100%" }}>
           {([
             { id: "diary" as const, label: "Diario", emoji: "📓", badge: 0 },
+            { id: "trends" as const, label: "Trend", emoji: "📈", badge: 0 },
             { id: "coach" as const, label: "Coach", emoji: "🎯", badge: unreadCoach },
-            { id: "settings" as const, label: "Impostazioni", emoji: "⚙", badge: 0 },
+            { id: "settings" as const, label: "Impost.", emoji: "⚙", badge: 0 },
           ]).map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} aria-label={t.label}
               aria-current={tab === t.id ? "page" : undefined}

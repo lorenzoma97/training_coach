@@ -562,7 +562,21 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      {step === "disclaimer" && (
+      {step === "disclaimer" && (() => {
+        // Disclaimer personalizzato in base a profilo + condizioni rilevate
+        const age = profile.age || 0;
+        const injuriesText = (profile.injuries || []).join(" ").toLowerCase() + " " + (profile.meds || "").toLowerCase() + " " + (profile.notes || "").toLowerCase();
+        const hasHypertension = /iperten|hypertens|pressione alt/.test(injuriesText);
+        const hasCardiac = /cardio|cardiac|cuore|coronari|scompenso|aritmia/.test(injuriesText);
+        const hasDiabetes = /diabet/.test(injuriesText);
+        const hasPostPartum = /post.?parto|pelvic|cesareo|puerperio/.test(injuriesText);
+        const hasREDS = /red.?s|amenorre|lea\b|low.energy/.test(injuriesText);
+        const hasTendinopathy = /tendinopat|achillea|fascite/.test(injuriesText);
+        const isSenior = age >= 65;
+        const isMidAge = age >= 50 && age < 65;
+        const hasAnyPersonalized = isSenior || isMidAge || hasHypertension || hasCardiac || hasDiabetes || hasPostPartum || hasREDS || hasTendinopathy;
+
+        return (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
             <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 4 · Sicurezza</div>
@@ -573,7 +587,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
           <div style={cardStyle}>
             <ul style={{ paddingLeft: "18px", lineHeight: 1.7, color: "#E2E8F0", fontSize: "14px", margin: 0 }}>
               <li><b>Non sostituisce</b> medico, fisioterapista o preparatore. Dubbi clinici → specialista.</li>
-              <li><b>Dolore polpaccio ≥ 3</b> (scala 0-4+) = <b>stop immediato</b>, consulta uno specialista.</li>
+              <li><b>Dolore ≥ 3</b> (scala 0-4+) nelle zone monitorate = <b>stop immediato</b>, consulta specialista.</li>
               <li><b>Progressione volume max +10% a settimana</b>. Nessuna scorciatoia.</li>
               <li><b>Almeno 2 giorni di riposo</b> o recovery a settimana.</li>
               <li>Combo <b>sonno ≤6h + stanchezza ≥8/10 per 2 giorni</b> = deload obbligatorio.</li>
@@ -581,12 +595,47 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             </ul>
           </div>
 
+          {hasAnyPersonalized && (
+            <div style={{ ...cardStyle, border: "1px solid #EF444466", background: "#EF444410" }}>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#EF4444", marginBottom: "10px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                ⚠ Avvertenze specifiche per il tuo profilo
+              </div>
+              <ul style={{ paddingLeft: "18px", lineHeight: 1.7, color: "#FCA5A5", fontSize: "13px", margin: 0 }}>
+                {isSenior && (
+                  <li><b>Età ≥ 65 anni</b>: chiedi OK al medico curante/cardiologo prima di iniziare attività aerobiche vigorose o forza massimale.</li>
+                )}
+                {isMidAge && !isSenior && (
+                  <li><b>Età 50-64</b>: se hai fattori di rischio cardiovascolare non controllati, valuta un test da sforzo cardiologico prima di attività intense.</li>
+                )}
+                {(hasHypertension || hasCardiac) && (
+                  <li><b>Condizione cardiovascolare dichiarata</b>: <u>richiedi clearance scritta dal cardiologo</u> prima di intensificare corsa o forza. Evita Valsalva (respirazione bloccata) e 1RM veri. Stop se: dolore toracico, dispnea sproporzionata, vertigini.</li>
+                )}
+                {hasDiabetes && (
+                  <li><b>Diabete</b>: monitora glicemia pre/post esercizio. Porta con te glucosio veloce. Coordina dosi insulinica con il tuo diabetologo.</li>
+                )}
+                {hasPostPartum && (
+                  <li><b>Post-parto / pelvic floor</b>: prima di high-impact (corsa, salti), fai valutazione con fisioterapista ostetrico. Nei primi 3-6 mesi post-parto, preferisci low-impact + rinforzo core/pelvic.</li>
+                )}
+                {hasREDS && (
+                  <li><b>Storia di RED-S / amenorrea</b>: NON ridurre kcal. Monitoraggio ciclo obbligatorio (campo nel diario). Se amenorrea torna: stop intensità e consulta endocrinologo/medico sportivo.</li>
+                )}
+                {hasTendinopathy && (
+                  <li><b>Tendinopatie</b>: usa il modello Silbernagel — dolore ≤ 2/4 OK proseguire, 3/4 ridurre, 4+ stop. Sessioni ogni 48-72h nella zona interessata.</li>
+                )}
+              </ul>
+              <div style={{ marginTop: "10px", fontSize: "11px", color: "#94A3B8", fontStyle: "italic", lineHeight: 1.4 }}>
+                Queste indicazioni derivano da ACSM/IOC/ECSS (vedi scientific-foundations nel repo). Il coach le applicherà automaticamente ai suoi consigli.
+              </div>
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: "10px" }}>
             <button onClick={() => setStep("goals")} style={ghostBtn}>← Indietro</button>
             <button onClick={() => setStep("plan")} style={{ ...primaryBtn, flex: 1 }}>Ho capito →</button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {step === "plan" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>

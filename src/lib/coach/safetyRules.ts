@@ -147,6 +147,13 @@ export function checkLocalRedFlags(input: {
       reasons.push(`Sonno scarso + stanchezza alta per ${streak} giorni consecutivi — deload consigliato.`);
       if (level !== "danger") level = "warn";
     }
+
+    // Red flag RED-S: amenorrea registrata >= 2 volte negli ultimi 30 giorni
+    const amenorreaCount = input.last7Days.filter(d => d?.daily?.cyclePhase === "amenorrea").length;
+    if (amenorreaCount >= 2) {
+      reasons.push(`Amenorrea registrata ${amenorreaCount} volte — possibile segnale RED-S. Consulta medico sportivo/endocrinologo.`);
+      level = "danger";
+    }
   }
 
   return { level, reasons };

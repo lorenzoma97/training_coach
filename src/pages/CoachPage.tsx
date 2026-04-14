@@ -7,6 +7,7 @@ import { getJSON, setJSON } from "../lib/storage";
 import type { UserProfile, UserGoal, TrainingPlan } from "../lib/types";
 import { events } from "../lib/events";
 import { generateInitialPlan } from "../lib/coach/planGenerator";
+import { maybeRunWeeklyReport } from "../lib/scheduler";
 import { translateGeminiError } from "../lib/geminiErrors";
 
 type Tab = "plan" | "feed" | "chat";
@@ -18,6 +19,8 @@ export default function CoachPage() {
   }>({ hasKey: false, hasProfile: false, hasGoals: false, hasPlan: false });
   const [generatingPlan, setGeneratingPlan] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [runningReport, setRunningReport] = useState(false);
+  const [reportMsg, setReportMsg] = useState<string | null>(null);
 
   const refreshSetup = async () => {
     const profile = await getJSON<UserProfile | null>("user-profile", null);
@@ -47,6 +50,25 @@ export default function CoachPage() {
   };
 
   const goToSettings = () => events.emit("nav:goto", { tab: "settings" });
+
+  const handleRunWeeklyReport = async () => {
+    if (runningReport) return;
+    if (!confirm("Generare ora il report settimanale integrando gli ultimi 7 giorni? Il coach rigenererà anche il piano.")) return;
+    setRunningReport(true);
+    setReportMsg(null);
+    try {
+      const item = await maybeRunWeeklyReport(true);
+      if (item) {
+        setReportMsg("✓ Report generato. Vai sul tab Feed per leggerlo.");
+        setTab("feed");
+      } else {
+        setReportMsg("Impossibile generare il report. Verifica la chiave API in Impostazioni.");
+      }
+    } catch (e) {
+      setReportMsg("✗ " + translateGeminiError(e));
+    }
+    setRunningReport(false);
+  };
 
   const handleGeneratePlan = async () => {
     if (generatingPlan) return;
@@ -139,7 +161,35 @@ export default function CoachPage() {
       </div>
 
       {tab === "plan" && <TrainingPlanView />}
-      {tab === "feed" && <CoachFeedList />}
+      {tab === "feed" && (
+        <>
+          {setupStatus.hasKey && setupStatus.hasProfile && (
+            <div style={{ marginBottom: "12px" }}>
+              <button
+                onClick={handleRunWeeklyReport}
+                disabled={runningReport}
+                style={{
+                  width: "100%", padding: "10px 14px",
+                  background: runningReport ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
+                  border: "none", borderRadius: "10px", color: "#FFF",
+                  fontSize: "13px", fontWeight: 700,
+                  cursor: runningReport ? "wait" : "pointer",
+                  opacity: runningReport ? 0.5 : 1,
+                }}
+              >
+                {runningReport ? "⏳ Generazione report…" : "📊 Genera report settimanale ora"}
+              </button>
+              {reportMsg && (
+                <div style={{
+                  marginTop: "8px", fontSize: "12px",
+                  color: reportMsg.startsWith("✓") ? "#22C55E" : reportMsg.startsWith("✗") ? "#EF4444" : "#94A3B8",
+                }}>{reportMsg}</div>
+              )}
+            </div>
+          )}
+          <CoachFeedList />
+        </>
+      )}
       {tab === "chat" && <CoachChat />}
     </div>
   );

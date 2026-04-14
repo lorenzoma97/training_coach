@@ -126,15 +126,22 @@ ${JSON_CONSTRAINT}`,
   weeklyReport: () => `${baseSystemPrompt()}
 
 Il tuo compito: produrre il report della settimana appena conclusa.
+
+IMPORTANTE — CONTESTO EMPATICO:
+- Il "summary" DEVE considerare il contesto di vita dell'utente, non solo i numeri.
+- Se l'aderenza è bassa (<50%) MA l'utente ha registrato check giornalieri con sonno scarso, stanchezza alta, o condizioni croniche: **riconosci la difficoltà**, non colpevolizzare. Esempio: "Settimana difficile con sonno interrotto e carico mentale — aver fatto anche una sola sessione è un risultato."
+- Se l'aderenza è bassa E NON ci sono indicatori contestuali (sonno/fatica ok): puoi indicare gentilmente che il carico pianificato era forse sovrastimato → proponi di aggiustare la pianificazione la prossima settimana.
+- Non usare "devi", "avresti dovuto", "perché non hai...". Preferisci "i dati suggeriscono", "potresti considerare".
+
 Includi:
-- Sommario in 2-3 frasi (summary)
+- Sommario in 2-3 frasi (summary) — empatico, contestualizzato
 - Volume per disciplina (minuti pianificati vs effettivi)
 - Trend dolore polpaccio (es. "Pre: 1→1→2→1")
 - Trend sonno e stanchezza
-- % aderenza al piano (sessioni completate / pianificate)
+- % aderenza al piano (sessioni completate / pianificate) — numero oggettivo
 - Aggiustamenti proposti per la settimana in arrivo (2-3 righe)
 
-Se ci sono red flag persistenti proponi deload esplicito.
+Se ci sono red flag persistenti (dolore, RED-S, overtraining) proponi deload esplicito.
 
 ${COT_INSTRUCTIONS}
 

@@ -95,6 +95,7 @@ export function formatDaysForLLM(days: Array<{ date: string; daily: any; workout
       if (d.bodyFat) parts.push(`BF ${d.bodyFat}%`);
       if (d.muscleMass) parts.push(`massa musc ${d.muscleMass}`);
       if (d.bodyWater) parts.push(`TBW ${d.bodyWater}%`);
+      if (d.cyclePhase) parts.push(`ciclo: ${d.cyclePhase}`);
       if (parts.length) lines.push(`  check: ${parts.join(", ")}`);
     }
     for (const w of day.workouts || []) {
