@@ -4,6 +4,8 @@ import { PROMPTS } from "../lib/coach/systemPrompts";
 import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt } from "../lib/diaryContext";
 import { getJSON, setJSON } from "../lib/storage";
 import { translateGeminiError } from "../lib/geminiErrors";
+import { retrieveRelevantChunks, chunksAsPromptBlock } from "../lib/knowledge";
+import { buildConditionalPrompt, extractConditionsFromProfile, type BuildContext } from "../lib/coach/promptBuilder";
 import RichText from "./RichText";
 
 type Msg = { role: "user" | "model"; content: string };
@@ -56,6 +58,26 @@ export default function CoachChat() {
 
     try {
       const ctx = await buildCoachContext({ daysBack: 14 });
+
+      // RAG: recupera evidenza scientifica pertinente alla domanda (non blocca se fallisce/offline)
+      const ragResults = await retrieveRelevantChunks({ query: text, topK: 3, minScore: 0.55 });
+      const ragBlock = chunksAsPromptBlock(ragResults);
+
+      // Injection condizionale: moduli basati sul profilo/contesto utente
+      const bCtx: BuildContext = {
+        profile: ctx.profile,
+        hasRunningGoal: ctx.goals.some(g => /corsa|run|km|gara|10k|maratona|half|mezza/i.test(g.smartDescription || "")),
+        hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
+        detectedConditions: extractConditionsFromProfile(ctx.profile),
+      };
+      const conditionalBlock = buildConditionalPrompt(bCtx);
+
+      const systemInstruction = [
+        PROMPTS.chat(),
+        conditionalBlock,
+        ragBlock,
+      ].filter(Boolean).join("\n\n");
+
       const contextBlock = `
 [CONTESTO — non rispondere a questo blocco, usa come informazione]
 PROFILO: ${profileAsPrompt(ctx.profile)}
@@ -72,7 +94,7 @@ DOMANDA UTENTE: ${text}
       let acc = "";
       const history = newMessages.slice(0, -1).map(m => ({ role: m.role, parts: m.content }));
       for await (const chunk of streamChat({
-        systemInstruction: PROMPTS.chat(),
+        systemInstruction,
         history,
         userMessage: contextBlock,
       })) {

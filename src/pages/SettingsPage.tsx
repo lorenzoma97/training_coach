@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { pingApiKey, getApiKey, setApiKey } from "../lib/gemini";
-import { storage } from "../lib/storage";
+import { pingApiKey, getApiKey, setApiKey, hasApiKey } from "../lib/gemini";
+import { storage, getJSON } from "../lib/storage";
+import { CHUNKS, clearEmbeddings, ensureEmbeddings, getCacheStatus, CACHE_KEY, type CacheStatus, type EmbeddingCache } from "../lib/knowledge";
+import { translateGeminiError } from "../lib/geminiErrors";
 
 export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding: () => void }) {
   const [key, setKey] = useState("");
@@ -8,9 +10,29 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [kbStatus, setKbStatus] = useState<CacheStatus>("missing");
+  const [kbCreatedAt, setKbCreatedAt] = useState<string | null>(null);
+  const [kbCount, setKbCount] = useState<number>(0);
+  const [kbBusy, setKbBusy] = useState(false);
+  const [kbProgress, setKbProgress] = useState<{ done: number; total: number } | null>(null);
+  const [kbError, setKbError] = useState<string | null>(null);
+
+  async function refreshKbStatus() {
+    const s = await getCacheStatus();
+    setKbStatus(s);
+    const cache = await getJSON<EmbeddingCache | null>(CACHE_KEY, null);
+    if (cache) {
+      setKbCreatedAt(cache.createdAt);
+      setKbCount(Object.keys(cache.vectors || {}).length);
+    } else {
+      setKbCreatedAt(null);
+      setKbCount(0);
+    }
+  }
 
   useEffect(() => {
     setKey(getApiKey());
+    refreshKbStatus();
   }, []);
 
   const save = () => {
@@ -44,6 +66,24 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       onResetOnboarding();
     } finally {
       setResetting(false);
+    }
+  };
+
+  const regenerateKnowledgeBase = async () => {
+    if (kbBusy) return;
+    if (!hasApiKey()) return;
+    setKbBusy(true);
+    setKbError(null);
+    setKbProgress({ done: 0, total: CHUNKS.length });
+    try {
+      await clearEmbeddings();
+      await ensureEmbeddings((done, total) => setKbProgress({ done, total }));
+    } catch (e) {
+      setKbError(translateGeminiError(e));
+    } finally {
+      setKbBusy(false);
+      setKbProgress(null);
+      await refreshKbStatus();
     }
   };
 
@@ -103,6 +143,87 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       <div style={cardStyle}>
         <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "12px" }}>Gestione dati</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{
+            padding: "14px", background: "#1A1A2E",
+            border: "1px solid #0891B244", borderRadius: "10px",
+          }}>
+            <div style={{ color: "#0891B2", fontWeight: 700, fontSize: "13px", marginBottom: "6px" }}>
+              Knowledge base scientifica
+            </div>
+            <div style={{ color: "#94A3B8", fontSize: "12px", lineHeight: 1.5, marginBottom: "10px" }}>
+              Indice di embeddings sui fondamenti scientifici (24 aree) usato dal coach per citare evidenze pertinenti.
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px", flexWrap: "wrap" }}>
+              <span style={{
+                display: "inline-block",
+                padding: "3px 9px",
+                borderRadius: "999px",
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                background:
+                  kbStatus === "ready" ? "#16A34A22" :
+                  kbStatus === "stale" ? "#F59E0B22" :
+                  kbStatus === "no-key" ? "#EF444422" : "#64748B22",
+                color:
+                  kbStatus === "ready" ? "#22C55E" :
+                  kbStatus === "stale" ? "#F59E0B" :
+                  kbStatus === "no-key" ? "#EF4444" : "#94A3B8",
+              }}>
+                {kbStatus === "ready" && "Pronta"}
+                {kbStatus === "stale" && "Da rigenerare"}
+                {kbStatus === "missing" && "Non creata"}
+                {kbStatus === "no-key" && "Chiave API richiesta"}
+              </span>
+              {kbStatus === "ready" && (
+                <span style={{ color: "#64748B", fontSize: "12px" }}>
+                  {kbCount}/{CHUNKS.length} chunks
+                  {kbCreatedAt && ` · ${new Date(kbCreatedAt).toLocaleDateString("it-IT")}`}
+                </span>
+              )}
+            </div>
+
+            {kbBusy && kbProgress && (
+              <div style={{ marginBottom: "10px" }}>
+                <div style={{ fontSize: "12px", color: "#94A3B8", marginBottom: "4px" }}>
+                  Generazione embeddings… {kbProgress.done}/{kbProgress.total}
+                </div>
+                <div style={{ height: "6px", background: "#0F172A", borderRadius: "3px", overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${(kbProgress.done / kbProgress.total) * 100}%`,
+                    background: "#0891B2",
+                    transition: "width 0.2s ease",
+                  }} />
+                </div>
+              </div>
+            )}
+
+            {kbError && (
+              <div style={{ color: "#EF4444", fontSize: "12px", marginBottom: "8px" }}>
+                {kbError}
+              </div>
+            )}
+
+            <button
+              onClick={regenerateKnowledgeBase}
+              disabled={kbBusy || !hasApiKey()}
+              style={{
+                padding: "9px 14px",
+                background: (kbBusy || !hasApiKey()) ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
+                border: "none",
+                borderRadius: "8px",
+                color: "#FFF",
+                fontWeight: 700,
+                fontSize: "13px",
+                cursor: (kbBusy || !hasApiKey()) ? "not-allowed" : "pointer",
+                opacity: (kbBusy || !hasApiKey()) ? 0.5 : 1,
+              }}
+            >
+              {kbBusy ? "Rigenerazione in corso…" : "Rigenera knowledge base"}
+            </button>
+          </div>
           <button onClick={resetAll} disabled={resetting} style={{
             padding: "14px", background: "#1A1A2E",
             border: "1px solid #F59E0B44", borderRadius: "10px",

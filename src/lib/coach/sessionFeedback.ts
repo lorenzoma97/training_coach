@@ -4,6 +4,7 @@ import { PROMPTS } from "./systemPrompts";
 import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt, formatDaysForLLM } from "../diaryContext";
 import type { SessionFeedback } from "../types";
 import { checkLocalRedFlags } from "./safetyRules";
+import { buildConditionalPrompt, extractConditionsFromProfile, type BuildContext, type WorkoutTypeId } from "./promptBuilder";
 
 const schema = z.object({
   howItWent: z.string(),
@@ -64,8 +65,31 @@ ${local.reasons.length ? local.reasons.map(r => `- ${r}`).join("\n") : "(nessuno
 Dai feedback strutturato. Se ci sono red flag locali, includili in redFlags e alza severity di conseguenza (danger se dolore ≥3 o segnali rossi, warn altrimenti).
 `.trim();
 
+  const rpeNum = Number(params.workout.rpe) || 0;
+
+  // Guard esplicito: workoutType deve essere uno degli id enumerati
+  const validTypes: WorkoutTypeId[] = ["corsa", "forza_gambe", "forza_upper", "sport", "mobilita"];
+  const wt: WorkoutTypeId | undefined = validTypes.includes(params.workout.type as WorkoutTypeId)
+    ? (params.workout.type as WorkoutTypeId)
+    : undefined;
+
+  // Calcola giorni alla gara più vicina (da obiettivi con deadline parsable)
+  const daysToNearestRace = computeDaysToNearestRace(ctx.goals);
+
+  const bCtx: BuildContext = {
+    profile: ctx.profile,
+    workoutType: wt,
+    hasRunningGoal: ctx.goals.some(g => /corsa|run|km|gara|10k|maratona|half|mezza/i.test((g.smartDescription || "") + " " + (g.kpi?.metric || ""))),
+    hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
+    daysToNearestRace,
+    lastSessionIntensity: rpeNum >= 8 ? "hard" : rpeNum >= 5 ? "moderate" : "light",
+    currentCadence: params.workout.fields?.cadenza ? Number(params.workout.fields.cadenza) : null,
+    detectedConditions: extractConditionsFromProfile(ctx.profile),
+  };
+  const systemInstruction = PROMPTS.sessionFeedback() + "\n\n" + buildConditionalPrompt(bCtx);
+
   const raw = await generateJSON<unknown>({
-    systemInstruction: PROMPTS.sessionFeedback(),
+    systemInstruction,
     userPrompt,
     schemaHint,
     maxTokens: 600,
@@ -82,4 +106,29 @@ Dai feedback strutturato. Se ci sono red flag locali, includili in redFlags e al
   const existingFlags = Array.isArray(parsed.redFlags) ? parsed.redFlags : [];
   parsed.redFlags = Array.from(new Set([...existingFlags, ...local.reasons]));
   return parsed;
+}
+
+// Estrae la gara più vicina dagli obiettivi attivi. Parse best-effort su deadline libere.
+function computeDaysToNearestRace(goals: Array<{ kpi?: { deadline?: string }; smartDescription?: string; status?: string }>): number | undefined {
+  const now = Date.now();
+  let minDays: number | undefined;
+  for (const g of goals) {
+    if (g.status && g.status !== "active") continue;
+    const desc = (g.smartDescription || "").toLowerCase();
+    const isRace = /gara|race|maratona|10k|5k|half|mezza/.test(desc);
+    if (!isRace) continue;
+    const deadline = g.kpi?.deadline;
+    if (!deadline) continue;
+    let date: Date | null = null;
+    const iso = deadline.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) date = new Date(`${iso[1]}-${iso[2]}-${iso[3]}T12:00:00`);
+    if (!date) {
+      const weeks = deadline.match(/(\d+)\s*settim/i);
+      if (weeks) date = new Date(now + Number(weeks[1]) * 7 * 24 * 3600 * 1000);
+    }
+    if (!date || isNaN(date.getTime())) continue;
+    const days = Math.max(0, Math.round((date.getTime() - now) / (24 * 3600 * 1000)));
+    if (minDays === undefined || days < minDays) minDays = days;
+  }
+  return minDays;
 }

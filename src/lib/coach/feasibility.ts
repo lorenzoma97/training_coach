@@ -3,6 +3,7 @@ import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt } from "../diaryContext";
 import type { UserProfile, FeasibilityCheck } from "../types";
+import { buildConditionalPrompt, extractConditionsFromProfile, type BuildContext } from "./promptBuilder";
 
 const schema = z.object({
   realistic: z.boolean(),
@@ -43,8 +44,15 @@ Valuta se è realistico. Se non lo è, proponi una versione SMART ragionevole.
 Se è già realistico e SMART, "realistic" = true e "counterProposal" confermerà l'obiettivo originale in forma SMART.
 `.trim();
 
+  const bCtx: BuildContext = {
+    profile,
+    hasRunningGoal: /corsa|run|km|gara/i.test(goalDescription),
+    detectedConditions: extractConditionsFromProfile(profile),
+  };
+  const systemInstruction = PROMPTS.feasibility() + "\n\n" + buildConditionalPrompt(bCtx);
+
   const raw = await generateJSON<unknown>({
-    systemInstruction: PROMPTS.feasibility(),
+    systemInstruction,
     userPrompt,
     schemaHint,
     maxTokens: 800,

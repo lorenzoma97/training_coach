@@ -3,6 +3,7 @@ import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, planAsPrompt } from "../diaryContext";
 import type { UserProfile, UserGoal, TrainingPlan } from "../types";
+import { buildConditionalPrompt, extractConditionsFromProfile, type BuildContext } from "./promptBuilder";
 
 const sessionSchema = z.object({
   day: z.enum(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]),
@@ -60,8 +61,16 @@ ${goalsAsPrompt(goals)}
 Genera un microciclo di 2 settimane (weeks con weekNumber 1 e 2) che porti l'utente verso gli obiettivi rispettando vincoli e sicurezza.
 `.trim();
 
+  const bCtx: BuildContext = {
+    profile,
+    hasRunningGoal: goals.some(g => /corsa|run|km|gara|10k|maratona/i.test(g.smartDescription)),
+    hasStrengthInPlan: true,
+    detectedConditions: extractConditionsFromProfile(profile),
+  };
+  const systemInstruction = PROMPTS.planGeneration() + "\n\n" + buildConditionalPrompt(bCtx);
+
   const raw = await generateJSON<unknown>({
-    systemInstruction: PROMPTS.planGeneration(),
+    systemInstruction,
     userPrompt,
     schemaHint,
     maxTokens: 3000,
@@ -113,8 +122,16 @@ Genera il nuovo microciclo di 2 settimane a partire dalla settimana prossima, ad
 Se rilevi red flag, proponi deload esplicito nella settimana 1.
 `.trim();
 
+  const bCtx: BuildContext = {
+    profile,
+    hasRunningGoal: goals.some(g => /corsa|run|km|gara|10k|maratona/i.test(g.smartDescription)),
+    hasStrengthInPlan: true,
+    detectedConditions: extractConditionsFromProfile(profile),
+  };
+  const systemInstruction = PROMPTS.planGeneration() + "\n\n" + buildConditionalPrompt(bCtx);
+
   const raw = await generateJSON<unknown>({
-    systemInstruction: PROMPTS.planGeneration(),
+    systemInstruction,
     userPrompt,
     schemaHint,
     maxTokens: 3000,

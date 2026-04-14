@@ -3,6 +3,7 @@ import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
 import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt } from "../diaryContext";
 import type { WeeklyReport } from "../types";
+import { buildConditionalPrompt, extractConditionsFromProfile, type BuildContext } from "./promptBuilder";
 
 const schema = z.object({
   summary: z.string(),
@@ -49,8 +50,16 @@ Produci il report settimanale. Calcola tu i volumi sommando i minuti per tipo di
 Se il piano non copre una disciplina, planned_min = 0.
 `.trim();
 
+  const bCtx: BuildContext = {
+    profile: ctx.profile,
+    hasRunningGoal: ctx.goals.some(g => /corsa|run|km|gara/i.test(g.smartDescription)),
+    hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
+    detectedConditions: extractConditionsFromProfile(ctx.profile),
+  };
+  const systemInstruction = PROMPTS.weeklyReport() + "\n\n" + buildConditionalPrompt(bCtx);
+
   const raw = await generateJSON<unknown>({
-    systemInstruction: PROMPTS.weeklyReport(),
+    systemInstruction,
     userPrompt,
     schemaHint,
     maxTokens: 1500,
