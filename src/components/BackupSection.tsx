@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { buildBackup, downloadBackup, validateBackup, restoreBackup, type BackupPayload } from "../lib/backup";
 
 const cardStyle: React.CSSProperties = {
@@ -10,10 +10,18 @@ export default function BackupSection() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ type: "info" | "error" | "success"; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const msgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (msgTimerRef.current) clearTimeout(msgTimerRef.current);
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+  }, []);
 
   const show = (type: "info" | "error" | "success", text: string) => {
     setMessage({ type, text });
-    if (type === "success") setTimeout(() => setMessage(null), 5000);
+    if (msgTimerRef.current) clearTimeout(msgTimerRef.current);
+    if (type === "success") msgTimerRef.current = setTimeout(() => setMessage(null), 5000);
   };
 
   const handleExport = async () => {
@@ -62,7 +70,8 @@ export default function BackupSection() {
       const report = await restoreBackup(payload, { wipeBefore: true, overwrite: true });
       show("success",
         `✓ Ripristinato: ${report.restoredDays} giorni + ${report.restoredKeys.length} chiavi. Ricarico l'app tra 2s.`);
-      setTimeout(() => window.location.reload(), 2000);
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+      reloadTimerRef.current = setTimeout(() => window.location.reload(), 2000);
     } catch (e) {
       show("error", (e as Error)?.message || "Errore durante il ripristino");
     }

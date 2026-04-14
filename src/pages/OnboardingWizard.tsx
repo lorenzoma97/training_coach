@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { setJSON, getJSON } from "../lib/storage";
 import type { UserProfile, UserGoal, TrainingPlan, FeasibilityCheck, Experience } from "../lib/types";
 import { hasApiKey } from "../lib/gemini";
@@ -191,18 +191,23 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     setStep("goals");
   };
 
+  const feasibilityReqIdRef = useRef(0);
   const runFeasibility = async () => {
     if (!goalText.trim()) return;
+    const myReqId = ++feasibilityReqIdRef.current;
     setChecking(true); setCheckError("");
     try {
       const savedProfile = await getJSON<UserProfile | null>("user-profile", null);
       if (!savedProfile) throw new Error("Profilo mancante");
       const res = await checkGoalFeasibility(savedProfile, goalText.trim());
+      // Scarta la risposta se nel frattempo è stato avviato un nuovo check
+      if (myReqId !== feasibilityReqIdRef.current) return;
       setPendingCheck(res);
     } catch (e: any) {
+      if (myReqId !== feasibilityReqIdRef.current) return;
       setCheckError(translateGeminiError(e));
     }
-    setChecking(false);
+    if (myReqId === feasibilityReqIdRef.current) setChecking(false);
   };
 
   const editGoal = (g: UserGoal) => {

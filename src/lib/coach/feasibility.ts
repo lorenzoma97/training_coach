@@ -57,5 +57,18 @@ Se è già realistico e SMART, "realistic" = true e "counterProposal" confermer�
     schemaHint,
     maxTokens: 800,
   });
-  return schema.parse(raw);
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    // Fallback graceful: ritorna una valutazione conservativa invece di crashare
+    console.warn("[feasibility] Zod parse failed, fallback applied:", result.error.message);
+    return {
+      realistic: false,
+      reasoning: "Non sono riuscito a strutturare una valutazione. Prova a riformulare l'obiettivo in modo più specifico (es. 'correre 10km in 55min entro 8 settimane').",
+      counterProposal: {
+        description: goalDescription,
+        kpi: { metric: "da definire", target: "-", deadline: "-" },
+      },
+    };
+  }
+  return result.data;
 }

@@ -120,24 +120,34 @@ function createAnthropicClient(config: LLMConfig): LLMClient {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      const processLine = function* (line: string): Generator<string> {
+        const s = line.trim();
+        if (!s.startsWith("data:")) return;
+        const data = s.slice(5).trim();
+        if (!data) return;
+        try {
+          const json = JSON.parse(data);
+          if (json?.type === "content_block_delta" && json?.delta?.type === "text_delta") {
+            const t = json.delta.text;
+            if (typeof t === "string" && t) yield t;
+          }
+        } catch { /* skip */ }
+      };
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done) {
+          // Flush buffer residuo (ultimo chunk senza newline)
+          const finalDecode = decoder.decode();
+          if (finalDecode) buffer += finalDecode;
+          if (buffer.trim()) yield* processLine(buffer);
+          break;
+        }
         buffer += decoder.decode(value, { stream: true });
         let idx: number;
         while ((idx = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.slice(0, idx).trim();
+          const line = buffer.slice(0, idx);
           buffer = buffer.slice(idx + 1);
-          if (!line.startsWith("data:")) continue;
-          const data = line.slice(5).trim();
-          if (!data) continue;
-          try {
-            const json = JSON.parse(data);
-            if (json?.type === "content_block_delta" && json?.delta?.type === "text_delta") {
-              const t = json.delta.text;
-              if (typeof t === "string" && t) yield t;
-            }
-          } catch { /* skip */ }
+          yield* processLine(line);
         }
       }
     },
@@ -160,12 +170,16 @@ export const anthropicAdapter: ProviderAdapter = {
       throw new Error(`Anthropic listModels ${res.status}: ${body.slice(0, 200)}`);
     }
     const json = await res.json() as { data?: Array<{ id: string; display_name?: string }> };
-    const models = (json.data || []).map<LLMModel>(m => ({
-      id: m.id,
-      displayName: m.display_name || m.id,
-      supportsJSON: true,
-      supportsEmbeddings: false,
-    }));
+    // Filtra modelli non-chat (safety: Anthropic oggi non ne ha ma potrebbe in futuro)
+    const EXCLUDE = /(embedding|audio|image|whisper|tts|voice)/i;
+    const models = (json.data || [])
+      .filter(m => m.id && !EXCLUDE.test(m.id))
+      .map<LLMModel>(m => ({
+        id: m.id,
+        displayName: m.display_name || m.id,
+        supportsJSON: true,
+        supportsEmbeddings: false,
+      }));
     return models;
   },
 

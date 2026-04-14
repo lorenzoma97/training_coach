@@ -77,7 +77,12 @@ Genera un microciclo di 2 settimane (weeks con weekNumber 1 e 2) che porti l'ute
     schemaHint,
     maxTokens: 3000,
   });
-  const parsed = planSchema.parse(raw);
+  const parseResult = planSchema.safeParse(raw);
+  if (!parseResult.success) {
+    console.error("[planGenerator] Zod parse failed:", parseResult.error.message);
+    throw new Error("Il coach non è riuscito a generare un piano strutturato. Riprova tra qualche secondo.");
+  }
+  const parsed = parseResult.data;
 
   const now = new Date();
   const validUntil = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
@@ -140,7 +145,12 @@ Se rilevi red flag, proponi deload esplicito nella settimana 1.
     schemaHint,
     maxTokens: 3000,
   });
-  const parsed = planSchema.parse(raw);
+  const parseResult = planSchema.safeParse(raw);
+  if (!parseResult.success) {
+    console.error("[planGenerator] Zod parse failed:", parseResult.error.message);
+    throw new Error("Il coach non è riuscito a generare un piano strutturato. Riprova tra qualche secondo.");
+  }
+  const parsed = parseResult.data;
   const now = new Date();
   return {
     generatedAt: now.toISOString(),

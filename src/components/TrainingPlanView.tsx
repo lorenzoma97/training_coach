@@ -123,7 +123,7 @@ export default function TrainingPlanView() {
             {w.sessions.map((s, i) => {
               const isToday = w.weekNumber === 1 && s.day === todayKey;
               return (
-                <div key={i} style={{
+                <div key={`${w.weekNumber}-${s.day}-${i}`} style={{
                   padding: "12px 14px",
                   background: isToday ? "#E8553A15" : "#1A1A2E",
                   border: isToday ? "1px solid #E8553A66" : "1px solid transparent",

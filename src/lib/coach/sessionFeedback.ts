@@ -97,7 +97,15 @@ Dai feedback strutturato. Se ci sono red flag locali, includili in redFlags e al
     schemaHint,
     maxTokens: 600,
   });
-  const parsed = schema.parse(raw);
+  const result = schema.safeParse(raw);
+  const parsed = result.success ? result.data : {
+    howItWent: "Ho ricevuto i dati della sessione ma non sono riuscito a strutturare un feedback completo. I red flag locali restano validi.",
+    signalsToMonitor: "",
+    whatToDoNext: "Riprova a salvare oppure chiedi al coach in chat.",
+    redFlags: [],
+    severity: (local.level === "none" ? "info" : local.level) as SessionFeedback["severity"],
+  };
+  if (!result.success) console.warn("[sessionFeedback] Zod parse failed:", result.error.message);
 
   // Garantisce che severity non sia mai sotto quella rilevata localmente
   const severityOrder = { info: 0, warn: 1, danger: 2 } as const;

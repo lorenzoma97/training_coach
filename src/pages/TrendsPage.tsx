@@ -152,9 +152,10 @@ export default function TrendsPage() {
 
       // Efficiency Factor (EF) = m/min / bpm = metri per battito. Più alto = più efficiente.
       let ef: number | null = null;
-      if (avgPace != null && avgHR != null && avgHR > 0) {
+      if (avgPace != null && avgPace > 0 && avgHR != null && avgHR > 0) {
         const mPerMin = 60000 / avgPace;
-        ef = Math.round((mPerMin / avgHR) * 100) / 100;
+        const efRaw = mPerMin / avgHR;
+        ef = Number.isFinite(efRaw) ? Math.round(efRaw * 100) / 100 : null;
       }
 
       runPaceSeries.push({ date: d.date, value: avgPace });
@@ -285,6 +286,7 @@ export default function TrendsPage() {
                   color="#E8553A"
                   invertY
                   formatValue={v => {
+                    if (!Number.isFinite(v) || v <= 0) return "—";
                     const m = Math.floor(v / 60);
                     const s = Math.round(v - m * 60);
                     return `${m}:${s.toString().padStart(2, "0")}`;
@@ -356,8 +358,9 @@ export default function TrendsPage() {
                 {Object.entries(series.typeCount)
                   .sort((a, b) => b[1] - a[1])
                   .map(([type, n]) => {
-                    const maxN = Math.max(...Object.values(series.typeCount));
-                    const pct = (n / maxN) * 100;
+                    const values = Object.values(series.typeCount);
+                    const maxN = values.length ? Math.max(...values) : 0;
+                    const pct = maxN > 0 ? (n / maxN) * 100 : 0;
                     return (
                       <div key={type} style={{ fontSize: "12px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>

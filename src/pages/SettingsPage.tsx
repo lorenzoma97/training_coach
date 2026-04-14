@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { hasApiKey } from "../lib/gemini";
 import {
   ADAPTERS, getLLMConfig, setLLMConfig, type LLMConfig, type LLMModel, type ProviderId,
@@ -44,6 +44,10 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   const [kbError, setKbError] = useState<string | null>(null);
   const [kbFailures, setKbFailures] = useState<number>(0);
   const [kbLastFailureMsg, setKbLastFailureMsg] = useState<string | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+  }, []);
 
   const adapter = useMemo(() => ADAPTERS[provider], [provider]);
   const providerSupportsEmbeddings = adapter.supportsEmbeddings;
@@ -121,7 +125,8 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       setTestResult(`✗ ${e?.message || String(e)}`);
     } finally {
       setSaving(false);
-      setTimeout(() => setSaved(false), 1500);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSaved(false), 1500);
     }
   };
 

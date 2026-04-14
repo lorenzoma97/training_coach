@@ -113,22 +113,32 @@ function createOpenAIClient(config: LLMConfig): LLMClient {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      const processLine = function* (line: string): Generator<string> {
+        const s = line.trim();
+        if (!s.startsWith("data:")) return;
+        const data = s.slice(5).trim();
+        if (!data || data === "[DONE]") return;
+        try {
+          const json = JSON.parse(data);
+          const delta = json?.choices?.[0]?.delta?.content;
+          if (typeof delta === "string" && delta) yield delta;
+        } catch { /* skip malformed */ }
+      };
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done) {
+          // Flush del buffer residuo (ultimo chunk senza newline terminale)
+          const finalDecode = decoder.decode();
+          if (finalDecode) buffer += finalDecode;
+          if (buffer.trim()) yield* processLine(buffer);
+          break;
+        }
         buffer += decoder.decode(value, { stream: true });
         let idx: number;
         while ((idx = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.slice(0, idx).trim();
+          const line = buffer.slice(0, idx);
           buffer = buffer.slice(idx + 1);
-          if (!line.startsWith("data:")) continue;
-          const data = line.slice(5).trim();
-          if (!data || data === "[DONE]") continue;
-          try {
-            const json = JSON.parse(data);
-            const delta = json?.choices?.[0]?.delta?.content;
-            if (typeof delta === "string" && delta) yield delta;
-          } catch { /* skip malformed */ }
+          yield* processLine(line);
         }
       }
     },

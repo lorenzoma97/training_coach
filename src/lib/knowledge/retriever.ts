@@ -11,6 +11,9 @@ export interface RetrievalResult {
 }
 
 function cosine(a: number[], b: number[]): number {
+  // Guard: vettori di dimensione diversa (es. provider switch senza rigenerare KB)
+  // NON usare similarity nonsensical. Ritorna 0 → retriever filtra via.
+  if (!a || !b || a.length !== b.length || a.length === 0) return 0;
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];

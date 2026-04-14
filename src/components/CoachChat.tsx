@@ -8,7 +8,8 @@ import { retrieveRelevantChunks, chunksAsPromptBlock } from "../lib/knowledge";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "../lib/coach/promptBuilder";
 import RichText from "./RichText";
 
-type Msg = { role: "user" | "model"; content: string };
+type Msg = { id: string; role: "user" | "model"; content: string };
+const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 const QUICK_PROMPTS = [
   "Come sta andando la settimana?",
@@ -24,13 +25,15 @@ export default function CoachChat() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [waitingFirstToken, setWaitingFirstToken] = useState(false);
+  const waitingRef = useRef(false); // closure-safe per evitare stale read nel loop streaming
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     (async () => {
       const saved = await getJSON<Msg[]>("coach-chat-history", []);
-      setMessages(saved);
+      // Migration: aggiungi id ai messaggi legacy senza id
+      setMessages(saved.map(m => m.id ? m : { ...m, id: genId() }));
     })();
   }, []);
 
@@ -49,12 +52,13 @@ export default function CoachChat() {
     if (!hasApiKey()) { setError("Chiave Gemini non configurata. Vai in Impostazioni."); return; }
     setError("");
 
-    const userMsg: Msg = { role: "user", content: text };
+    const userMsg: Msg = { id: genId(), role: "user", content: text };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput("");
     setLoading(true);
     setWaitingFirstToken(true);
+    waitingRef.current = true;
 
     try {
       const ctx = await buildCoachContext({ daysBack: 14 });
@@ -90,7 +94,8 @@ ${ctx.recentDaysText}
 DOMANDA UTENTE: ${text}
 `.trim();
 
-      setMessages(m => [...m, { role: "model", content: "" }]);
+      const modelMsgId = genId();
+      setMessages(m => [...m, { id: modelMsgId, role: "model", content: "" }]);
       let acc = "";
       const history = newMessages.slice(0, -1).map(m => ({ role: m.role, parts: m.content }));
       for await (const chunk of streamChat({
@@ -99,15 +104,14 @@ DOMANDA UTENTE: ${text}
         userMessage: contextBlock,
       })) {
         acc += chunk;
-        if (waitingFirstToken) setWaitingFirstToken(false);
-        setMessages(m => {
-          const copy = [...m];
-          copy[copy.length - 1] = { role: "model", content: acc };
-          return copy;
-        });
+        if (waitingRef.current) {
+          waitingRef.current = false;
+          setWaitingFirstToken(false);
+        }
+        setMessages(m => m.map(x => x.id === modelMsgId ? { ...x, content: acc } : x));
       }
 
-      const final = [...newMessages, { role: "model" as const, content: acc }];
+      const final = [...newMessages, { id: modelMsgId, role: "model" as const, content: acc }];
       await setJSON("coach-chat-history", final.slice(-50));
     } catch (e: any) {
       setError(translateGeminiError(e));
@@ -115,6 +119,7 @@ DOMANDA UTENTE: ${text}
     }
     setLoading(false);
     setWaitingFirstToken(false);
+    waitingRef.current = false;
   };
 
   const clearChat = async () => {
@@ -143,7 +148,7 @@ DOMANDA UTENTE: ${text}
         {messages.map((m, i) => {
           const isLast = i === messages.length - 1;
           return (
-            <div key={i} style={{
+            <div key={m.id} style={{
               alignSelf: m.role === "user" ? "flex-end" : "flex-start",
               maxWidth: "85%",
               background: m.role === "user" ? "linear-gradient(135deg, #E8553A 0%, #D44429 100%)" : "#16213E",

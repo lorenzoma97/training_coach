@@ -67,5 +67,20 @@ Se il piano non copre una disciplina, planned_min = 0.
     schemaHint,
     maxTokens: 1500,
   });
-  return schema.parse(raw);
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    console.warn("[weeklyReport] Zod parse failed:", result.error.message);
+    return {
+      summary: "Non sono riuscito a generare un report strutturato per questa settimana. Riprova più tardi.",
+      volumeByDiscipline: {},
+      painTrend: "—",
+      sleepFatigueTrend: "—",
+      adherencePct: 0,
+      adjustments: "Riprova oppure rigenera il piano manualmente dal tab Piano.",
+    };
+  }
+  // Clamp adherencePct: LLM a volte ritorna >100 o negativi
+  const data = result.data;
+  data.adherencePct = Math.max(0, Math.min(100, data.adherencePct));
+  return data;
 }

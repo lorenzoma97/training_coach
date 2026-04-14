@@ -227,6 +227,7 @@ export default function DiaryApp() {
     if (missing.length) { flash("Compila i campi obbligatori"); return; }
 
     setSaving(true);
+    let savedOk = false;
     try {
       const date = addDate;
       let dayData = (await loadDay(date)) || { daily: null, workouts: [] };
@@ -243,10 +244,14 @@ export default function DiaryApp() {
 
       events.emit("workout:saved", { date, workout: newWorkout });
 
+      savedOk = true;
       setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes("");
       flash("Allenamento salvato ✓");
       await refresh();
       setScreen("home");
+    } catch (e) {
+      console.error("[handleSaveWorkout]", e);
+      if (!savedOk) flash("Errore nel salvataggio ✗");
     } finally {
       setSaving(false);
     }
@@ -258,7 +263,12 @@ export default function DiaryApp() {
     try {
       const date = dailyDate;
       let dayData = (await loadDay(date)) || { daily: null, workouts: [] };
-      dayData.daily = { ...dailyFields, savedAt: new Date().toISOString() };
+      // Filtra campi vuoti per non salvare "" in storage (più pulito per export/RAG)
+      const cleanDaily: any = { savedAt: new Date().toISOString() };
+      for (const [k, v] of Object.entries(dailyFields)) {
+        if (v !== "" && v !== null && v !== undefined) cleanDaily[k] = v;
+      }
+      dayData.daily = cleanDaily;
       await saveDay(date, dayData);
       let idx = await loadIndex();
       if (!idx.includes(date)) { idx.push(date); await saveIndex(idx); }
@@ -266,28 +276,36 @@ export default function DiaryApp() {
       flash("Check giornaliero salvato ✓");
       await refresh();
       setScreen("home");
+    } catch (e) {
+      console.error("[handleSaveDaily]", e);
+      flash("Errore nel salvataggio ✗");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteWorkout = async (date: string, wid: string) => {
-    let dayData = await loadDay(date);
-    if (!dayData) return;
-    dayData.workouts = dayData.workouts.filter((w: any) => w.id !== wid);
-    if (!dayData.workouts.length && !dayData.daily) {
-      await storage.delete(`day:${date}`);
-      let idx = await loadIndex();
-      idx = idx.filter(d => d !== date);
-      await saveIndex(idx);
-    } else {
-      await saveDay(date, dayData);
+    try {
+      let dayData = await loadDay(date);
+      if (!dayData) return;
+      dayData.workouts = dayData.workouts.filter((w: any) => w.id !== wid);
+      if (!dayData.workouts.length && !dayData.daily) {
+        await storage.delete(`day:${date}`);
+        let idx = await loadIndex();
+        idx = idx.filter(d => d !== date);
+        await saveIndex(idx);
+      } else {
+        await saveDay(date, dayData);
+      }
+      flash("Eliminato ✓");
+      await refresh();
+      const updated = await loadDay(date);
+      if (updated && (updated.workouts.length || updated.daily)) { setDetailData(updated); }
+      else { setScreen("home"); }
+    } catch (e) {
+      console.error("[handleDeleteWorkout]", e);
+      flash("Errore nell'eliminazione ✗");
     }
-    flash("Eliminato ✓");
-    await refresh();
-    const updated = await loadDay(date);
-    if (updated && (updated.workouts.length || updated.daily)) { setDetailData(updated); }
-    else { setScreen("home"); }
   };
 
   const openDetail = async (date: string) => {
