@@ -160,11 +160,14 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   const parseCSV = (s: string): string[] =>
     s.split(",").map(x => x.trim()).filter(Boolean);
 
-  const [goalText, setGoalText] = useState("");
   const [goals, setGoals] = useState<UserGoal[]>([]);
-  const [checking, setChecking] = useState(false);
-  const [pendingCheck, setPendingCheck] = useState<FeasibilityCheck | null>(null);
-  const [checkError, setCheckError] = useState("");
+  // Batch goals: l'utente sceglie quanti (1-3) e compila ciascuno separatamente.
+  // Il coach verifica tutti in parallelo e mostra una card proposta per ogni obiettivo.
+  const [goalsCount, setGoalsCount] = useState<1 | 2 | 3>(1);
+  const [goalTexts, setGoalTexts] = useState<string[]>(["", "", ""]);
+  const [pendingChecks, setPendingChecks] = useState<Array<FeasibilityCheck | null>>([null, null, null]);
+  const [checkErrors, setCheckErrors] = useState<string[]>(["", "", ""]);
+  const [checkingAny, setCheckingAny] = useState(false);
 
   const [generating, setGenerating] = useState(false);
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
@@ -211,44 +214,92 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   };
 
   const feasibilityReqIdRef = useRef(0);
-  const runFeasibility = async () => {
-    if (!goalText.trim()) return;
+
+  const runFeasibilityBatch = async () => {
+    // Raccoglie gli indici degli obiettivi compilati (fino a goalsCount)
+    const idxToRun: number[] = [];
+    for (let i = 0; i < goalsCount; i++) {
+      if (goalTexts[i] && goalTexts[i].trim()) idxToRun.push(i);
+    }
+    if (!idxToRun.length) return;
+
     const myReqId = ++feasibilityReqIdRef.current;
-    setChecking(true); setCheckError("");
+    setCheckingAny(true);
+    // Reset errori ma mantieni vecchie risposte finché non arrivano le nuove
+    setCheckErrors(prev => prev.map((_, i) => idxToRun.includes(i) ? "" : prev[i]));
+
     try {
       const savedProfile = await getJSON<UserProfile | null>("user-profile", null);
       if (!savedProfile) throw new Error("Profilo mancante");
-      const res = await checkGoalFeasibility(savedProfile, goalText.trim());
-      // Scarta la risposta se nel frattempo è stato avviato un nuovo check
+
+      // Verifica tutti i goal in parallelo. Se uno fallisce, altri proseguono.
+      const results = await Promise.allSettled(
+        idxToRun.map(i => checkGoalFeasibility(savedProfile, goalTexts[i].trim()))
+      );
+
       if (myReqId !== feasibilityReqIdRef.current) return;
-      setPendingCheck(res);
+
+      setPendingChecks(prev => {
+        const next = [...prev];
+        results.forEach((r, k) => {
+          const i = idxToRun[k];
+          next[i] = r.status === "fulfilled" ? r.value : null;
+        });
+        return next;
+      });
+      setCheckErrors(prev => {
+        const next = [...prev];
+        results.forEach((r, k) => {
+          const i = idxToRun[k];
+          next[i] = r.status === "rejected" ? translateGeminiError((r as any).reason) : "";
+        });
+        return next;
+      });
     } catch (e: any) {
       if (myReqId !== feasibilityReqIdRef.current) return;
-      setCheckError(translateGeminiError(e));
+      const msg = translateGeminiError(e);
+      setCheckErrors(prev => prev.map((v, i) => idxToRun.includes(i) ? msg : v));
     }
-    if (myReqId === feasibilityReqIdRef.current) setChecking(false);
+    if (myReqId === feasibilityReqIdRef.current) setCheckingAny(false);
   };
 
-  const editGoal = (g: UserGoal) => {
-    setGoalText(g.originalDescription);
-    setGoals(gs => gs.filter(x => x.id !== g.id));
-    setPendingCheck(null);
-  };
-
-  const acceptProposal = () => {
-    if (!pendingCheck) return;
+  const acceptProposalAt = (idx: number) => {
+    const check = pendingChecks[idx];
+    if (!check) return;
     const goal: UserGoal = {
-      id: Date.now().toString(36),
-      originalDescription: goalText.trim(),
-      smartDescription: pendingCheck.counterProposal.description,
-      kpi: pendingCheck.counterProposal.kpi,
-      realistic: pendingCheck.realistic,
-      coachReasoning: pendingCheck.reasoning,
+      id: Date.now().toString(36) + "-" + idx,
+      originalDescription: goalTexts[idx].trim(),
+      smartDescription: check.counterProposal.description,
+      kpi: check.counterProposal.kpi,
+      realistic: check.realistic,
+      coachReasoning: check.reasoning,
       status: "active",
       createdAt: new Date().toISOString(),
     };
     setGoals(g => [...g, goal]);
-    setGoalText(""); setPendingCheck(null);
+    // Azzero solo quel slot
+    setGoalTexts(prev => prev.map((v, i) => i === idx ? "" : v));
+    setPendingChecks(prev => prev.map((v, i) => i === idx ? null : v));
+    setCheckErrors(prev => prev.map((v, i) => i === idx ? "" : v));
+    // Riduci goalsCount se quello era l'ultimo
+    const remaining = goalTexts.filter((t, i) => i !== idx && t.trim()).length;
+    const needed = Math.max(1, remaining);
+    if (needed < goalsCount) setGoalsCount(needed as 1 | 2 | 3);
+  };
+
+  const discardProposalAt = (idx: number) => {
+    setPendingChecks(prev => prev.map((v, i) => i === idx ? null : v));
+    setCheckErrors(prev => prev.map((v, i) => i === idx ? "" : v));
+  };
+
+  const editExistingGoal = (g: UserGoal) => {
+    // Rimette il goal già accettato come testo modificabile nel primo slot vuoto
+    const emptyIdx = goalTexts.findIndex(t => !t.trim());
+    const targetIdx = emptyIdx >= 0 ? emptyIdx : 0;
+    setGoalTexts(prev => prev.map((v, i) => i === targetIdx ? g.originalDescription : v));
+    setPendingChecks(prev => prev.map((v, i) => i === targetIdx ? null : v));
+    setGoals(gs => gs.filter(x => x.id !== g.id));
+    if (targetIdx + 1 > goalsCount) setGoalsCount((targetIdx + 1) as 1 | 2 | 3);
   };
 
   const saveGoalsAndNext = async () => {
@@ -555,11 +606,12 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             </div>
           )}
 
+          {/* Obiettivi già accettati */}
           {goals.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {goals.map((g, i) => (
-                <div key={g.id} style={cardStyle}>
-                  <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px", fontWeight: 600, letterSpacing: "0.08em" }}>OBIETTIVO {i + 1}</div>
+                <div key={g.id} style={{ ...cardStyle, borderLeft: "3px solid #22C55E" }}>
+                  <div style={{ fontSize: "11px", color: "#22C55E", marginBottom: "4px", fontWeight: 700, letterSpacing: "0.08em" }}>✓ OBIETTIVO {i + 1} CONFERMATO</div>
                   <div style={{ fontWeight: 700, fontSize: "15px", marginBottom: "6px" }}>{g.smartDescription}</div>
                   <div style={{ fontSize: "13px", color: "#94A3B8" }}>KPI: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#E2E8F0" }}>{g.kpi.metric} {g.kpi.target}</span> entro {g.kpi.deadline}</div>
                   {g.originalDescription !== g.smartDescription && (
@@ -568,7 +620,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
                     </div>
                   )}
                   <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
-                    <button onClick={() => editGoal(g)} style={{ ...ghostBtn, padding: "6px 12px", fontSize: "12px" }}>Modifica</button>
+                    <button onClick={() => editExistingGoal(g)} style={{ ...ghostBtn, padding: "6px 12px", fontSize: "12px" }}>Modifica</button>
                     <button onClick={() => setGoals(gs => gs.filter(x => x.id !== g.id))} style={{ ...ghostBtn, padding: "6px 12px", fontSize: "12px", borderColor: "#EF444444", color: "#EF4444" }}>Rimuovi</button>
                   </div>
                 </div>
@@ -576,50 +628,78 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             </div>
           )}
 
-          {goals.length >= 3 && !pendingCheck && (
+          {goals.length >= 3 && (
             <div style={{ ...cardStyle, background: "#1A1A2E", fontSize: "13px", color: "#94A3B8" }}>
               Hai raggiunto il massimo di 3 obiettivi. Rimuovine uno per aggiungerne un altro.
             </div>
           )}
 
-          {goals.length < 3 && !pendingCheck && (
+          {goals.length < 3 && (
             <div style={cardStyle}>
-              <label style={labelStyle}>Qual è il tuo prossimo obiettivo?</label>
-              <textarea style={{ ...inputStyle, minHeight: "70px", resize: "vertical" }} placeholder="es. correre 10 km sotto 55 minuti entro 8 settimane"
-                value={goalText} onChange={e => setGoalText(e.target.value)} />
-              <button onClick={runFeasibility} disabled={checking || !goalText.trim() || !hasApiKey()} style={{ ...primaryBtn, marginTop: "12px", opacity: (checking || !goalText.trim() || !hasApiKey()) ? 0.5 : 1 }}>
-                {checking ? <><span className="spinner" /> Verifico con il coach…</> : "Verifica con il coach"}
-              </button>
-              {checkError && (
-                <div style={{ marginTop: "10px", display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ color: "#EF4444", fontSize: "13px", flex: 1, minWidth: "200px" }}>{checkError}</span>
-                  <button onClick={runFeasibility} style={{ ...ghostBtn, fontSize: "12px", padding: "6px 12px" }}>Riprova</button>
-                </div>
-              )}
-            </div>
-          )}
+              <label style={labelStyle}>Quanti obiettivi vuoi aggiungere?</label>
+              <div style={{ display: "flex", gap: "8px", marginBottom: "14px" }}>
+                {([1, 2, 3] as const).filter(n => n <= 3 - goals.length).map(n => (
+                  <button key={n} onClick={() => setGoalsCount(n)} style={{
+                    flex: 1, padding: "10px",
+                    background: goalsCount === n ? "#E8553A22" : "#1A1A2E",
+                    border: goalsCount === n ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: "10px", color: goalsCount === n ? "#E8553A" : "#CBD5E1",
+                    fontWeight: 700, fontSize: "14px", cursor: "pointer",
+                  }}>{n}</button>
+                ))}
+              </div>
 
-          {pendingCheck && (
-            <div style={{ ...cardStyle, border: pendingCheck.realistic ? "1px solid #22C55E66" : "1px solid #F59E0B66" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", color: pendingCheck.realistic ? "#22C55E" : "#F59E0B", textTransform: "uppercase", marginBottom: "8px" }}>
-                {pendingCheck.realistic ? "✓ Obiettivo ben definito" : "Controproposta del coach"}
-              </div>
-              <div style={{ fontSize: "14px", color: "#E2E8F0", marginBottom: "12px", lineHeight: 1.5 }}>{pendingCheck.reasoning}</div>
-              <div style={{ background: "#1A1A2E", padding: "12px 14px", borderRadius: "10px", marginBottom: "12px" }}>
-                <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px", fontWeight: 600, letterSpacing: "0.08em" }}>
-                  {pendingCheck.realistic ? "VERSIONE FINALE" : "VERSIONE PROPOSTA"}
-                </div>
-                <div style={{ fontWeight: 700, fontSize: "15px" }}>{pendingCheck.counterProposal.description}</div>
-                <div style={{ fontSize: "13px", color: "#94A3B8", marginTop: "4px", fontFamily: "'JetBrains Mono', monospace" }}>
-                  {pendingCheck.counterProposal.kpi.metric}: {pendingCheck.counterProposal.kpi.target} — {pendingCheck.counterProposal.kpi.deadline}
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <button onClick={acceptProposal} style={{ ...primaryBtn, flex: 1, padding: "12px" }}>
-                  {pendingCheck.realistic ? "Conferma" : "Accetta"}
-                </button>
-                <button onClick={() => setPendingCheck(null)} style={{ ...ghostBtn, flex: 1 }}>Modifica</button>
-              </div>
+              {Array.from({ length: goalsCount }).map((_, i) => {
+                const check = pendingChecks[i];
+                const err = checkErrors[i];
+                return (
+                  <div key={i} style={{ marginBottom: "14px", paddingBottom: "14px", borderBottom: i < goalsCount - 1 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                    <div style={{ fontSize: "12px", color: "#94A3B8", marginBottom: "6px", fontWeight: 600 }}>Obiettivo {goals.length + i + 1}</div>
+                    <textarea
+                      style={{ ...inputStyle, minHeight: "60px", resize: "vertical" }}
+                      placeholder="es. correre 10 km sotto 55 minuti entro 8 settimane"
+                      value={goalTexts[i]}
+                      onChange={e => setGoalTexts(prev => prev.map((v, k) => k === i ? e.target.value : v))}
+                    />
+                    {err && (
+                      <div style={{ marginTop: "8px", fontSize: "12px", color: "#EF4444", padding: "8px", background: "#7F1D1D22", borderRadius: "8px" }}>{err}</div>
+                    )}
+                    {check && (
+                      <div style={{ marginTop: "10px", padding: "12px", borderRadius: "10px", background: "#1A1A2E", border: check.realistic ? "1px solid #22C55E66" : "1px solid #F59E0B66" }}>
+                        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", color: check.realistic ? "#22C55E" : "#F59E0B", textTransform: "uppercase", marginBottom: "6px" }}>
+                          {check.realistic ? "✓ Ben definito" : "Controproposta del coach"}
+                        </div>
+                        <div style={{ fontSize: "13px", color: "#CBD5E1", marginBottom: "10px", lineHeight: 1.5 }}>{check.reasoning}</div>
+                        <div style={{ background: "#0F172A", padding: "10px 12px", borderRadius: "8px", marginBottom: "10px" }}>
+                          <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "3px" }}>{check.counterProposal.description}</div>
+                          <div style={{ fontSize: "12px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>
+                            {check.counterProposal.kpi.metric}: {check.counterProposal.kpi.target} — {check.counterProposal.kpi.deadline}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <button onClick={() => acceptProposalAt(i)} style={{ ...primaryBtn, flex: 1, padding: "10px", fontSize: "13px" }}>
+                            {check.realistic ? "Conferma" : "Accetta"}
+                          </button>
+                          <button onClick={() => discardProposalAt(i)} style={{ ...ghostBtn, flex: 1, fontSize: "13px", padding: "8px 12px" }}>Modifica</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              <button
+                onClick={runFeasibilityBatch}
+                disabled={checkingAny || !hasApiKey() || !goalTexts.slice(0, goalsCount).some(t => t.trim())}
+                style={{
+                  ...primaryBtn, marginTop: "4px",
+                  opacity: (checkingAny || !hasApiKey() || !goalTexts.slice(0, goalsCount).some(t => t.trim())) ? 0.5 : 1,
+                }}
+              >
+                {checkingAny
+                  ? <><span className="spinner" /> Verifico con il coach…</>
+                  : goalsCount === 1 ? "Verifica con il coach" : `Verifica ${goalsCount} obiettivi`}
+              </button>
             </div>
           )}
 

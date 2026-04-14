@@ -14,13 +14,42 @@ const FALLBACK_CHAT_MODEL = "gemini-2.5-flash-lite";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-004";
 
 function parseJSONResponse<T>(text: string): T {
-  try { return JSON.parse(text) as T; } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      try { return JSON.parse(match[0]) as T; } catch { /* fallthrough */ }
-    }
-    throw new Error(`Risposta JSON non valida dal coach. Riprova.\n(raw: ${text.slice(0, 120)}...)`);
+  // 1) Parse diretto
+  try { return JSON.parse(text) as T; } catch { /* fallthrough */ }
+
+  // 2) Rimuovi wrapper markdown ```json ... ```
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced && fenced[1]) {
+    try { return JSON.parse(fenced[1].trim()) as T; } catch { /* fallthrough */ }
   }
+
+  // 3) Trova il PRIMO oggetto JSON bilanciando le graffe (non il regex greedy che
+  //    fallisce se il modello ritorna due JSON separati — es. quando l'utente
+  //    inserisce più obiettivi in un solo campo).
+  const start = text.indexOf("{");
+  if (start >= 0) {
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = start; i < text.length; i++) {
+      const c = text[i];
+      if (escape) { escape = false; continue; }
+      if (c === "\\") { escape = true; continue; }
+      if (c === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (c === "{") depth++;
+      else if (c === "}") {
+        depth--;
+        if (depth === 0) {
+          const candidate = text.slice(start, i + 1);
+          try { return JSON.parse(candidate) as T; } catch { /* fallthrough */ }
+          break;
+        }
+      }
+    }
+  }
+
+  throw new Error(`Risposta JSON non valida dal coach. Riprova.\n(raw: ${text.slice(0, 200)}...)`);
 }
 
 function createGeminiClient(config: LLMConfig): LLMClient {
