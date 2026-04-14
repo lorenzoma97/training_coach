@@ -78,6 +78,14 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         setModelId(cfg.modelId);
         if (hasApiKey()) setKeyOk(true);
       }
+      // Se l'utente sta riprendendo l'onboarding, precarico il profilo esistente
+      const existing = await getJSON<UserProfile | null>("user-profile", null);
+      if (existing) {
+        setProfile(existing);
+        setInjuriesRaw((existing.injuries || []).join(", "));
+        setEquipmentRaw((existing.equipment || []).join(", "));
+        setPainAreasRaw((existing.painTrackingAreas || []).join(", "));
+      }
     })();
   }, []);
 
@@ -130,6 +138,15 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     equipment: [], notes: "",
   });
 
+  // Input raw per liste comma-separated: NON parsiamo ad ogni keystroke
+  // (altrimenti lo spazio dopo una parola viene rimosso dal trim).
+  const [injuriesRaw, setInjuriesRaw] = useState("");
+  const [equipmentRaw, setEquipmentRaw] = useState("");
+  const [painAreasRaw, setPainAreasRaw] = useState("");
+
+  const parseCSV = (s: string): string[] =>
+    s.split(",").map(x => x.trim()).filter(Boolean);
+
   const [goalText, setGoalText] = useState("");
   const [goals, setGoals] = useState<UserGoal[]>([]);
   const [checking, setChecking] = useState(false);
@@ -156,12 +173,17 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
 
   const saveProfileAndNext = async () => {
     const now = new Date().toISOString();
+    // Forza parse dei raw input CSV anche se l'utente non ha mai fatto blur
+    const injuriesFinal = parseCSV(injuriesRaw || (profile.injuries || []).join(", "));
+    const equipmentFinal = parseCSV(equipmentRaw || (profile.equipment || []).join(", "));
+    const painAreasFinal = parseCSV(painAreasRaw || (profile.painTrackingAreas || []).join(", "));
+
     const full: UserProfile = {
       age: profile.age!, sex: profile.sex!, weight_kg: profile.weight_kg!, height_cm: profile.height_cm!,
-      experience: profile.experience!, injuries: profile.injuries || [], meds: profile.meds || "",
+      experience: profile.experience!, injuries: injuriesFinal, meds: profile.meds || "",
       weekly_availability: profile.weekly_availability || { days: 3, hoursPerSession: 1 },
-      equipment: profile.equipment || [], notes: profile.notes,
-      painTrackingAreas: profile.painTrackingAreas || [],
+      equipment: equipmentFinal, notes: profile.notes,
+      painTrackingAreas: painAreasFinal,
       createdAt: now, updatedAt: now,
     };
     await setJSON("user-profile", full);
@@ -435,8 +457,9 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
           <div style={cardStyle}>
             <label style={labelStyle}>Infortuni o condizioni (opzionale)</label>
             <input type="text" style={inputStyle} placeholder="es. tendinopatia polpaccio sx, ernia L5"
-              value={(profile.injuries || []).join(", ")}
-              onChange={e => setProfile(p => ({ ...p, injuries: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))} />
+              value={injuriesRaw}
+              onChange={e => setInjuriesRaw(e.target.value)}
+              onBlur={e => setProfile(p => ({ ...p, injuries: parseCSV(e.target.value) }))} />
             <div style={{ marginTop: "12px" }}>
               <label style={labelStyle}>Farmaci / integratori (opzionale)</label>
               <input type="text" style={inputStyle} value={profile.meds || ""} onChange={e => setProfile(p => ({ ...p, meds: e.target.value }))} />
@@ -444,8 +467,9 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             <div style={{ marginTop: "12px" }}>
               <label style={labelStyle}>Attrezzatura disponibile (opzionale)</label>
               <input type="text" style={inputStyle} placeholder="es. tapis roulant, manubri 10kg, palestra"
-                value={(profile.equipment || []).join(", ")}
-                onChange={e => setProfile(p => ({ ...p, equipment: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))} />
+                value={equipmentRaw}
+                onChange={e => setEquipmentRaw(e.target.value)}
+                onBlur={e => setProfile(p => ({ ...p, equipment: parseCSV(e.target.value) }))} />
             </div>
 
             {(profile.injuries || []).length > 0 && (
@@ -455,8 +479,9 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
                   Se ti alleni con un'area dolorante, il diario mostrerà una scala 0-4 pre/durante/post per ciascuna zona. Lasciare vuoto per nessun tracking.
                 </div>
                 <input type="text" style={inputStyle} placeholder="es. polpaccio sx, ginocchio, tendine achille"
-                  value={(profile.painTrackingAreas || []).join(", ")}
-                  onChange={e => setProfile(p => ({ ...p, painTrackingAreas: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))} />
+                  value={painAreasRaw}
+                  onChange={e => setPainAreasRaw(e.target.value)}
+                  onBlur={e => setProfile(p => ({ ...p, painTrackingAreas: parseCSV(e.target.value) }))} />
               </div>
             )}
           </div>

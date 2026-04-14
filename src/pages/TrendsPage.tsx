@@ -113,6 +113,59 @@ export default function TrendsPage() {
       }),
     }));
 
+    // === Metriche corsa ===
+    // Parser passo "6:30" o "6:30/km" → secondi per km
+    const parsePace = (p: any): number | null => {
+      if (!p) return null;
+      const s = String(p).trim();
+      const m = s.match(/^(\d+):(\d{1,2})/);
+      if (!m) return null;
+      const sec = Number(m[1]) * 60 + Number(m[2]);
+      return sec > 0 ? sec : null;
+    };
+
+    const runPaceSeries: SparklinePoint[] = [];
+    const runHRSeries: SparklinePoint[] = [];
+    const runCadenceSeries: SparklinePoint[] = [];
+    const runEfSeries: SparklinePoint[] = [];
+    const runDurationSeries: SparklinePoint[] = [];
+
+    for (const d of days) {
+      const runs = (d.data?.workouts || []).filter((w: any) => w.type === "corsa");
+      if (!runs.length) {
+        runPaceSeries.push({ date: d.date, value: null });
+        runHRSeries.push({ date: d.date, value: null });
+        runCadenceSeries.push({ date: d.date, value: null });
+        runEfSeries.push({ date: d.date, value: null });
+        runDurationSeries.push({ date: d.date, value: null });
+        continue;
+      }
+      const paces = runs.map((r: any) => parsePace(r.fields?.passo_medio)).filter((v: any): v is number => v != null);
+      const hrs = runs.map((r: any) => toNum(r.fields?.fc_media)).filter((v): v is number => v != null);
+      const cads = runs.map((r: any) => toNum(r.fields?.cadenza)).filter((v): v is number => v != null);
+      const durs = runs.map((r: any) => toNum(r.fields?.durata_totale) ?? toNum(r.fields?.durata)).filter((v): v is number => v != null);
+
+      const avgPace = paces.length ? paces.reduce((a: number, b: number) => a + b, 0) / paces.length : null;
+      const avgHR = hrs.length ? hrs.reduce((a, b) => a + b, 0) / hrs.length : null;
+      const avgCad = cads.length ? cads.reduce((a, b) => a + b, 0) / cads.length : null;
+      const totDur = durs.length ? durs.reduce((a, b) => a + b, 0) : null;
+
+      // Efficiency Factor (EF) = m/min / bpm = metri per battito. Più alto = più efficiente.
+      let ef: number | null = null;
+      if (avgPace != null && avgHR != null && avgHR > 0) {
+        const mPerMin = 60000 / avgPace;
+        ef = Math.round((mPerMin / avgHR) * 100) / 100;
+      }
+
+      runPaceSeries.push({ date: d.date, value: avgPace });
+      runHRSeries.push({ date: d.date, value: avgHR });
+      runCadenceSeries.push({ date: d.date, value: avgCad });
+      runEfSeries.push({ date: d.date, value: ef });
+      runDurationSeries.push({ date: d.date, value: totDur });
+    }
+
+    const hasRunningData = runPaceSeries.some(p => p.value != null) || runHRSeries.some(p => p.value != null);
+
     // Stats aggregate
     const sessions = days.reduce((n, d) => n + (d.data?.workouts?.length || 0), 0);
     const totalMin = dailyVolume.reduce((s, p) => s + (p.value || 0), 0);
@@ -131,6 +184,8 @@ export default function TrendsPage() {
       bodyFat, muscleMass, bodyWater,
       dailyVolume, dailyRpeAvg,
       painByArea,
+      runPaceSeries, runHRSeries, runCadenceSeries, runEfSeries, runDurationSeries,
+      hasRunningData,
       stats: { sessions, totalMin, checkins, periodDays: period, days: days.length },
       typeCount,
     };
@@ -209,6 +264,61 @@ export default function TrendsPage() {
             <SectionHeader title="Stanchezza generale" hint="1-10, più basso = meglio" color="#EF4444" />
             <Sparkline points={series.fatigue} width={width - 32} color="#EF4444" yMin={0} yMax={10} />
           </div>
+
+          {/* Corsa — metriche di progressione (solo se almeno una corsa nel periodo) */}
+          {series.hasRunningData && (
+            <>
+              <div style={{ ...cardStyle, background: "#1A1A2E", borderLeft: "3px solid #E8553A" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                  🏃 Corsa — progressione
+                </div>
+                <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "6px", lineHeight: 1.5 }}>
+                  Trend dei parametri chiave per vedere se stai migliorando. Confronta sessioni simili (es. fondo lento) per comparabilità.
+                </div>
+              </div>
+
+              <div style={cardStyle}>
+                <SectionHeader title="Passo medio" hint="min:sec/km — più basso = più veloce" color="#E8553A" />
+                <Sparkline
+                  points={series.runPaceSeries}
+                  width={width - 32}
+                  color="#E8553A"
+                  invertY
+                  formatValue={v => {
+                    const m = Math.floor(v / 60);
+                    const s = Math.round(v - m * 60);
+                    return `${m}:${s.toString().padStart(2, "0")}`;
+                  }}
+                />
+              </div>
+
+              <div style={cardStyle}>
+                <SectionHeader title="FC media corsa" hint="bpm — a parità di passo, più bassa = più fit" color="#DC2626" />
+                <Sparkline points={series.runHRSeries} width={width - 32} color="#DC2626" unit=" bpm" />
+              </div>
+
+              <div style={cardStyle}>
+                <SectionHeader title="Efficienza aerobica (EF)" hint="metri per battito — più alto = più economico" color="#22C55E" />
+                <Sparkline
+                  points={series.runEfSeries}
+                  width={width - 32}
+                  color="#22C55E"
+                  unit=" m/btt"
+                  showDots
+                />
+                <div style={{ fontSize: "10px", color: "#64748B", marginTop: "6px", lineHeight: 1.4 }}>
+                  EF = velocità (m/min) / FC media. A parità di intensità, salita dell'EF = economia di corsa migliorata.
+                </div>
+              </div>
+
+              {series.runCadenceSeries.some(p => p.value != null) && (
+                <div style={cardStyle}>
+                  <SectionHeader title="Cadenza" hint="passi/min — target ≥165 riduce carico articolare" color="#8B5CF6" />
+                  <Sparkline points={series.runCadenceSeries} width={width - 32} color="#8B5CF6" unit=" spm" />
+                </div>
+              )}
+            </>
+          )}
 
           {/* Body comp (solo se dati) */}
           {series.bodyFat.some(p => p.value != null) && (

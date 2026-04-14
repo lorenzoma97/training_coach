@@ -16,6 +16,8 @@ export default function Sparkline({
   yMax,
   showDots = false,
   unit,
+  formatValue,
+  invertY = false,
 }: {
   points: SparklinePoint[];
   width?: number;
@@ -25,6 +27,10 @@ export default function Sparkline({
   yMax?: number;
   showDots?: boolean;
   unit?: string;
+  /** Trasforma il valore per la label (es. secondi → "5:30"). Default: toFixed. */
+  formatValue?: (v: number) => string;
+  /** Se true, valori minori = più alti sul grafico (utile per passo: più basso = migliore). */
+  invertY?: boolean;
 }) {
   const { path, area, lastValue, dots, axisMin, axisMax } = useMemo(() => {
     const nums = points.map(p => p.value).filter((v): v is number => v != null && Number.isFinite(v));
@@ -38,7 +44,9 @@ export default function Sparkline({
 
     const toXY = (i: number, v: number) => {
       const x = pad + (i / Math.max(1, points.length - 1)) * w;
-      const y = pad + h - ((v - min) / range) * h;
+      // invertY: valori minori appaiono in alto (utile per passo)
+      const ratio = invertY ? (max - v) / range : (v - min) / range;
+      const y = pad + h - ratio * h;
       return { x, y };
     };
 
@@ -71,7 +79,9 @@ export default function Sparkline({
 
     const last = nums[nums.length - 1];
     return { path: pathStr, area: areaStr, lastValue: last, dots: ds, axisMin: min, axisMax: max };
-  }, [points, width, height, yMin, yMax]);
+  }, [points, width, height, yMin, yMax, invertY]);
+
+  const fmt = (v: number) => formatValue ? formatValue(v) : (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
   if (!path) {
     return (
@@ -97,20 +107,20 @@ export default function Sparkline({
           fontFamily: "'JetBrains Mono', monospace",
           background: "#0B0F1ACC", padding: "2px 6px", borderRadius: "4px",
         }}>
-          {Number.isInteger(lastValue) ? lastValue : lastValue.toFixed(1)}{unit || ""}
+          {fmt(lastValue)}{unit || ""}
         </div>
       )}
       <div style={{
         position: "absolute", bottom: 2, left: 6,
         fontSize: "10px", color: "#64748B", fontFamily: "'JetBrains Mono', monospace",
       }}>
-        {axisMin.toFixed(axisMin % 1 === 0 ? 0 : 1)}{unit || ""}
+        {invertY ? fmt(axisMax) : fmt(axisMin)}{unit || ""}
       </div>
       <div style={{
         position: "absolute", top: 2, left: 6,
         fontSize: "10px", color: "#64748B", fontFamily: "'JetBrains Mono', monospace",
       }}>
-        {axisMax.toFixed(axisMax % 1 === 0 ? 0 : 1)}{unit || ""}
+        {invertY ? fmt(axisMin) : fmt(axisMax)}{unit || ""}
       </div>
     </div>
   );
