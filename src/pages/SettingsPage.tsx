@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { pingApiKey } from "../lib/gemini";
+import { pingApiKey, getApiKey, setApiKey } from "../lib/gemini";
 import { storage } from "../lib/storage";
 
 export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding: () => void }) {
@@ -7,35 +7,44 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
-    setKey(localStorage.getItem("gemini-api-key") || "");
+    setKey(getApiKey());
   }, []);
 
   const save = () => {
-    localStorage.setItem("gemini-api-key", key.trim());
+    setApiKey(key);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
 
   const test = async () => {
     setTesting(true); setTestResult(null);
-    localStorage.setItem("gemini-api-key", key.trim());
+    setApiKey(key);
     const r = await pingApiKey();
     setTestResult(r.ok ? "✓ Chiave valida, connessione OK" : `✗ ${r.error || "Errore"}`);
     setTesting(false);
   };
 
   const resetAll = async () => {
+    if (resetting) return;
     if (!confirm("Cancellare profilo, obiettivi, piano, chat e feed coach? (Il diario resta.)")) return;
-    await storage.delete("user-profile");
-    await storage.delete("user-goals");
-    await storage.delete("training-plan");
-    await storage.delete("coach-feed");
-    await storage.delete("coach-chat-history");
-    await storage.delete("onboarding-completed");
-    await storage.delete("last-weekly-report-date");
-    onResetOnboarding();
+    setResetting(true);
+    try {
+      await Promise.all([
+        storage.delete("user-profile"),
+        storage.delete("user-goals"),
+        storage.delete("training-plan"),
+        storage.delete("coach-feed"),
+        storage.delete("coach-chat-history"),
+        storage.delete("onboarding-completed"),
+        storage.delete("last-weekly-report-date"),
+      ]);
+      onResetOnboarding();
+    } finally {
+      setResetting(false);
+    }
   };
 
   const wipeDiary = async () => {

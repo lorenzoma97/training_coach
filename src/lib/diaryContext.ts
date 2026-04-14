@@ -10,17 +10,11 @@ const WORKOUT_LABELS: Record<string, string> = {
 };
 
 async function loadDay(date: string): Promise<any | null> {
-  try {
-    const r = localStorage.getItem(`day:${date}`);
-    return r ? JSON.parse(r) : null;
-  } catch { return null; }
+  return getJSON<any | null>(`day:${date}`, null);
 }
 
 async function loadIndex(): Promise<string[]> {
-  try {
-    const r = localStorage.getItem("diary-index");
-    return r ? JSON.parse(r) : [];
-  } catch { return []; }
+  return getJSON<string[]>("diary-index", []);
 }
 
 /** Ultimi N giorni ordinati crescente, con workouts e daily. */

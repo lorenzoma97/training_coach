@@ -159,6 +159,7 @@ export default function DiaryApp() {
 
   const [saveMsg, setSaveMsg] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -173,43 +174,54 @@ export default function DiaryApp() {
   const flash = (msg: string) => { setSaveMsg(msg); setTimeout(() => setSaveMsg(""), 2200); };
 
   const handleSaveWorkout = async () => {
-    if (!addType) return;
+    if (saving || !addType) return;
     const wt = WORKOUT_TYPES.find(w => w.id === addType)!;
     const missing = wt.fields.filter((f: any) => f.required && !addFields[f.key]);
     if (missing.length) { flash("Compila i campi obbligatori"); return; }
 
-    const date = addDate;
-    let dayData = (await loadDay(date)) || { daily: null, workouts: [] };
-    const newWorkout = {
-      id: uid(), type: addType, fields: { ...addFields },
-      pain: { ...addPain }, rpe: addRpe, notes: addNotes,
-      createdAt: new Date().toISOString(),
-    };
-    dayData.workouts.push(newWorkout);
-    await saveDay(date, dayData);
+    setSaving(true);
+    try {
+      const date = addDate;
+      let dayData = (await loadDay(date)) || { daily: null, workouts: [] };
+      const newWorkout = {
+        id: uid(), type: addType, fields: { ...addFields },
+        pain: { ...addPain }, rpe: addRpe, notes: addNotes,
+        createdAt: new Date().toISOString(),
+      };
+      dayData.workouts.push(newWorkout);
+      await saveDay(date, dayData);
 
-    let idx = await loadIndex();
-    if (!idx.includes(date)) { idx.push(date); await saveIndex(idx); }
+      let idx = await loadIndex();
+      if (!idx.includes(date)) { idx.push(date); await saveIndex(idx); }
 
-    events.emit("workout:saved", { date, workout: newWorkout });
+      events.emit("workout:saved", { date, workout: newWorkout });
 
-    setAddType(null); setAddFields({}); setAddPain({ pre: null, during: null, post: null }); setAddRpe(null); setAddNotes("");
-    flash("Allenamento salvato ✓");
-    await refresh();
-    setScreen("home");
+      setAddType(null); setAddFields({}); setAddPain({ pre: null, during: null, post: null }); setAddRpe(null); setAddNotes("");
+      flash("Allenamento salvato ✓");
+      await refresh();
+      setScreen("home");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSaveDaily = async () => {
-    const date = dailyDate;
-    let dayData = (await loadDay(date)) || { daily: null, workouts: [] };
-    dayData.daily = { ...dailyFields, savedAt: new Date().toISOString() };
-    await saveDay(date, dayData);
-    let idx = await loadIndex();
-    if (!idx.includes(date)) { idx.push(date); await saveIndex(idx); }
-    events.emit("daily:saved", { date, daily: dayData.daily });
-    flash("Check giornaliero salvato ✓");
-    await refresh();
-    setScreen("home");
+    if (saving) return;
+    setSaving(true);
+    try {
+      const date = dailyDate;
+      let dayData = (await loadDay(date)) || { daily: null, workouts: [] };
+      dayData.daily = { ...dailyFields, savedAt: new Date().toISOString() };
+      await saveDay(date, dayData);
+      let idx = await loadIndex();
+      if (!idx.includes(date)) { idx.push(date); await saveIndex(idx); }
+      events.emit("daily:saved", { date, daily: dayData.daily });
+      flash("Check giornaliero salvato ✓");
+      await refresh();
+      setScreen("home");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDeleteWorkout = async (date: string, wid: string) => {
@@ -482,12 +494,13 @@ export default function DiaryApp() {
                   <textarea style={{ ...inputStyle, minHeight: "70px", resize: "vertical" }} value={addNotes} onChange={e => setAddNotes(e.target.value)} placeholder="Come ti sei sentito? Sensazioni muscolari, energia..." />
                 </div>
 
-                <button onClick={handleSaveWorkout} style={{
+                <button onClick={handleSaveWorkout} disabled={saving} style={{
                   width: "100%", padding: "16px", marginTop: "24px",
                   background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
                   border: "none", borderRadius: "14px", color: "#FFF",
-                  fontSize: "16px", fontWeight: 800, cursor: "pointer",
-                }}>Salva Sessione</button>
+                  fontSize: "16px", fontWeight: 800,
+                  cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1,
+                }}>{saving ? "Salvataggio…" : "Salva Sessione"}</button>
               </>
             )}
           </div>
@@ -547,12 +560,13 @@ export default function DiaryApp() {
               <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Farmaci / Integratori</label>
               <input type="text" value={dailyFields.meds} onChange={e => setDailyFields(p => ({ ...p, meds: e.target.value }))} placeholder="es. Antistaminico, Magnesio..." style={inputStyle} />
             </div>
-            <button onClick={handleSaveDaily} style={{
+            <button onClick={handleSaveDaily} disabled={saving} style={{
               width: "100%", padding: "16px", marginTop: "12px",
               background: "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
               border: "none", borderRadius: "14px", color: "#FFF",
-              fontSize: "16px", fontWeight: 800, cursor: "pointer",
-            }}>Salva Check Giornaliero</button>
+              fontSize: "16px", fontWeight: 800,
+              cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1,
+            }}>{saving ? "Salvataggio…" : "Salva Check Giornaliero"}</button>
           </div>
         </div>
       )}

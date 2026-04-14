@@ -57,7 +57,19 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [planError, setPlanError] = useState("");
 
-  const canProceedProfile = !!(profile.age && profile.weight_kg && profile.height_cm && profile.experience);
+  const parseNum = (v: string): number | undefined => {
+    const t = v.trim();
+    if (!t) return undefined;
+    const n = Number(t);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+
+  const canProceedProfile = !!(
+    profile.age && profile.age >= 10 &&
+    profile.weight_kg && profile.weight_kg >= 25 &&
+    profile.height_cm && profile.height_cm >= 100 &&
+    profile.experience
+  );
 
   const saveProfileAndNext = async () => {
     const now = new Date().toISOString();
@@ -153,7 +165,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
               <div>
                 <label style={labelStyle}>Età</label>
-                <input type="number" min={10} max={100} style={inputStyle} value={profile.age ?? ""} onChange={e => setProfile(p => ({ ...p, age: Number(e.target.value) || undefined }))} />
+                <input type="number" min={10} max={100} style={inputStyle} value={profile.age ?? ""} onChange={e => setProfile(p => ({ ...p, age: parseNum(e.target.value) }))} />
               </div>
               <div>
                 <label style={labelStyle}>Sesso</label>
@@ -165,11 +177,11 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
               </div>
               <div>
                 <label style={labelStyle}>Peso (kg)</label>
-                <input type="number" step="0.1" style={inputStyle} value={profile.weight_kg ?? ""} onChange={e => setProfile(p => ({ ...p, weight_kg: Number(e.target.value) || undefined }))} />
+                <input type="number" step="0.1" style={inputStyle} value={profile.weight_kg ?? ""} onChange={e => setProfile(p => ({ ...p, weight_kg: parseNum(e.target.value) }))} />
               </div>
               <div>
                 <label style={labelStyle}>Altezza (cm)</label>
-                <input type="number" style={inputStyle} value={profile.height_cm ?? ""} onChange={e => setProfile(p => ({ ...p, height_cm: Number(e.target.value) || undefined }))} />
+                <input type="number" style={inputStyle} value={profile.height_cm ?? ""} onChange={e => setProfile(p => ({ ...p, height_cm: parseNum(e.target.value) }))} />
               </div>
             </div>
           </div>
@@ -197,12 +209,12 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
               <div>
                 <div style={{ fontSize: "11px", color: "#64748B", marginBottom: "4px" }}>Giorni</div>
                 <input type="number" min={1} max={7} style={inputStyle} value={profile.weekly_availability?.days ?? 3}
-                  onChange={e => setProfile(p => ({ ...p, weekly_availability: { ...p.weekly_availability!, days: Number(e.target.value) || 3 } }))} />
+                  onChange={e => setProfile(p => ({ ...p, weekly_availability: { ...p.weekly_availability!, days: parseNum(e.target.value) ?? 3 } }))} />
               </div>
               <div>
                 <div style={{ fontSize: "11px", color: "#64748B", marginBottom: "4px" }}>Ore/sessione</div>
                 <input type="number" step="0.5" min={0.25} max={3} style={inputStyle} value={profile.weekly_availability?.hoursPerSession ?? 1}
-                  onChange={e => setProfile(p => ({ ...p, weekly_availability: { ...p.weekly_availability!, hoursPerSession: Number(e.target.value) || 1 } }))} />
+                  onChange={e => setProfile(p => ({ ...p, weekly_availability: { ...p.weekly_availability!, hoursPerSession: parseNum(e.target.value) ?? 1 } }))} />
               </div>
             </div>
           </div>

@@ -66,9 +66,18 @@ export function checkLocalRedFlags(input: {
   const reasons: string[] = [];
   let level: "none" | "warn" | "danger" = "none";
 
+  const toNum = (v: unknown): number | null => {
+    if (v === null || v === undefined || v === "") return null;
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
   const w = input.workout;
   if (w?.pain) {
-    const maxPain = Math.max(w.pain.pre ?? 0, w.pain.during ?? 0, w.pain.post ?? 0);
+    const pre = toNum(w.pain.pre) ?? 0;
+    const dur = toNum(w.pain.during) ?? 0;
+    const post = toNum(w.pain.post) ?? 0;
+    const maxPain = Math.max(pre, dur, post);
     if (maxPain >= SAFETY.painStopThreshold) {
       reasons.push(`Dolore polpaccio ${maxPain}/4 — STOP allenamento, consulta specialista.`);
       level = "danger";
@@ -79,21 +88,24 @@ export function checkLocalRedFlags(input: {
   }
 
   // RPE sproporzionato
-  if (w?.rpe && w.rpe > SAFETY.rpeEasySessionCap) {
+  const rpe = toNum(w?.rpe);
+  if (rpe !== null && rpe > SAFETY.rpeEasySessionCap) {
     const tipo = (w?.fields?.tipo || "").toLowerCase();
     if (tipo.includes("fondo lento") || tipo.includes("z2")) {
-      reasons.push(`RPE ${w.rpe}/10 su fondo lento: sforzo troppo alto.`);
+      reasons.push(`RPE ${rpe}/10 su fondo lento: sforzo troppo alto.`);
       if (level === "none") level = "warn";
     }
   }
 
   // FC alta su fondo lento
-  if (w?.fields?.fc_media && input.profile?.age) {
-    const fcMax = 208 - 0.7 * input.profile.age;
-    const pct = Number(w.fields.fc_media) / fcMax;
+  const fcMedia = toNum(w?.fields?.fc_media);
+  const age = toNum(input.profile?.age);
+  if (fcMedia !== null && age !== null && age > 0) {
+    const fcMax = 208 - 0.7 * age;
+    const pct = fcMedia / fcMax;
     const tipo = (w.fields.tipo || "").toLowerCase();
     if ((tipo.includes("fondo lento") || tipo.includes("z2")) && pct > SAFETY.z2UpperPct) {
-      reasons.push(`FC media ${w.fields.fc_media} bpm = ${Math.round(pct * 100)}% FCmax: troppo alta per Z2.`);
+      reasons.push(`FC media ${fcMedia} bpm = ${Math.round(pct * 100)}% FCmax: troppo alta per Z2.`);
       if (level === "none") level = "warn";
     }
   }
@@ -104,7 +116,11 @@ export function checkLocalRedFlags(input: {
     const sorted = [...input.last7Days].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
     for (const d of sorted) {
       const daily = d.daily;
-      if (daily && Number(daily.sleep) <= SAFETY.sleepFatigueRedFlag.sleepMaxH && Number(daily.fatigue) >= SAFETY.sleepFatigueRedFlag.fatigueMin) {
+      const sleep = toNum(daily?.sleep);
+      const fatigue = toNum(daily?.fatigue);
+      if (sleep !== null && fatigue !== null &&
+          sleep <= SAFETY.sleepFatigueRedFlag.sleepMaxH &&
+          fatigue >= SAFETY.sleepFatigueRedFlag.fatigueMin) {
         streak++;
       } else {
         streak = 0;

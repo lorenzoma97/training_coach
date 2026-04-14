@@ -4,11 +4,17 @@ import { getJSON } from "./storage";
 const MODEL_ID = "gemini-2.0-flash-exp";
 
 export function getApiKey(): string {
-  return localStorage.getItem("gemini-api-key") || "";
+  return (localStorage.getItem("gemini-api-key") || "").trim();
+}
+
+export function setApiKey(key: string): void {
+  localStorage.setItem("gemini-api-key", key.trim());
 }
 
 export function hasApiKey(): boolean {
-  return getApiKey().length > 20;
+  // Gemini keys start with "AIza" and are ~39 chars — accettiamo qualsiasi stringa plausibile
+  const k = getApiKey();
+  return k.length >= 20 && !k.includes(" ");
 }
 
 export class GeminiKeyMissingError extends Error {
@@ -17,7 +23,7 @@ export class GeminiKeyMissingError extends Error {
 
 function client() {
   const key = getApiKey();
-  if (!key) throw new GeminiKeyMissingError();
+  if (!hasApiKey()) throw new GeminiKeyMissingError();
   return new GoogleGenerativeAI(key);
 }
 
@@ -44,7 +50,16 @@ export async function generateJSON<T>(params: {
     : params.userPrompt;
   const result = await model.generateContent(fullPrompt);
   const text = result.response.text();
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch (e) {
+    // Gemini a volte avvolge il JSON in ```json ... ``` nonostante response_mime_type
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      try { return JSON.parse(match[0]) as T; } catch { /* fallthrough */ }
+    }
+    throw new Error(`Risposta JSON non valida dal coach. Riprova.\n(raw: ${text.slice(0, 120)}...)`);
+  }
 }
 
 /** One-shot: genera testo semplice (non streaming). */

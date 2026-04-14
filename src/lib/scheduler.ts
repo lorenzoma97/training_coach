@@ -8,7 +8,19 @@ import { events } from "./events";
 
 const LAST_REPORT_KEY = "last-weekly-report-date"; // YYYY-MM-DD
 
+// Lock in-memory per evitare run concorrenti nello stesso mount
+let weeklyRunInFlight: Promise<CoachFeedItem | null> | null = null;
+
 export async function maybeRunWeeklyReport(force = false): Promise<CoachFeedItem | null> {
+  if (weeklyRunInFlight) return weeklyRunInFlight;
+  weeklyRunInFlight = (async () => {
+    try { return await _runWeekly(force); }
+    finally { weeklyRunInFlight = null; }
+  })();
+  return weeklyRunInFlight;
+}
+
+async function _runWeekly(force: boolean): Promise<CoachFeedItem | null> {
   if (!hasApiKey()) return null;
   const today = new Date();
   const isMonday = today.getDay() === 1;
@@ -17,6 +29,9 @@ export async function maybeRunWeeklyReport(force = false): Promise<CoachFeedItem
   const last = (await getJSON<string | null>(LAST_REPORT_KEY, null)) || "";
   const todayStr = today.toISOString().split("T")[0];
   if (last === todayStr && !force) return null;
+
+  // Marca subito la data per evitare duplicati se più tab aperte
+  await setJSON(LAST_REPORT_KEY, todayStr);
 
   const profile = await getJSON<UserProfile | null>("user-profile", null);
   if (!profile) return null;
@@ -43,7 +58,6 @@ export async function maybeRunWeeklyReport(force = false): Promise<CoachFeedItem
   const feed = await getJSON<CoachFeedItem[]>("coach-feed", []);
   feed.unshift(item);
   await setJSON("coach-feed", feed.slice(0, 200));
-  await setJSON(LAST_REPORT_KEY, todayStr);
 
   // Rigenera piano prossime 2 settimane
   try {

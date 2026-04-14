@@ -74,12 +74,12 @@ Dai feedback strutturato. Se ci sono red flag locali, includili in redFlags e al
 
   // Garantisce che severity non sia mai sotto quella rilevata localmente
   const severityOrder = { info: 0, warn: 1, danger: 2 } as const;
-  const localSev = local.level === "none" ? "info" : local.level;
+  const localSev: SessionFeedback["severity"] = local.level === "none" ? "info" : local.level;
   if (severityOrder[localSev] > severityOrder[parsed.severity]) {
-    parsed.severity = localSev as SessionFeedback["severity"];
+    parsed.severity = localSev;
   }
-  if (local.reasons.length) {
-    parsed.redFlags = Array.from(new Set([...parsed.redFlags, ...local.reasons]));
-  }
+
+  const existingFlags = Array.isArray(parsed.redFlags) ? parsed.redFlags : [];
+  parsed.redFlags = Array.from(new Set([...existingFlags, ...local.reasons]));
   return parsed;
 }

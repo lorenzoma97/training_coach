@@ -30,9 +30,11 @@ export default function CoachFeedList() {
   }, []);
 
   const dismiss = async (id: string) => {
-    const updated = items.filter(x => x.id !== id);
-    setItems(updated);
+    // Re-leggi dallo storage per evitare sovrascrittura di item aggiunti nel frattempo
+    const current = await getJSON<CoachFeedItem[]>("coach-feed", []);
+    const updated = current.filter(x => x.id !== id);
     await setJSON("coach-feed", updated);
+    setItems(updated);
   };
 
   if (items.length === 0) {
