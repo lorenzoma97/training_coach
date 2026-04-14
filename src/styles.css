@@ -80,5 +80,6 @@ input[type=number] { -moz-appearance: textfield; }
 
 /* Utility: padding bottom per pagine principali (lascia spazio alla bottom nav + safe area iOS) */
 .page-pad-bottom {
-  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  /* Bottom nav è ~72px + safe-area. 96px + safe-area = margine 24px sotto ultimo contenuto. */
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
 }

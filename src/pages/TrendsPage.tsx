@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { getAllDays } from "../lib/diaryContext";
+import { events } from "../lib/events";
 import Sparkline, { type SparklinePoint } from "../components/Sparkline";
 
 type Period = 7 | 14 | 30 | 90;
@@ -23,16 +24,24 @@ export default function TrendsPage() {
   const [loading, setLoading] = useState(true);
   const [width, setWidth] = useState(Math.min(window.innerWidth - 56, 504));
 
+  const loadDays = async () => {
+    setLoading(true);
+    const days = await getAllDays();
+    setAllDays(days);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const days = await getAllDays();
-      setAllDays(days);
-      setLoading(false);
-    })();
+    loadDays();
     const onResize = () => setWidth(Math.min(window.innerWidth - 56, 504));
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const off = events.on("data:externalChange", ({ key }) => {
+      if (key.startsWith("day:") || key === "diary-index") loadDays();
+    });
+    return () => {
+      window.removeEventListener("resize", onResize);
+      off();
+    };
   }, []);
 
   // Series calcolate in base al periodo

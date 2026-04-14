@@ -36,6 +36,16 @@ export default function CoachPage() {
 
   useEffect(() => { refreshSetup(); }, [tab]);
 
+  // Cross-tab sync: ricarica setup status se cambia in altra tab
+  useEffect(() => {
+    const off = events.on("data:externalChange", ({ key }) => {
+      if (["user-profile", "user-goals", "training-plan", "llm-config", "gemini-api-key"].includes(key)) {
+        refreshSetup();
+      }
+    });
+    return off;
+  }, []);
+
   const missing: string[] = [];
   if (!setupStatus.hasKey) missing.push("chiave LLM");
   if (!setupStatus.hasProfile) missing.push("profilo");

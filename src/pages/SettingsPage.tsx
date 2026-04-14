@@ -6,6 +6,7 @@ import {
 import { storage, getJSON } from "../lib/storage";
 import { CHUNKS, clearEmbeddings, ensureEmbeddings, getCacheStatus, CACHE_KEY, type CacheStatus, type EmbeddingCache } from "../lib/knowledge";
 import { translateGeminiError } from "../lib/geminiErrors";
+import { events } from "../lib/events";
 import BackupSection from "../components/BackupSection";
 
 const PROVIDER_LABELS: Record<ProviderId, string> = {
@@ -69,16 +70,25 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
     }
   }
 
+  const loadConfig = async () => {
+    const cfg = await getLLMConfig();
+    if (cfg) {
+      setProvider(cfg.provider);
+      setApiKeyState(cfg.apiKey);
+      setModelId(cfg.modelId);
+    }
+    refreshKbStatus();
+  };
+
+  useEffect(() => { loadConfig(); }, []);
+
+  // Cross-tab sync
   useEffect(() => {
-    (async () => {
-      const cfg = await getLLMConfig();
-      if (cfg) {
-        setProvider(cfg.provider);
-        setApiKeyState(cfg.apiKey);
-        setModelId(cfg.modelId);
-      }
-      refreshKbStatus();
-    })();
+    const off = events.on("data:externalChange", ({ key }) => {
+      if (key === "llm-config" || key === "gemini-api-key") loadConfig();
+      else if (key === "rag-embeddings-v1") refreshKbStatus();
+    });
+    return off;
   }, []);
 
   // Se cambio provider, azzero modello e lista (andrà ri-scoperta).
@@ -199,7 +209,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   const help = PROVIDER_HELP[provider];
 
   return (
-    <div style={{ maxWidth: "560px", margin: "0 auto", padding: "24px 20px 120px", display: "flex", flexDirection: "column", gap: "16px" }}>
+    <div style={{ maxWidth: "560px", margin: "0 auto", padding: "24px 20px 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
       <div>
         <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Impostazioni</div>
         <h1 style={{ fontSize: "26px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.03em" }}>Configurazione</h1>

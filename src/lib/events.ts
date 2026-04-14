@@ -8,8 +8,11 @@ export type EventMap = {
   "goals:updated": { at: string };
   "profile:updated": { at: string };
   "diary:openAdd": { type?: string; date?: string };
-  "nav:goto": { tab: "diary" | "coach" | "settings" };
+  "nav:goto": { tab: "diary" | "trends" | "coach" | "settings" };
   "onboarding:resume": {};
+  /** Emesso quando localStorage è stato modificato in un'ALTRA tab/finestra.
+   *  Permette ai componenti di ri-leggere i dati e sincronizzarsi. */
+  "data:externalChange": { key: string };
 };
 
 const listeners = new Map<keyof EventMap, Set<Handler<any>>>();

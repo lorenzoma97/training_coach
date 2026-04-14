@@ -45,7 +45,10 @@ export default function App() {
     refreshUnread();
     const id = setInterval(refreshUnread, 4000);
     const off = events.on("plan:updated", refreshUnread);
-    return () => { clearInterval(id); off(); };
+    const offExt = events.on("data:externalChange", ({ key }) => {
+      if (key === "coach-feed" || key === "coach-feed-last-seen") refreshUnread();
+    });
+    return () => { clearInterval(id); off(); offExt(); };
   }, []);
 
   // Quando si apre il tab Coach, segna tutto come "letto"
@@ -74,6 +77,31 @@ export default function App() {
       setOnboarded(false);
     });
     return off;
+  }, []);
+
+  // Cross-tab sync: ascolta modifiche a localStorage da altre tab/finestre.
+  // Il browser emette `storage` event SOLO in tab diverse da quella che ha scritto.
+  // Inoltra al bus eventi interno per permettere ai componenti di reagire.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key) return; // e.key null = localStorage.clear() — ignoriamo (raro)
+      events.emit("data:externalChange", { key: e.key });
+
+      // Re-emette eventi di dominio per componenti che già li ascoltano
+      if (e.key === "training-plan") {
+        events.emit("plan:updated", { at: new Date().toISOString() });
+      } else if (e.key === "user-profile") {
+        events.emit("profile:updated", { at: new Date().toISOString() });
+      } else if (e.key === "user-goals") {
+        events.emit("goals:updated", { at: new Date().toISOString() });
+      } else if (e.key === "onboarding-completed") {
+        // Aggiorna stato onboarded (se altra tab completa/reset)
+        const done = e.newValue ? JSON.parse(e.newValue) : false;
+        setOnboarded(done === true);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   if (onboarded === null) {

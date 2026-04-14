@@ -204,6 +204,27 @@ export default function DiaryApp() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  // Cross-tab sync: se un'altra tab modifica diario o profilo, ricarica
+  useEffect(() => {
+    const off = events.on("data:externalChange", ({ key }) => {
+      if (key.startsWith("day:") || key === "diary-index") {
+        refresh();
+      } else if (key === "user-profile") {
+        (async () => {
+          try {
+            const r = await storage.get("user-profile");
+            if (r) {
+              const p = JSON.parse(r.value);
+              setPainAreas(Array.isArray(p?.painTrackingAreas) ? p.painTrackingAreas : []);
+              setProfileSex(p?.sex || null);
+            }
+          } catch { /* silent */ }
+        })();
+      }
+    });
+    return off;
+  }, [refresh]);
+
   // Deep link dal Piano coach: apre lo schermo "Aggiungi" con tipo preselezionato
   useEffect(() => {
     const off = events.on("diary:openAdd", ({ type, date }) => {
@@ -431,7 +452,7 @@ export default function DiaryApp() {
             </div>
           )}
 
-          <div style={{ padding: "8px 24px 120px" }}>
+          <div style={{ padding: "8px 24px 16px" }}>
             <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", color: "#64748B", textTransform: "uppercase", marginBottom: "12px" }}>
               Storico ({index.length} giorni)
             </div>
@@ -474,7 +495,7 @@ export default function DiaryApp() {
       )}
 
       {screen === "add" && (
-        <div style={{ maxWidth: "560px", margin: "0 auto", padding: "0 0 120px" }}>
+        <div style={{ maxWidth: "560px", margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", padding: "20px 24px", gap: "12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
             <button onClick={() => setScreen("home")} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "15px", cursor: "pointer", padding: "8px" }}>← Indietro</button>
             <div style={{ flex: 1, fontWeight: 700, fontSize: "17px" }}>{addType ? "Compila Sessione" : "Nuova Sessione"}</div>
@@ -583,7 +604,7 @@ export default function DiaryApp() {
       )}
 
       {screen === "daily" && (
-        <div style={{ maxWidth: "560px", margin: "0 auto", padding: "0 0 120px" }}>
+        <div style={{ maxWidth: "560px", margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", padding: "20px 24px", gap: "12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
             <button onClick={() => setScreen("home")} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "15px", cursor: "pointer", padding: "8px" }}>← Indietro</button>
             <div style={{ flex: 1, fontWeight: 700, fontSize: "17px" }}>📋 Check Giornaliero</div>
@@ -705,7 +726,7 @@ export default function DiaryApp() {
       )}
 
       {screen === "detail" && detailData && detailDate && (
-        <div style={{ maxWidth: "560px", margin: "0 auto", padding: "0 0 120px" }}>
+        <div style={{ maxWidth: "560px", margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", padding: "20px 24px", gap: "12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
             <button onClick={() => setScreen("home")} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "15px", cursor: "pointer", padding: "8px" }}>← Indietro</button>
             <div style={{ flex: 1, fontWeight: 700, fontSize: "17px", textTransform: "capitalize" }}>{fmtDateFull(detailDate)}</div>

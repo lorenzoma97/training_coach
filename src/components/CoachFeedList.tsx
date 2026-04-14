@@ -27,7 +27,10 @@ export default function CoachFeedList() {
     load();
     const id = setInterval(load, 3000);
     const off = events.on("plan:updated", load);
-    return () => { clearInterval(id); off(); };
+    const offExt = events.on("data:externalChange", ({ key }) => {
+      if (key === "coach-feed") load();
+    });
+    return () => { clearInterval(id); off(); offExt(); };
   }, []);
 
   const dismiss = async (id: string) => {
