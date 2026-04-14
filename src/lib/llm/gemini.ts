@@ -5,7 +5,9 @@ import type {
 } from "./types";
 import { LLMKeyMissingError } from "./types";
 
-const DEFAULT_CHAT_MODEL = "gemini-2.0-flash-exp";
+// Default: Gemini 2.5 Flash (GA stabile). Modelli più recenti (3.x flash/preview)
+// sono selezionabili via "Scopri modelli" se disponibili sulla chiave dell'utente.
+const DEFAULT_CHAT_MODEL = "gemini-2.5-flash";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-004";
 
 function parseJSONResponse<T>(text: string): T {

@@ -1,11 +1,26 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { setJSON, getJSON } from "../lib/storage";
 import type { UserProfile, UserGoal, TrainingPlan, FeasibilityCheck, Experience } from "../lib/types";
-import { hasApiKey, setApiKey, getApiKey, pingApiKey } from "../lib/gemini";
+import { hasApiKey } from "../lib/gemini";
+import { ADAPTERS, getLLMConfig, setLLMConfig, type LLMConfig, type LLMModel, type ProviderId } from "../lib/llm";
 import { checkGoalFeasibility } from "../lib/coach/feasibility";
 import { generateInitialPlan } from "../lib/coach/planGenerator";
 import { events } from "../lib/events";
 import { translateGeminiError } from "../lib/geminiErrors";
+
+const PROVIDER_LABELS: Record<ProviderId, string> = {
+  gemini: "Google Gemini (consigliato, gratis)",
+  openai: "OpenAI",
+  anthropic: "Anthropic Claude",
+};
+const PROVIDER_HELP: Record<ProviderId, { url: string; label: string }> = {
+  gemini: { url: "https://aistudio.google.com/apikey", label: "aistudio.google.com/apikey" },
+  openai: { url: "https://platform.openai.com/api-keys", label: "platform.openai.com/api-keys" },
+  anthropic: { url: "https://console.anthropic.com/settings/keys", label: "console.anthropic.com/settings/keys" },
+};
+const PROVIDER_PLACEHOLDER: Record<ProviderId, string> = {
+  gemini: "AIza...", openai: "sk-...", anthropic: "sk-ant-...",
+};
 
 type Step = "intro" | "apiKey" | "profile" | "goals" | "disclaimer" | "plan";
 const STEPS: Step[] = ["intro", "apiKey", "profile", "goals", "disclaimer", "plan"];
@@ -42,23 +57,69 @@ const EXP_OPTIONS: Array<{ v: Experience; label: string; hint: string }> = [
 export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState<Step>("intro");
 
-  // API key step
+  // Provider/modello/chiave (multi-LLM)
+  const [provider, setProvider] = useState<ProviderId>("gemini");
   const [apiKeyInput, setApiKeyInput] = useState("");
+  const [modelId, setModelId] = useState<string>(ADAPTERS.gemini.defaultChatModel);
+  const [models, setModels] = useState<LLMModel[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
   const [testingKey, setTestingKey] = useState(false);
   const [keyOk, setKeyOk] = useState<null | boolean>(null);
   const [keyError, setKeyError] = useState("");
 
+  const adapter = useMemo(() => ADAPTERS[provider], [provider]);
+
   useEffect(() => {
-    setApiKeyInput(getApiKey());
-    if (hasApiKey()) setKeyOk(true);
+    (async () => {
+      const cfg = await getLLMConfig();
+      if (cfg) {
+        setProvider(cfg.provider);
+        setApiKeyInput(cfg.apiKey);
+        setModelId(cfg.modelId);
+        if (hasApiKey()) setKeyOk(true);
+      }
+    })();
   }, []);
 
+  const onProviderChange = (p: ProviderId) => {
+    setProvider(p);
+    setModels([]);
+    setKeyOk(null);
+    setKeyError("");
+    setModelId(ADAPTERS[p].defaultChatModel);
+  };
+
+  const discoverModels = async () => {
+    if (!apiKeyInput.trim()) return;
+    setLoadingModels(true);
+    setKeyError("");
+    try {
+      const list = await adapter.listModels(apiKeyInput.trim());
+      setModels(list);
+      const def = list.find(m => m.id === adapter.defaultChatModel)
+        || list.find(m => m.id.includes(adapter.defaultChatModel))
+        || list[0];
+      if (def) setModelId(def.id);
+    } catch (e: any) {
+      setKeyError(translateGeminiError(e?.message || e));
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
   const saveAndTestKey = async () => {
+    if (!apiKeyInput.trim() || !modelId.trim()) return;
     setTestingKey(true); setKeyError(""); setKeyOk(null);
-    setApiKey(apiKeyInput);
-    const r = await pingApiKey();
-    if (r.ok) { setKeyOk(true); }
-    else { setKeyOk(false); setKeyError(translateGeminiError(r.error || "Errore")); }
+    const config: LLMConfig = { provider, apiKey: apiKeyInput.trim(), modelId: modelId.trim() };
+    try {
+      await setLLMConfig(config);
+      const r = await adapter.ping(config.apiKey, config.modelId);
+      if (r.ok) setKeyOk(true);
+      else { setKeyOk(false); setKeyError(translateGeminiError(r.error || "Errore")); }
+    } catch (e: any) {
+      setKeyOk(false);
+      setKeyError(translateGeminiError(e?.message || e));
+    }
     setTestingKey(false);
   };
 
@@ -100,6 +161,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       experience: profile.experience!, injuries: profile.injuries || [], meds: profile.meds || "",
       weekly_availability: profile.weekly_availability || { days: 3, hoursPerSession: 1 },
       equipment: profile.equipment || [], notes: profile.notes,
+      painTrackingAreas: profile.painTrackingAreas || [],
       createdAt: now, updatedAt: now,
     };
     await setJSON("user-profile", full);
@@ -222,48 +284,72 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       {step === "apiKey" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 1 · Coach</div>
-            <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Chiave LLM</h2>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 1 · Coach AI</div>
+            <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Scegli il tuo provider</h2>
             <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0, lineHeight: 1.5 }}>
-              Questa app supporta <b>Gemini</b>, <b>OpenAI</b> e <b>Anthropic</b>. Potrai cambiarli/configurarli dalle <b>Impostazioni</b> dopo l'onboarding.
-              Per un setup rapido, inserisci qui una chiave <b>Gemini</b> (gratuita, 30 secondi).
+              Il coach funziona con <b>Google Gemini</b> (consigliato, gratis), <b>OpenAI</b> o <b>Anthropic</b>. Puoi cambiare dopo in Impostazioni.
             </p>
           </div>
 
           <div style={cardStyle}>
-            <ol style={{ paddingLeft: "20px", margin: 0, lineHeight: 1.8, color: "#CBD5E1", fontSize: "14px" }}>
-              <li>Vai su <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>aistudio.google.com/apikey</a></li>
-              <li>Accedi con un account Google</li>
-              <li>Clicca <b>"Create API key"</b> e copiala</li>
-              <li>Incollala qui sotto</li>
-            </ol>
-            <div style={{ marginTop: "10px", fontSize: "12px", color: "#94A3B8", lineHeight: 1.5 }}>
-              Preferisci OpenAI o Anthropic? Prosegui con Gemini adesso, poi vai in <b>Impostazioni</b> per cambiare provider.
-            </div>
-          </div>
+            <label style={labelStyle}>Provider LLM</label>
+            <select style={{ ...inputStyle, fontFamily: "inherit" }} value={provider} onChange={e => onProviderChange(e.target.value as ProviderId)}>
+              {(Object.keys(PROVIDER_LABELS) as ProviderId[]).map(p => (
+                <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+              ))}
+            </select>
 
-          <div style={cardStyle}>
-            <label style={labelStyle}>
-              Chiave API <span style={{ color: "#E8553A" }} aria-label="obbligatoria">*</span>
-            </label>
-            <input type="password" style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }}
-              value={apiKeyInput} onChange={e => { setApiKeyInput(e.target.value); setKeyOk(null); }}
-              placeholder="AIza..." autoComplete="off" />
-            <button onClick={saveAndTestKey} disabled={testingKey || apiKeyInput.trim().length < 20} style={{
-              ...primaryBtn, marginTop: "12px",
-              opacity: (testingKey || apiKeyInput.trim().length < 20) ? 0.5 : 1,
-            }}>
-              {testingKey ? <><span className="spinner" /> Verifico…</> : keyOk ? "✓ Chiave valida — ri-testa" : "Salva e testa"}
+            <div style={{ marginTop: "12px", fontSize: "12px", color: "#94A3B8", lineHeight: 1.5 }}>
+              Ottieni la chiave gratis su <a href={PROVIDER_HELP[provider].url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{PROVIDER_HELP[provider].label}</a>
+            </div>
+
+            <div style={{ marginTop: "12px" }}>
+              <label style={labelStyle}>
+                Chiave API <span style={{ color: "#E8553A" }} aria-label="obbligatoria">*</span>
+              </label>
+              <input type="password" style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }}
+                value={apiKeyInput}
+                onChange={e => { setApiKeyInput(e.target.value); setKeyOk(null); setModels([]); }}
+                placeholder={PROVIDER_PLACEHOLDER[provider]} autoComplete="off" />
+            </div>
+
+            <button onClick={discoverModels}
+              disabled={loadingModels || apiKeyInput.trim().length < 20}
+              style={{
+                ...primaryBtn, marginTop: "12px", padding: "12px",
+                background: "#16213E", border: "1px solid rgba(255,255,255,0.12)",
+                opacity: (loadingModels || apiKeyInput.trim().length < 20) ? 0.5 : 1,
+              }}>
+              {loadingModels ? <><span className="spinner" /> Scopro modelli…</> : "🔎 Scopri modelli disponibili"}
             </button>
+
+            {models.length > 0 && (
+              <div style={{ marginTop: "12px" }}>
+                <label style={labelStyle}>Modello</label>
+                <select style={{ ...inputStyle, fontFamily: "inherit" }} value={modelId} onChange={e => { setModelId(e.target.value); setKeyOk(null); }}>
+                  {models.map(m => (
+                    <option key={m.id} value={m.id}>{m.displayName ? `${m.displayName} (${m.id})` : m.id}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <button onClick={saveAndTestKey}
+              disabled={testingKey || !apiKeyInput.trim() || !modelId.trim()}
+              style={{
+                ...primaryBtn, marginTop: "12px",
+                opacity: (testingKey || !apiKeyInput.trim() || !modelId.trim()) ? 0.5 : 1,
+              }}>
+              {testingKey ? <><span className="spinner" /> Verifico…</> : keyOk ? "✓ Valida — ri-testa" : "Salva e testa"}
+            </button>
+
             {keyOk === true && (
               <div style={{ marginTop: "10px", fontSize: "13px", color: "#22C55E", fontWeight: 600 }}>
-                ✓ Connessione a Gemini OK. Puoi proseguire.
+                ✓ Connessione OK con {PROVIDER_LABELS[provider]} · {modelId}
               </div>
             )}
             {keyOk === false && (
-              <div style={{ marginTop: "10px", fontSize: "13px", color: "#EF4444" }}>
-                {keyError}
-              </div>
+              <div style={{ marginTop: "10px", fontSize: "13px", color: "#EF4444" }}>{keyError}</div>
             )}
           </div>
 
@@ -361,6 +447,18 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
                 value={(profile.equipment || []).join(", ")}
                 onChange={e => setProfile(p => ({ ...p, equipment: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))} />
             </div>
+
+            {(profile.injuries || []).length > 0 && (
+              <div style={{ marginTop: "12px" }}>
+                <label style={labelStyle}>Zone di dolore da monitorare nel diario (opzionale)</label>
+                <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "6px" }}>
+                  Se ti alleni con un'area dolorante, il diario mostrerà una scala 0-4 pre/durante/post per ciascuna zona. Lasciare vuoto per nessun tracking.
+                </div>
+                <input type="text" style={inputStyle} placeholder="es. polpaccio sx, ginocchio, tendine achille"
+                  value={(profile.painTrackingAreas || []).join(", ")}
+                  onChange={e => setProfile(p => ({ ...p, painTrackingAreas: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))} />
+              </div>
+            )}
           </div>
 
           <button disabled={!canProceedProfile} onClick={saveProfileAndNext} style={{ ...primaryBtn, opacity: canProceedProfile ? 1 : 0.5, cursor: canProceedProfile ? "pointer" : "not-allowed" }}>

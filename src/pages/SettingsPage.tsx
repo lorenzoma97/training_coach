@@ -42,6 +42,8 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   const [kbBusy, setKbBusy] = useState(false);
   const [kbProgress, setKbProgress] = useState<{ done: number; total: number } | null>(null);
   const [kbError, setKbError] = useState<string | null>(null);
+  const [kbFailures, setKbFailures] = useState<number>(0);
+  const [kbLastFailureMsg, setKbLastFailureMsg] = useState<string | null>(null);
 
   const adapter = useMemo(() => ADAPTERS[provider], [provider]);
   const providerSupportsEmbeddings = adapter.supportsEmbeddings;
@@ -53,9 +55,13 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
     if (cache) {
       setKbCreatedAt(cache.createdAt);
       setKbCount(Object.keys(cache.vectors || {}).length);
+      setKbFailures(cache.lastFailures ?? 0);
+      setKbLastFailureMsg(cache.lastFailureMessage ?? null);
     } else {
       setKbCreatedAt(null);
       setKbCount(0);
+      setKbFailures(0);
+      setKbLastFailureMsg(null);
     }
   }
 
@@ -330,13 +336,21 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
                 {kbStatus === "no-key" && "Chiave API richiesta"}
                 {kbStatus === "unsupported" && "Provider non supportato"}
               </span>
-              {kbStatus === "ready" && (
-                <span style={{ color: "#64748B", fontSize: "12px" }}>
+              {(kbStatus === "ready" || kbStatus === "stale") && kbCount > 0 && (
+                <span style={{ color: "#94A3B8", fontSize: "12px" }}>
                   {kbCount}/{CHUNKS.length} chunks
                   {kbCreatedAt && ` · ${new Date(kbCreatedAt).toLocaleDateString("it-IT")}`}
                 </span>
               )}
             </div>
+
+            {kbFailures > 0 && !kbBusy && (
+              <div style={{ color: "#F59E0B", fontSize: "12px", marginBottom: "8px", padding: "6px 10px", background: "#F59E0B15", borderRadius: "6px" }}>
+                ⚠ Ultima generazione: {kbFailures} chunk falliti su {CHUNKS.length}.
+                {kbLastFailureMsg && <div style={{ marginTop: "4px", fontSize: "11px", fontStyle: "italic", color: "#FCD34D" }}>Causa: {kbLastFailureMsg.slice(0, 160)}</div>}
+                <div style={{ fontSize: "11px", marginTop: "4px" }}>Rigenera per completare i mancanti.</div>
+              </div>
+            )}
 
             {kbBusy && kbProgress && (
               <div style={{ marginBottom: "10px" }}>

@@ -3,8 +3,11 @@ import TrainingPlanView from "../components/TrainingPlanView";
 import CoachFeedList from "../components/CoachFeedList";
 import CoachChat from "../components/CoachChat";
 import { hasApiKey } from "../lib/gemini";
-import { getJSON } from "../lib/storage";
+import { getJSON, setJSON } from "../lib/storage";
 import type { UserProfile, UserGoal, TrainingPlan } from "../lib/types";
+import { events } from "../lib/events";
+import { generateInitialPlan } from "../lib/coach/planGenerator";
+import { translateGeminiError } from "../lib/geminiErrors";
 
 type Tab = "plan" | "feed" | "chat";
 
@@ -13,27 +16,67 @@ export default function CoachPage() {
   const [setupStatus, setSetupStatus] = useState<{
     hasKey: boolean; hasProfile: boolean; hasGoals: boolean; hasPlan: boolean;
   }>({ hasKey: false, hasProfile: false, hasGoals: false, hasPlan: false });
+  const [generatingPlan, setGeneratingPlan] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const profile = await getJSON<UserProfile | null>("user-profile", null);
-      const goals = await getJSON<UserGoal[]>("user-goals", []);
-      const plan = await getJSON<TrainingPlan | null>("training-plan", null);
-      setSetupStatus({
-        hasKey: hasApiKey(),
-        hasProfile: !!profile,
-        hasGoals: goals.length > 0,
-        hasPlan: !!plan,
-      });
-    })();
-  }, [tab]);
+  const refreshSetup = async () => {
+    const profile = await getJSON<UserProfile | null>("user-profile", null);
+    const goals = await getJSON<UserGoal[]>("user-goals", []);
+    const plan = await getJSON<TrainingPlan | null>("training-plan", null);
+    setSetupStatus({
+      hasKey: hasApiKey(),
+      hasProfile: !!profile,
+      hasGoals: goals.length > 0,
+      hasPlan: !!plan,
+    });
+  };
+
+  useEffect(() => { refreshSetup(); }, [tab]);
 
   const missing: string[] = [];
-  if (!setupStatus.hasKey) missing.push("chiave Gemini");
+  if (!setupStatus.hasKey) missing.push("chiave LLM");
   if (!setupStatus.hasProfile) missing.push("profilo");
   if (!setupStatus.hasGoals) missing.push("obiettivi");
   if (!setupStatus.hasPlan) missing.push("piano");
   const setupIncomplete = missing.length > 0;
+
+  const resumeOnboarding = () => {
+    if (confirm("Riprendi l'onboarding per compilare i dati mancanti. I dati già salvati resteranno. Procedere?")) {
+      events.emit("onboarding:resume", {});
+    }
+  };
+
+  const goToSettings = () => events.emit("nav:goto", { tab: "settings" });
+
+  const handleGeneratePlan = async () => {
+    if (generatingPlan) return;
+    setGeneratingPlan(true);
+    setPlanError(null);
+    try {
+      const profile = await getJSON<UserProfile | null>("user-profile", null);
+      const goals = await getJSON<UserGoal[]>("user-goals", []);
+      if (!profile) { setPlanError("Compila prima il profilo."); return; }
+      const plan = await generateInitialPlan(profile, goals);
+      await setJSON("training-plan", plan);
+      events.emit("plan:updated", { at: new Date().toISOString() });
+      await refreshSetup();
+    } catch (e) {
+      setPlanError(translateGeminiError(e));
+    }
+    setGeneratingPlan(false);
+  };
+
+  const btnPrimary: React.CSSProperties = {
+    padding: "9px 14px",
+    background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+    border: "none", borderRadius: "8px", color: "#FFF",
+    fontWeight: 700, fontSize: "13px", cursor: "pointer",
+  };
+  const btnGhost: React.CSSProperties = {
+    padding: "9px 14px", background: "#1A1A2E",
+    border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px",
+    color: "#E2E8F0", fontWeight: 600, fontSize: "13px", cursor: "pointer",
+  };
 
   return (
     <div style={{ maxWidth: "560px", margin: "0 auto", padding: "24px 20px" }}>
@@ -50,9 +93,30 @@ export default function CoachPage() {
           <div style={{ fontSize: "13px", fontWeight: 700, color: "#F59E0B", marginBottom: "6px" }}>
             ⚠ Setup incompleto
           </div>
-          <div style={{ fontSize: "13px", color: "#FCD34D", lineHeight: 1.5 }}>
+          <div style={{ fontSize: "13px", color: "#FCD34D", lineHeight: 1.5, marginBottom: "12px" }}>
             Mancano: <b>{missing.join(", ")}</b>. Completa la configurazione per ricevere feedback personalizzati.
           </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            {!setupStatus.hasKey && (
+              <button onClick={goToSettings} style={btnPrimary}>⚙ Configura provider LLM</button>
+            )}
+            {(!setupStatus.hasProfile || !setupStatus.hasGoals) && setupStatus.hasKey && (
+              <button onClick={resumeOnboarding} style={btnPrimary}>
+                📝 {!setupStatus.hasProfile ? "Compila profilo" : "Aggiungi obiettivi"}
+              </button>
+            )}
+            {setupStatus.hasKey && setupStatus.hasProfile && !setupStatus.hasPlan && (
+              <button onClick={handleGeneratePlan} disabled={generatingPlan} style={{ ...btnPrimary, opacity: generatingPlan ? 0.5 : 1 }}>
+                {generatingPlan ? "⏳ Generazione…" : "🎯 Genera piano ora"}
+              </button>
+            )}
+            {setupStatus.hasProfile && (
+              <button onClick={resumeOnboarding} style={btnGhost}>🔁 Riprendi wizard</button>
+            )}
+          </div>
+          {planError && (
+            <div style={{ marginTop: "10px", color: "#EF4444", fontSize: "12px" }}>{planError}</div>
+          )}
         </div>
       )}
 

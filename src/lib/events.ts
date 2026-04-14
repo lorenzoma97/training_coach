@@ -8,6 +8,8 @@ export type EventMap = {
   "goals:updated": { at: string };
   "profile:updated": { at: string };
   "diary:openAdd": { type?: string; date?: string };
+  "nav:goto": { tab: "diary" | "coach" | "settings" };
+  "onboarding:resume": {};
 };
 
 const listeners = new Map<keyof EventMap, Set<Handler<any>>>();

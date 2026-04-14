@@ -7,6 +7,7 @@ import { taperingBlock } from "./promptModules/taperingRules";
 import { chronicConditionBlock } from "./promptModules/chronicConditionRules";
 import { recoveryBlock } from "./promptModules/recoveryModalities";
 import { cadenceAdviceBlock } from "./promptModules/biomechanicsRunning";
+import { bodyCompositionBlock, type BodyCompSummary } from "./promptModules/bodyComposition";
 
 export type WorkoutTypeId = "corsa" | "forza_gambe" | "forza_upper" | "sport" | "mobilita";
 
@@ -23,6 +24,10 @@ export interface BuildContext {
   lastSessionIntensity?: "light" | "moderate" | "hard";
   currentCadence?: number | null;
   detectedConditions?: string[];
+  /** Dati BIA più recenti dal daily check (se utente traccia). */
+  bodyComp?: BodyCompSummary;
+  /** Delta body-comp ultimi 7gg (valore attuale - 7gg fa). */
+  bodyCompTrend7d?: BodyCompSummary;
 }
 
 export function extractConditionsFromProfile(profile: UserProfile | null): string[] {
@@ -65,6 +70,9 @@ export function buildConditionalPrompt(ctx: BuildContext): string {
   }
   if (ctx.workoutType === "corsa" && ctx.currentCadence != null && ctx.currentCadence > 0 && ctx.currentCadence < 165) {
     blocks.push(cadenceAdviceBlock(ctx.currentCadence));
+  }
+  if (ctx.bodyComp && (ctx.bodyComp.bodyFat != null || ctx.bodyComp.muscleMass != null || ctx.bodyComp.bodyWater != null)) {
+    blocks.push(bodyCompositionBlock(ctx.bodyComp, ctx.bodyCompTrend7d));
   }
 
   return blocks.join("\n\n");

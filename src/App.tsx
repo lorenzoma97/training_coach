@@ -60,6 +60,21 @@ export default function App() {
     return off;
   }, []);
 
+  // Navigazione globale tra tab (es. da CoachPage "vai a Impostazioni")
+  useEffect(() => {
+    const off = events.on("nav:goto", ({ tab }) => setTab(tab));
+    return off;
+  }, []);
+
+  // Richiesta di riprendere onboarding (da CoachPage se setup incompleto)
+  useEffect(() => {
+    const off = events.on("onboarding:resume", async () => {
+      await setJSON("onboarding-completed", false);
+      setOnboarded(false);
+    });
+    return off;
+  }, []);
+
   if (onboarded === null) {
     return <div style={{ padding: "40px", textAlign: "center", color: "#94A3B8" }}>Caricamento…</div>;
   }

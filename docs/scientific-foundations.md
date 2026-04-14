@@ -469,6 +469,43 @@ Link: [ACSM fluid replacement (PDF)](https://www.khsaa.org/sportsmedicine/heat/e
 
 ---
 
+## 25. Composizione corporea — massa grassa, massa muscolare, acqua corporea
+
+**Cosa fa il coach**: il check giornaliero raccoglie campi opzionali `bodyFat` (%), `muscleMass` (kg o %), `bodyWater` (% TBW) tipicamente da bilance BIA domestiche. Il coach può contestualizzare prestazioni e trend.
+
+**Evidenza**:
+
+| Paper | Anno | Rivista | Punto chiave |
+|---|---|---|---|
+| **Silva AM. et al., *Body composition in a large cohort of Olympic athletes with different training loads: reference values for fat mass and fat-free mass domains*** | 2023 | Acta Diabetologica | **Riferimento normativo.** 898 atleti olimpici italiani. Range FM/FFM per sport (endurance < forza < power). Fornisce benchmark per valutare se l'atleta è in range sport-specifico. |
+| **Ackland TR. et al. (IOC Medical Commission), *Current Status of Body Composition Assessment in Sport*** | 2012 | Sports Medicine | **Consensus IOC.** DXA è gold standard, BIA è accettabile ma con limiti. Errore tipico su BF% da BIA: ±3-8% individuale, ±1-2% group-level. |
+| Campa F. et al., *Assessment of Body Composition in Athletes: A Narrative Review of Available Methods with Special Reference to Quantitative and Qualitative Bioimpedance Analysis* | 2021 | Nutrients | Review BIA in atleti. Raccomandazioni: misurare a riposo, digiuno 8h, post-minzione, no esercizio nelle 4h precedenti. Trend > singolo valore. |
+| Matias CN. et al., *Estimation of total body water and extracellular water with bioimpedance in athletes: need for athlete-specific prediction models* | 2015 | Clin Nutr | BIA usata senza equazioni sport-specifiche sottostima TBW negli atleti di ~5-10%. Bias non trascurabile. |
+| Kasper AM. et al., *Come back skinfolds, all is forgiven: A narrative review of the efficacy of common body composition methods* | 2021 | Nutrients | Critica metodologica: BF% da BIA domestica è proxy con alta varianza; **utile per trend personale, non per confronto assoluto**. |
+| Mourtakos S. et al., *Body composition and race time in mountain bikers* | 2025 | Sci Rep | Correlazioni rilevanti: tempo gara correla positivamente con BF% (più grasso = più lento) e negativamente con massa muscolare e TBW. |
+| Lukaski HC., *Vector bioelectrical impedance analysis (BIVA): current applications in health and sport* | 2015 | Sports Med | BIVA (vettoriale) più robusto di BIA-scalare per tracking idratazione individuale. |
+
+**Cosa può dire il coach**:
+- **Massa grassa (BF%)**: correla con costo energetico (~2-3% VO2/kg) in sport endurance. Range salutari: donne 18-28%, uomini 10-20%. Range atleti endurance: donne 14-20%, uomini 6-13%. **Mai spingere al ribasso** senza supervisione (rischio RED-S — Mountjoy IOC 2023).
+- **Massa muscolare**: correla positivamente con forza/potenza. Aumenti di 1-2 kg in 12 settimane sono realistici per intermedi (Schoenfeld 2017).
+- **Acqua corporea (TBW)**: ~50-65% del peso corporeo normale. Riduzioni >2% peso via disidratazione compromettono performance aerobica e forza (Sawka ACSM 2007).
+
+**Cosa NON deve fare il coach**:
+- Non prescrivere target BF% specifici (dominio nutrizionista sportivo)
+- Non raccomandare deficit calorici basati su BF% da BIA domestica (errore troppo alto)
+- Non leggere singoli valori come indicatori: commenta solo trend significativi (>1.5% in 2 settimane)
+
+**Red flag incorporati**:
+- BF% in calo >1.5% in 2 settimane in atleta con storia RED-S → possibile LEA ricorrente (linkato a sez 15)
+- Massa muscolare in calo + RPE in salita → possibile overtraining catabolico (Meeusen 2013, sez 6)
+- TBW in calo >3% con attività costante → disidratazione cronica o perdita massa magra
+
+**Implementazione**: modulo [`bodyComposition.ts`](../src/lib/coach/promptModules/bodyComposition.ts) attivato automaticamente quando il daily check include uno qualsiasi dei 3 campi. Il prompt riceve valore attuale + delta ultimi 7 giorni.
+
+Link: [Silva 2023 Olympic athletes (Springer)](https://link.springer.com/article/10.1007/s00592-023-02203-y) · [Ackland 2012 IOC (PubMed)](https://pubmed.ncbi.nlm.nih.gov/22571238/) · [Campa 2021 BIA athletes (PMC)](https://pmc.ncbi.nlm.nih.gov/articles/PMC8150618/) · [Kasper 2021 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/33669687/)
+
+---
+
 ## Mapping rapido: regola del coach → paper
 
 | Regola hardcoded in `SAFETY` | Paper di riferimento |
@@ -493,6 +530,8 @@ Link: [ACSM fluid replacement (PDF)](https://www.khsaa.org/sportsmedicine/heat/e
 | **Tapering -50% volume 7-14gg** | Bosquet 2007, Spilsbury 2023 |
 | **FC±10% tolerance da wearable** | Mühlen INTERLIVE 2021 |
 | **Heat stress modifier** | ACSM Sawka 2007, Périard 2015 |
+| **Body composition tracking** | Silva 2023, Ackland IOC 2012, Campa 2021, Kasper 2021 |
+| **Pain areas configurabili** (non hardcoded polpaccio) | Silbernagel 2007 adattato a zone multiple |
 
 ---
 

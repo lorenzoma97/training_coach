@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
-import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt } from "../diaryContext";
+import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt, extractBodyComp } from "../diaryContext";
 import type { WeeklyReport } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 
@@ -50,8 +50,11 @@ Produci il report settimanale. Calcola tu i volumi sommando i minuti per tipo di
 Se il piano non copre una disciplina, planned_min = 0.
 `.trim();
 
+  const bc = extractBodyComp(ctx.recentDaysRaw);
   const bCtx: BuildContext = {
     profile: ctx.profile,
+    bodyComp: bc.latest,
+    bodyCompTrend7d: bc.trend7d,
     hasRunningGoal: ctx.goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
     hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
     detectedConditions: extractConditionsFromProfile(ctx.profile),

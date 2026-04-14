@@ -150,12 +150,30 @@ export default function DiaryApp() {
   const [addType, setAddType] = useState<string | null>(null);
   const [addDate, setAddDate] = useState(today());
   const [addFields, setAddFields] = useState<Record<string, any>>({});
-  const [addPain, setAddPain] = useState<{ pre: number | null; during: number | null; post: number | null }>({ pre: null, during: null, post: null });
+  // Mappa per zona: { [areaName]: { pre, during, post } }
+  const [addPainByArea, setAddPainByArea] = useState<Record<string, { pre: number | null; during: number | null; post: number | null }>>({});
   const [addRpe, setAddRpe] = useState<number | null>(null);
   const [addNotes, setAddNotes] = useState("");
 
+  // Zone di dolore da tracciare, lette dal profilo utente. Se vuote → pain picker nascosto.
+  const [painAreas, setPainAreas] = useState<string[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await storage.get("user-profile");
+        if (r) {
+          const p = JSON.parse(r.value);
+          setPainAreas(Array.isArray(p?.painTrackingAreas) ? p.painTrackingAreas : []);
+        }
+      } catch { /* silent */ }
+    })();
+  }, []);
+
   const [dailyDate, setDailyDate] = useState(today());
-  const [dailyFields, setDailyFields] = useState({ weight: "", sleep: "", sleepQ: "", fatigue: null as number | null, meds: "" });
+  const [dailyFields, setDailyFields] = useState({
+    weight: "", sleep: "", sleepQ: "", fatigue: null as number | null, meds: "",
+    bodyFat: "", muscleMass: "", bodyWater: "",
+  });
 
   const [saveMsg, setSaveMsg] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -177,7 +195,7 @@ export default function DiaryApp() {
       setAddDate(date || today());
       setAddType(type || null);
       setAddFields({});
-      setAddPain({ pre: null, during: null, post: null });
+      setAddPainByArea({});
       setAddRpe(null);
       setAddNotes("");
       setScreen("add");
@@ -199,7 +217,7 @@ export default function DiaryApp() {
       let dayData = (await loadDay(date)) || { daily: null, workouts: [] };
       const newWorkout = {
         id: uid(), type: addType, fields: { ...addFields },
-        pain: { ...addPain }, rpe: addRpe, notes: addNotes,
+        pain: { ...addPainByArea }, rpe: addRpe, notes: addNotes,
         createdAt: new Date().toISOString(),
       };
       dayData.workouts.push(newWorkout);
@@ -210,7 +228,7 @@ export default function DiaryApp() {
 
       events.emit("workout:saved", { date, workout: newWorkout });
 
-      setAddType(null); setAddFields({}); setAddPain({ pre: null, during: null, post: null }); setAddRpe(null); setAddNotes("");
+      setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes("");
       flash("Allenamento salvato ✓");
       await refresh();
       setScreen("home");
@@ -362,7 +380,7 @@ export default function DiaryApp() {
               flex: 1, padding: "16px", background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
               border: "none", borderRadius: "14px", color: "#FFF", fontSize: "15px", fontWeight: 700, cursor: "pointer",
             }}>+ Allenamento</button>
-            <button onClick={() => { setDailyDate(today()); setDailyFields({ weight: "", sleep: "", sleepQ: "", fatigue: null, meds: "" }); setScreen("daily"); }} style={{
+            <button onClick={() => { setDailyDate(today()); setDailyFields({ weight: "", sleep: "", sleepQ: "", fatigue: null, meds: "", bodyFat: "", muscleMass: "", bodyWater: "" }); setScreen("daily"); }} style={{
               flex: 1, padding: "16px", background: "#16213E",
               border: "1px solid rgba(255,255,255,0.08)", borderRadius: "14px", color: "#E2E8F0",
               fontSize: "15px", fontWeight: 700, cursor: "pointer",
@@ -479,16 +497,24 @@ export default function DiaryApp() {
                   ))}
                 </div>
 
-                <div style={{ marginTop: "24px", padding: "20px", background: "#16213E", borderRadius: "14px", border: "1px solid rgba(239,68,68,0.12)" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#EF4444", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "16px" }}>
-                    Dolore Polpaccio
-                  </div>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
-                    <PainPicker label="Pre" value={addPain.pre} onChange={v => setAddPain(p => ({ ...p, pre: v }))} />
-                    <PainPicker label="Durante" value={addPain.during} onChange={v => setAddPain(p => ({ ...p, during: v }))} />
-                    <PainPicker label="Post" value={addPain.post} onChange={v => setAddPain(p => ({ ...p, post: v }))} />
-                  </div>
-                </div>
+                {painAreas.length > 0 && painAreas.map(area => {
+                  const p = addPainByArea[area] || { pre: null, during: null, post: null };
+                  const updateArea = (phase: "pre" | "during" | "post", v: number) => {
+                    setAddPainByArea(prev => ({ ...prev, [area]: { ...(prev[area] || { pre: null, during: null, post: null }), [phase]: v } }));
+                  };
+                  return (
+                    <div key={area} style={{ marginTop: "24px", padding: "20px", background: "#16213E", borderRadius: "14px", border: "1px solid rgba(239,68,68,0.12)" }}>
+                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#EF4444", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "16px" }}>
+                        Dolore {area}
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+                        <PainPicker label="Pre" value={p.pre} onChange={v => updateArea("pre", v)} />
+                        <PainPicker label="Durante" value={p.during} onChange={v => updateArea("during", v)} />
+                        <PainPicker label="Post" value={p.post} onChange={v => updateArea("post", v)} />
+                      </div>
+                    </div>
+                  );
+                })}
 
                 <div style={{ marginTop: "16px" }}>
                   <div style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", marginBottom: "8px" }}>RPE — Sforzo Percepito</div>
@@ -576,6 +602,39 @@ export default function DiaryApp() {
               <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Farmaci / Integratori</label>
               <input type="text" value={dailyFields.meds} onChange={e => setDailyFields(p => ({ ...p, meds: e.target.value }))} placeholder="es. Antistaminico, Magnesio..." style={inputStyle} />
             </div>
+
+            <details style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "12px", padding: "12px 14px" }}>
+              <summary style={{ cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "#CBD5E1", listStyle: "none" }}>
+                📊 Composizione corporea (da bilancia smart, opzionale)
+              </summary>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "14px" }}>
+                <div>
+                  <label style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Massa grassa (% BF)</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <input type="number" step="0.1" min={3} max={60} value={dailyFields.bodyFat} onChange={e => setDailyFields(p => ({ ...p, bodyFat: e.target.value }))} placeholder="es. 18.5" style={{ ...inputStyle, flex: 1 }} />
+                    <span style={{ fontSize: "13px", color: "#94A3B8" }}>%</span>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Massa muscolare</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <input type="number" step="0.1" value={dailyFields.muscleMass} onChange={e => setDailyFields(p => ({ ...p, muscleMass: e.target.value }))} placeholder="es. 34.2 (kg) o 41.5 (%)" style={{ ...inputStyle, flex: 1 }} />
+                    <span style={{ fontSize: "13px", color: "#94A3B8" }}>kg / %</span>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Acqua corporea (% TBW)</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <input type="number" step="0.1" min={30} max={75} value={dailyFields.bodyWater} onChange={e => setDailyFields(p => ({ ...p, bodyWater: e.target.value }))} placeholder="es. 55.0" style={{ ...inputStyle, flex: 1 }} />
+                    <span style={{ fontSize: "13px", color: "#94A3B8" }}>%</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.4 }}>
+                  Valori da bilancia BIA (impedenziometria). Hanno errore ~±3-8% ma utili per trend.
+                </div>
+              </div>
+            </details>
+
             <button onClick={handleSaveDaily} disabled={saving} style={{
               width: "100%", padding: "16px", marginTop: "12px",
               background: "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
@@ -604,6 +663,9 @@ export default function DiaryApp() {
                   {detailData.daily.sleepQ && <div><span style={{ color: "#64748B" }}>Qualità </span><span style={{ fontWeight: 600 }}>{detailData.daily.sleepQ}</span></div>}
                   {detailData.daily.fatigue && <div><span style={{ color: "#64748B" }}>Stanchezza </span><span style={{ fontWeight: 700, color: FATIGUE_COLORS(detailData.daily.fatigue), fontFamily: "'JetBrains Mono', monospace" }}>{detailData.daily.fatigue}/10</span></div>}
                   {detailData.daily.meds && <div style={{ gridColumn: "1 / -1" }}><span style={{ color: "#64748B" }}>Farmaci </span><span style={{ fontWeight: 600 }}>{detailData.daily.meds}</span></div>}
+                  {detailData.daily.bodyFat && <div><span style={{ color: "#64748B" }}>BF% </span><span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{detailData.daily.bodyFat}%</span></div>}
+                  {detailData.daily.muscleMass && <div><span style={{ color: "#64748B" }}>Massa musc </span><span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{detailData.daily.muscleMass}</span></div>}
+                  {detailData.daily.bodyWater && <div><span style={{ color: "#64748B" }}>TBW% </span><span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{detailData.daily.bodyWater}%</span></div>}
                 </div>
               </div>
             )}
@@ -636,16 +698,34 @@ export default function DiaryApp() {
                           </div>
                         ))}
                       </div>
-                      {(w.pain?.pre !== null || w.pain?.during !== null || w.pain?.post !== null) && (
-                        <div style={{ display: "flex", gap: "12px", marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                          {["pre","during","post"].map(k => (w.pain?.[k] !== null && w.pain?.[k] !== undefined) ? (
-                            <div key={k} style={{ fontSize: "12px" }}>
-                              <span style={{ color: "#64748B" }}>{k === "pre" ? "Pre" : k === "during" ? "Durante" : "Post"} </span>
-                              <span style={{ fontWeight: 700, color: painColor(w.pain[k]), fontFamily: "'JetBrains Mono', monospace" }}>{w.pain[k]}</span>
-                            </div>
-                          ) : null)}
-                        </div>
-                      )}
+                      {(() => {
+                        // Supporta 2 formati: legacy { pre, during, post } e nuovo { [area]: { pre, during, post } }
+                        if (!w.pain || typeof w.pain !== "object") return null;
+                        const isLegacy = "pre" in w.pain || "during" in w.pain || "post" in w.pain;
+                        const byArea: Array<{ area: string; pre: any; during: any; post: any }> = isLegacy
+                          ? [{ area: "polpaccio", pre: w.pain.pre, during: w.pain.during, post: w.pain.post }]
+                          : Object.entries(w.pain).map(([area, v]: [string, any]) => ({ area, pre: v?.pre, during: v?.during, post: v?.post }));
+                        const hasAny = byArea.some(a => a.pre != null || a.during != null || a.post != null);
+                        if (!hasAny) return null;
+                        return (
+                          <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", gap: "6px" }}>
+                            {byArea.map(a => {
+                              if (a.pre == null && a.during == null && a.post == null) return null;
+                              return (
+                                <div key={a.area} style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                                  <span style={{ fontSize: "11px", color: "#94A3B8", textTransform: "capitalize", fontWeight: 600 }}>{a.area}:</span>
+                                  {(["pre","during","post"] as const).map(k => a[k] != null ? (
+                                    <div key={k} style={{ fontSize: "12px" }}>
+                                      <span style={{ color: "#64748B" }}>{k === "pre" ? "Pre" : k === "during" ? "Durante" : "Post"} </span>
+                                      <span style={{ fontWeight: 700, color: painColor(a[k]), fontFamily: "'JetBrains Mono', monospace" }}>{a[k]}</span>
+                                    </div>
+                                  ) : null)}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                       {(w.rpe || w.notes) && (
                         <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: "13px" }}>
                           {w.rpe && <div><span style={{ color: "#64748B" }}>RPE </span><span style={{ fontWeight: 700, color: FATIGUE_COLORS(w.rpe), fontFamily: "'JetBrains Mono', monospace" }}>{w.rpe}/10</span></div>}
@@ -658,7 +738,7 @@ export default function DiaryApp() {
               </div>
             )}
 
-            <button onClick={() => { setAddDate(detailDate); setAddType(null); setAddFields({}); setAddPain({ pre: null, during: null, post: null }); setAddRpe(null); setAddNotes(""); setScreen("add"); }} style={{
+            <button onClick={() => { setAddDate(detailDate); setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes(""); setScreen("add"); }} style={{
               width: "100%", padding: "14px", marginTop: "16px",
               background: "#1A1A2E", border: "1px dashed rgba(255,255,255,0.15)",
               borderRadius: "14px", color: "#94A3B8", fontSize: "14px", fontWeight: 600, cursor: "pointer",

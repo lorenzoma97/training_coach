@@ -73,16 +73,33 @@ export function checkLocalRedFlags(input: {
   };
 
   const w = input.workout;
-  if (w?.pain) {
-    const pre = toNum(w.pain.pre) ?? 0;
-    const dur = toNum(w.pain.during) ?? 0;
-    const post = toNum(w.pain.post) ?? 0;
-    const maxPain = Math.max(pre, dur, post);
+  // Normalizza due formati: legacy {pre,during,post} (polpaccio) e nuovo {[area]:{pre,during,post}}
+  const painEntries: Array<{ area: string; max: number }> = [];
+  if (w?.pain && typeof w.pain === "object") {
+    const isLegacy = "pre" in w.pain || "during" in w.pain || "post" in w.pain;
+    if (isLegacy) {
+      const pre = toNum(w.pain.pre) ?? 0;
+      const dur = toNum(w.pain.during) ?? 0;
+      const post = toNum(w.pain.post) ?? 0;
+      painEntries.push({ area: "polpaccio", max: Math.max(pre, dur, post) });
+    } else {
+      for (const [area, v] of Object.entries(w.pain)) {
+        if (v && typeof v === "object") {
+          const p = toNum((v as any).pre) ?? 0;
+          const d = toNum((v as any).during) ?? 0;
+          const po = toNum((v as any).post) ?? 0;
+          const max = Math.max(p, d, po);
+          if (max > 0) painEntries.push({ area, max });
+        }
+      }
+    }
+  }
+  for (const { area, max: maxPain } of painEntries) {
     if (maxPain >= SAFETY.painStopThreshold) {
-      reasons.push(`Dolore polpaccio ${maxPain}/4 — STOP allenamento, consulta specialista.`);
+      reasons.push(`Dolore ${area} ${maxPain}/4 — STOP allenamento, consulta specialista.`);
       level = "danger";
     } else if (maxPain >= SAFETY.painWarnThreshold) {
-      reasons.push(`Dolore polpaccio ${maxPain}/4 — monitora, riduci intensità.`);
+      reasons.push(`Dolore ${area} ${maxPain}/4 — monitora, riduci intensità.`);
       if (level === "none") level = "warn";
     }
   }

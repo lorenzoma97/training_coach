@@ -17,6 +17,44 @@ async function loadIndex(): Promise<string[]> {
   return getJSON<string[]>("diary-index", []);
 }
 
+/** Estrae ultimi valori body composition da un array di giorni + trend 7 giorni. */
+export function extractBodyComp(days: Array<{ daily: any }>): {
+  latest: { bodyFat?: number; muscleMass?: number; bodyWater?: number };
+  trend7d: { bodyFat?: number; muscleMass?: number; bodyWater?: number };
+} {
+  const toNum = (v: any): number | undefined => {
+    if (v === null || v === undefined || v === "") return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  // Più recente: ultimo giorno con valore
+  const findLatest = (field: "bodyFat" | "muscleMass" | "bodyWater") => {
+    for (let i = days.length - 1; i >= 0; i--) {
+      const v = toNum(days[i]?.daily?.[field]);
+      if (v !== undefined) return { v, idx: i };
+    }
+    return null;
+  };
+  const findOlder = (field: string, beforeIdx: number) => {
+    for (let i = beforeIdx - 1; i >= 0; i--) {
+      const v = toNum(days[i]?.daily?.[field]);
+      if (v !== undefined) return v;
+    }
+    return undefined;
+  };
+  const latest = { bodyFat: undefined, muscleMass: undefined, bodyWater: undefined } as any;
+  const trend7d = { bodyFat: undefined, muscleMass: undefined, bodyWater: undefined } as any;
+  (["bodyFat", "muscleMass", "bodyWater"] as const).forEach(f => {
+    const l = findLatest(f);
+    if (l) {
+      latest[f] = l.v;
+      const older = findOlder(f, l.idx);
+      if (older !== undefined) trend7d[f] = Math.round((l.v - older) * 10) / 10;
+    }
+  });
+  return { latest, trend7d };
+}
+
 /** Ultimi N giorni ordinati crescente, con workouts e daily. */
 export async function getLastNDays(n: number): Promise<Array<{ date: string; daily: any; workouts: any[] }>> {
   const idx = await loadIndex();
@@ -54,6 +92,9 @@ export function formatDaysForLLM(days: Array<{ date: string; daily: any; workout
       if (d.sleep) parts.push(`sonno ${d.sleep}h (${d.sleepQ || "n/a"})`);
       if (d.fatigue) parts.push(`stanchezza ${d.fatigue}/10`);
       if (d.meds) parts.push(`farmaci: ${d.meds}`);
+      if (d.bodyFat) parts.push(`BF ${d.bodyFat}%`);
+      if (d.muscleMass) parts.push(`massa musc ${d.muscleMass}`);
+      if (d.bodyWater) parts.push(`TBW ${d.bodyWater}%`);
       if (parts.length) lines.push(`  check: ${parts.join(", ")}`);
     }
     for (const w of day.workouts || []) {
@@ -68,11 +109,21 @@ export function formatDaysForLLM(days: Array<{ date: string; daily: any; workout
       if (f.carico) details.push(`carico ${f.carico}`);
       if (f.kcal) details.push(`${f.kcal}kcal`);
       lines.push(`  • ${label}: ${details.join(", ")}`);
-      const painBits: string[] = [];
-      if (w.pain?.pre != null) painBits.push(`pre ${w.pain.pre}`);
-      if (w.pain?.during != null) painBits.push(`dur ${w.pain.during}`);
-      if (w.pain?.post != null) painBits.push(`post ${w.pain.post}`);
-      if (painBits.length) lines.push(`    dolore polpaccio: ${painBits.join(" / ")}`);
+      // Supporta entrambi i formati: legacy {pre,during,post} e nuovo {[area]:{pre,during,post}}
+      if (w.pain && typeof w.pain === "object") {
+        const isLegacy = "pre" in w.pain || "during" in w.pain || "post" in w.pain;
+        const entries: Array<[string, any]> = isLegacy
+          ? [["polpaccio", w.pain]]
+          : Object.entries(w.pain as Record<string, any>);
+        for (const [area, v] of entries) {
+          if (!v || typeof v !== "object") continue;
+          const bits: string[] = [];
+          if (v.pre != null) bits.push(`pre ${v.pre}`);
+          if (v.during != null) bits.push(`dur ${v.during}`);
+          if (v.post != null) bits.push(`post ${v.post}`);
+          if (bits.length) lines.push(`    dolore ${area}: ${bits.join(" / ")}`);
+        }
+      }
       if (w.rpe) lines.push(`    RPE ${w.rpe}/10`);
       if (w.notes) lines.push(`    note: ${w.notes}`);
     }

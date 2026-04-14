@@ -8,7 +8,14 @@ export interface EmbeddingCache {
   version: string;
   vectors: Record<string, number[]>;
   createdAt: string;
+  /** N chunk che hanno fallito l'ultima generazione (per UI diagnostica). */
+  lastFailures?: number;
+  /** Messaggio di errore dell'ultimo fallimento (per UI diagnostica). */
+  lastFailureMessage?: string;
 }
+
+/** Soglia minima di chunks presenti per considerare la cache "ready". */
+const READY_THRESHOLD = 0.8;
 
 function computeVersion(): string {
   const sig = CHUNKS.map(c => c.id).join(",") + "|n=" + CHUNKS.length;
@@ -42,21 +49,36 @@ export async function ensureEmbeddings(onProgress?: (done: number, total: number
     cache = { version: expected, vectors: {}, createdAt: new Date().toISOString() };
   }
   const missing = CHUNKS.filter(c => !cache!.vectors[c.id]);
+  let failures = 0;
+  let lastError: string | undefined;
   for (let i = 0; i < missing.length; i++) {
     const chunk = missing[i];
     try {
       const vec = await client.embedContent!(chunk.content);
+      if (!vec || vec.length === 0) throw new Error("vector vuoto dal provider");
       cache.vectors[chunk.id] = vec;
       if ((i + 1) % 5 === 0 || i === missing.length - 1) {
         await setJSON(CACHE_KEY, cache);
       }
-      if (onProgress) onProgress(CHUNKS.length - missing.length + i + 1, CHUNKS.length);
     } catch (e) {
+      failures++;
+      lastError = (e as Error)?.message || String(e);
       console.error("[embedder] chunk failed:", chunk.id, e);
-      // continue con gli altri, non fallire tutto
     }
+    if (onProgress) onProgress(CHUNKS.length - missing.length + i + 1, CHUNKS.length);
   }
+  cache.lastFailures = failures;
+  cache.lastFailureMessage = lastError;
   await setJSON(CACHE_KEY, cache);
+
+  // Se tutti hanno fallito → errore leggibile per la UI.
+  if (missing.length > 0 && failures === missing.length) {
+    throw new Error(
+      `Tutti i ${failures} embedding sono falliti. ` +
+      (lastError ? `Errore: ${lastError}. ` : "") +
+      `Verifica la chiave API e che il provider supporti il modello embedding.`
+    );
+  }
   return cache;
 }
 
@@ -82,6 +104,8 @@ export async function getCacheStatus(): Promise<CacheStatus> {
   const cache = await getJSON<EmbeddingCache | null>(CACHE_KEY, null);
   if (!cache) return "missing";
   if (cache.version !== computeVersion()) return "stale";
-  const present = CHUNKS.every(c => cache.vectors[c.id]);
-  return present ? "ready" : "stale";
+  // Tolleriamo fino al 20% di chunk mancanti: considera "ready" se ≥80% presenti.
+  const presentCount = CHUNKS.reduce((n, c) => n + (cache.vectors[c.id] ? 1 : 0), 0);
+  if (presentCount / CHUNKS.length >= READY_THRESHOLD) return "ready";
+  return "stale";
 }

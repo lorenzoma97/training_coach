@@ -12,6 +12,13 @@ export interface UserProfile {
   weekly_availability: { days: number; hoursPerSession: number };
   equipment: string[];
   notes?: string;
+  /**
+   * Zone del corpo di cui l'utente vuole monitorare il dolore durante gli
+   * allenamenti. Se vuoto o undefined, il pain picker NON viene mostrato.
+   * Valori tipici: "polpaccio", "ginocchio", "tendine d'achille", "schiena",
+   * "spalla". Configurabili nell'onboarding se sono dichiarati infortuni.
+   */
+  painTrackingAreas?: string[];
   createdAt: string;
   updatedAt: string;
 }

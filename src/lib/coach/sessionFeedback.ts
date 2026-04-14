@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
-import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt, formatDaysForLLM } from "../diaryContext";
+import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt, formatDaysForLLM, extractBodyComp } from "../diaryContext";
 import type { SessionFeedback } from "../types";
 import { checkLocalRedFlags } from "./safetyRules";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext, type WorkoutTypeId } from "./promptBuilder";
@@ -76,8 +76,11 @@ Dai feedback strutturato. Se ci sono red flag locali, includili in redFlags e al
   // Calcola giorni alla gara più vicina (da obiettivi con deadline parsable)
   const daysToNearestRace = computeDaysToNearestRace(ctx.goals);
 
+  const bc = extractBodyComp(ctx.recentDaysRaw);
   const bCtx: BuildContext = {
     profile: ctx.profile,
+    bodyComp: bc.latest,
+    bodyCompTrend7d: bc.trend7d,
     workoutType: wt,
     hasRunningGoal: ctx.goals.some(g => RUNNING_GOAL_RE.test((g.smartDescription || "") + " " + (g.kpi?.metric || ""))),
     hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
