@@ -42,12 +42,14 @@ function readConfigSync(): LLMConfig | null {
   return null;
 }
 
-// Modelli notoriamente instabili (preview/exp) che soffrono di 503 frequenti.
-// Se un utente esistente ha questi nella config, auto-migrazione al default GA stabile.
+// Modelli deprecati da migrare automaticamente al default attuale.
+// NOTA: 'gemini-3.1-flash-lite-preview' (attuale default) NON è nell'elenco:
+// se viene 503 il fallback automatico a 'gemini-2.5-flash-lite' gestisce già.
 const UNSTABLE_MODEL_PATTERNS = [
-  /preview/i,
-  /-exp(\b|$|-)/i,
-  /^gemini-3\.1-flash-lite$/i, // risolve server-side a -preview
+  /gemini-2\.0-flash-exp/i,        // vecchio default deprecato
+  /gemini-2\.5-flash$/i,           // upgradiamo al 3.1-lite-preview (più economico, stesse performance tipiche)
+  /gemini-3-flash-preview/i,       // non più default
+  /^gemini-3\.1-flash-lite$/i,     // senza -preview: alias che risolve comunque a preview, meglio esplicito
 ];
 
 function isUnstableModel(modelId: string): boolean {

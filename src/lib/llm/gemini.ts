@@ -6,10 +6,11 @@ import type {
 import { LLMKeyMissingError } from "./types";
 import { withRetry, isTransientError } from "./retry";
 
-// Default: Gemini 2.5 Flash (GA stabile). Modelli 3.x sono più recenti ma attualmente
-// solo in preview → endpoint soggetto a 503 "high demand" frequenti. L'utente può
-// selezionarli via "Scopri modelli" se li vuole usare consapevolmente.
-const DEFAULT_CHAT_MODEL = "gemini-2.5-flash";
+// Default: gemini-3.1-flash-lite-preview (stesso modello usato in nutribot v3).
+// Il fallback automatico (usato quando il primario dà 503 persistente dopo retry)
+// è gemini-2.5-flash-lite, stabile e disponibile.
+const DEFAULT_CHAT_MODEL = "gemini-3.1-flash-lite-preview";
+const FALLBACK_CHAT_MODEL = "gemini-2.5-flash-lite";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-004";
 
 function parseJSONResponse<T>(text: string): T {
@@ -27,6 +28,20 @@ function createGeminiClient(config: LLMConfig): LLMClient {
   const genAI = new GoogleGenerativeAI(config.apiKey);
   const modelId = config.modelId || DEFAULT_CHAT_MODEL;
 
+  // Fallback automatico: se il primario fallisce con errore transitorio (503/429)
+  // anche dopo retry, prova con FALLBACK_CHAT_MODEL (solo se è un modello diverso).
+  async function withFallback<T>(primary: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
+    try {
+      return await withRetry(primary, { maxRetries: 2 });
+    } catch (e) {
+      if (modelId !== FALLBACK_CHAT_MODEL && isTransientError(e)) {
+        console.warn(`[Gemini] Primario '${modelId}' sovraccarico. Fallback a '${FALLBACK_CHAT_MODEL}'.`);
+        return await withRetry(fallback, { maxRetries: 1 });
+      }
+      throw e;
+    }
+  }
+
   return {
     provider: "gemini",
     modelId,
@@ -37,40 +52,42 @@ function createGeminiClient(config: LLMConfig): LLMClient {
         maxOutputTokens: params.maxTokens ?? 2048,
         responseMimeType: "application/json",
       };
-      const model = genAI.getGenerativeModel({
-        model: modelId,
-        systemInstruction: params.systemInstruction,
-        generationConfig,
-      });
       const fullPrompt = params.schemaHint
         ? `${params.userPrompt}\n\nRispondi SOLO con JSON valido secondo questo schema:\n${params.schemaHint}`
         : params.userPrompt;
-      const result = await withRetry(() => model.generateContent(fullPrompt), { maxRetries: 2 });
+      const gen = (id: string) => genAI
+        .getGenerativeModel({ model: id, systemInstruction: params.systemInstruction, generationConfig })
+        .generateContent(fullPrompt);
+      const result = await withFallback(() => gen(modelId), () => gen(FALLBACK_CHAT_MODEL));
       return parseJSONResponse<T>(result.response.text());
     },
 
     async generateText(params: GenerateTextParams): Promise<string> {
-      const model = genAI.getGenerativeModel({
-        model: modelId,
-        systemInstruction: params.systemInstruction,
-        generationConfig: { temperature: 0.7, maxOutputTokens: params.maxTokens ?? 800 },
-      });
-      const result = await withRetry(() => model.generateContent(params.userPrompt), { maxRetries: 2 });
+      const gen = (id: string) => genAI
+        .getGenerativeModel({
+          model: id,
+          systemInstruction: params.systemInstruction,
+          generationConfig: { temperature: 0.7, maxOutputTokens: params.maxTokens ?? 800 },
+        })
+        .generateContent(params.userPrompt);
+      const result = await withFallback(() => gen(modelId), () => gen(FALLBACK_CHAT_MODEL));
       return result.response.text();
     },
 
     async *streamChat(params: StreamChatParams): AsyncGenerator<string> {
-      const model = genAI.getGenerativeModel({
-        model: modelId,
-        systemInstruction: params.systemInstruction,
-        generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
-      });
-      const chat = model.startChat({
-        history: params.history.map(h => ({ role: h.role, parts: [{ text: h.parts }] })),
-      });
-      // Retry solo l'INIZIO dello stream (se fallisce con 503 al primo contatto).
-      // Una volta che lo stream parte, non possiamo riprovarlo senza perdere i token già ricevuti.
-      const result = await withRetry(() => chat.sendMessageStream(params.userMessage), { maxRetries: 2 });
+      const startStream = (id: string) => {
+        const model = genAI.getGenerativeModel({
+          model: id,
+          systemInstruction: params.systemInstruction,
+          generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+        });
+        const chat = model.startChat({
+          history: params.history.map(h => ({ role: h.role, parts: [{ text: h.parts }] })),
+        });
+        return chat.sendMessageStream(params.userMessage);
+      };
+      // Fallback ok solo prima che parta lo stream (altrimenti perderemmo token già ricevuti)
+      const result = await withFallback(() => startStream(modelId), () => startStream(FALLBACK_CHAT_MODEL));
       for await (const chunk of result.stream) {
         const t = chunk.text();
         if (t) yield t;
@@ -114,20 +131,23 @@ export const geminiAdapter: ProviderAdapter = {
         contextWindow: m.inputTokenLimit,
         supportsJSON: true,
       }));
-    // Ordine preferito: 2.5-flash (GA stabile) > 3.1 > 3.0 > 2.0 > 1.5.
-    // I preview (-preview, -exp) in fondo perché più instabili (503 frequenti).
+    // Ordine preferito: primari stabili/usati > alternative. Default+fallback in cima.
     const rank = (id: string) => {
-      const isPreview = /preview|exp/.test(id);
+      const isExp = /-exp(\b|$|-)/.test(id);
       const base = (() => {
-        if (/gemini-2\.5-flash/.test(id) && !/lite/.test(id)) return 0;
-        if (/gemini-2\.5/.test(id)) return 1;
-        if (/gemini-3\.1-flash-lite/.test(id)) return 2;
-        if (/gemini-3\./.test(id)) return 3;
-        if (/gemini-2\.0/.test(id)) return 4;
-        if (/gemini-1\.5/.test(id)) return 5;
-        return 6;
+        if (id === DEFAULT_CHAT_MODEL) return 0;                       // default
+        if (id === FALLBACK_CHAT_MODEL) return 1;                      // fallback
+        if (/gemini-3\.1-flash-lite/.test(id)) return 2;               // varianti 3.1-lite
+        if (/gemini-3-flash/.test(id)) return 3;
+        if (/gemini-3/.test(id)) return 4;
+        if (/gemini-2\.5-flash-lite/.test(id)) return 5;
+        if (/gemini-2\.5-flash/.test(id)) return 6;
+        if (/gemini-2\.5/.test(id)) return 7;
+        if (/gemini-2\.0/.test(id)) return 8;
+        if (/gemini-1\.5/.test(id)) return 9;
+        return 10;
       })();
-      return base + (isPreview ? 10 : 0); // preview sempre dopo le GA
+      return base + (isExp ? 20 : 0);
     };
     models.sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id));
     return models;
