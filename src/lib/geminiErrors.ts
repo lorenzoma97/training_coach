@@ -9,8 +9,14 @@ export function translateGeminiError(err: unknown): string {
   if (lower.includes("permission") || lower.includes("403")) {
     return "Permesso negato da Gemini. La chiave potrebbe non avere accesso al modello.";
   }
-  if (lower.includes("quota") || lower.includes("429") || lower.includes("rate limit") || lower.includes("resource_exhausted")) {
-    return "Quota Gemini esaurita per oggi. Riprova tra qualche ora (tier gratuito = ~1500 richieste/giorno).";
+  if (lower.includes("quota") || lower.includes("resource_exhausted")) {
+    return "Quota API esaurita per oggi. Riprova tra qualche ora (Gemini free tier = ~1500 richieste/giorno).";
+  }
+  if (lower.includes("429") || lower.includes("rate limit")) {
+    return "Troppe richieste in poco tempo. Attendi 30 secondi e riprova.";
+  }
+  if (lower.includes("503") || lower.includes("high demand") || lower.includes("overload") || lower.includes("unavailable")) {
+    return "Il modello è momentaneamente sovraccarico (questo è tipico dei modelli preview). Riprova tra qualche minuto, oppure vai in Impostazioni e seleziona un modello alternativo (es. gemini-2.5-flash).";
   }
   if (lower.includes("network") || lower.includes("failed to fetch") || lower.includes("networkerror")) {
     return "Connessione assente o instabile. Riprova quando sei online.";

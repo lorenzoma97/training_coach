@@ -42,9 +42,31 @@ function readConfigSync(): LLMConfig | null {
   return null;
 }
 
+// Modelli notoriamente instabili (preview/exp) che soffrono di 503 frequenti.
+// Se un utente esistente ha questi nella config, auto-migrazione al default GA stabile.
+const UNSTABLE_MODEL_PATTERNS = [
+  /preview/i,
+  /-exp(\b|$|-)/i,
+  /^gemini-3\.1-flash-lite$/i, // risolve server-side a -preview
+];
+
+function isUnstableModel(modelId: string): boolean {
+  return UNSTABLE_MODEL_PATTERNS.some(re => re.test(modelId));
+}
+
 export async function getLLMConfig(): Promise<LLMConfig | null> {
   const parsed = await getJSON<LLMConfig | null>(CONFIG_KEY, null);
-  if (parsed && parsed.provider && parsed.apiKey && parsed.modelId) return parsed;
+  if (parsed && parsed.provider && parsed.apiKey && parsed.modelId) {
+    // Auto-migrazione: se l'utente ha un modello preview/exp Gemini (causa 503),
+    // switch automatico al default stabile. L'utente può sempre ri-sceglierlo manualmente.
+    if (parsed.provider === "gemini" && isUnstableModel(parsed.modelId)) {
+      const migrated: LLMConfig = { ...parsed, modelId: geminiAdapter.defaultChatModel };
+      await setJSON(CONFIG_KEY, migrated);
+      console.info(`[LLM migration] Modello '${parsed.modelId}' instabile → migrato a '${migrated.modelId}'`);
+      return migrated;
+    }
+    return parsed;
+  }
   const legacy = (localStorage.getItem(LEGACY_GEMINI_KEY) || "").trim();
   if (legacy) {
     const cfg: LLMConfig = {

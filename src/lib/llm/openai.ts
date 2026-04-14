@@ -3,6 +3,7 @@ import type {
   GenerateJSONParams, GenerateTextParams, StreamChatParams, ChatTurn,
 } from "./types";
 import { LLMKeyMissingError } from "./types";
+import { withRetry, isTransientError } from "./retry";
 
 const DEFAULT_CHAT_MODEL = "gpt-4o-mini";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
@@ -170,13 +171,14 @@ export const openaiAdapter: ProviderAdapter = {
   createClient: createOpenAIClient,
 
   async listModels(apiKey: string): Promise<LLMModel[]> {
-    const res = await fetch(`${BASE}/models`, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`OpenAI listModels ${res.status}: ${body.slice(0, 200)}`);
-    }
+    const res = await withRetry(async () => {
+      const r = await fetch(`${BASE}/models`, { headers: { "Authorization": `Bearer ${apiKey}` } });
+      if (!r.ok) {
+        const body = await r.text().catch(() => "");
+        throw new Error(`OpenAI listModels ${r.status}: ${body.slice(0, 200)}`);
+      }
+      return r;
+    }, { maxRetries: 2 });
     const json = await res.json() as { data?: Array<{ id: string }> };
     const models = (json.data || [])
       .filter(m => MODEL_INCLUDE_RE.test(m.id) && !MODEL_EXCLUDE_RE.test(m.id))
@@ -196,20 +198,25 @@ export const openaiAdapter: ProviderAdapter = {
 
   async ping(apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
     try {
-      const res = await oaiFetch(apiKey, "/chat/completions", {
-        model: modelId || DEFAULT_CHAT_MODEL,
-        messages: [{ role: "user", content: "ping" }],
-        max_tokens: 5,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        let msg = `HTTP ${res.status}`;
-        try { const j = JSON.parse(body); if (j?.error?.message) msg = j.error.message; } catch { /* ignore */ }
-        return { ok: false, error: msg };
-      }
-      const j = await res.json();
+      const j = await withRetry(async () => {
+        const res = await oaiFetch(apiKey, "/chat/completions", {
+          model: modelId || DEFAULT_CHAT_MODEL,
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 5,
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          let msg = `HTTP ${res.status}`;
+          try { const parsed = JSON.parse(body); if (parsed?.error?.message) msg = parsed.error.message; } catch { /* ignore */ }
+          throw new Error(msg);
+        }
+        return res.json();
+      }, { maxRetries: 2 });
       return { ok: !!j?.choices?.[0]?.message };
     } catch (e: any) {
+      if (isTransientError(e)) {
+        return { ok: false, error: `Modello momentaneamente occupato (${modelId || DEFAULT_CHAT_MODEL}). Riprova tra qualche minuto o seleziona un altro modello.` };
+      }
       return { ok: false, error: e?.message || String(e) };
     }
   },
