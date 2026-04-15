@@ -120,14 +120,6 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     })();
   }, []);
 
-  // Persistenza draft: salva ad ogni cambio di step/goalTexts/goalsCount/acceptedDisclaimer/goalsNeedRecheck.
-  // Non partire prima del caricamento iniziale per evitare di sovrascrivere il draft esistente.
-  useEffect(() => {
-    if (!draftLoadedRef.current) return;
-    const draft: OnboardingDraft = { step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck };
-    setJSON("onboarding-draft", draft).catch(() => { /* ignore quota here, non-critical */ });
-  }, [step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck]);
-
   const onProviderChange = (p: ProviderId) => {
     setProvider(p);
     setModels([]);
@@ -204,6 +196,14 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   const [generating, setGenerating] = useState(false);
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [planError, setPlanError] = useState("");
+
+  // Persistenza draft: salva ad ogni cambio di step/goalTexts/goalsCount/acceptedDisclaimer/goalsNeedRecheck.
+  // Non partire prima del caricamento iniziale per evitare di sovrascrivere il draft esistente.
+  useEffect(() => {
+    if (!draftLoadedRef.current) return;
+    const draft: OnboardingDraft = { step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck };
+    setJSON("onboarding-draft", draft).catch(() => { /* ignore quota here, non-critical */ });
+  }, [step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck]);
 
   const parseNum = (v: string): number | undefined => {
     const t = v.trim();
