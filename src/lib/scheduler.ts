@@ -1,6 +1,7 @@
 import { getJSON, setJSON } from "./storage";
 import { generateWeeklyReport } from "./coach/weeklyReport";
 import { regenerateNextWeek } from "./coach/planGenerator";
+import { savePlanWithHistory } from "./coach/planHistory";
 import { generateText } from "./llm";
 import { PROMPTS } from "./coach/systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, getLastNDays } from "./diaryContext";
@@ -79,7 +80,8 @@ async function _runWeekly(force: boolean): Promise<CoachFeedItem | null> {
     const ctx = await buildCoachContext({ daysBack: 14 });
     const currentPlan = await getJSON<TrainingPlan | null>("training-plan", null);
     const nextPlan = await regenerateNextWeek(profile, goals, currentPlan, ctx.recentDaysText);
-    await setJSON("training-plan", nextPlan);
+    // Archivia il piano precedente nello storico prima di sovrascrivere.
+    await savePlanWithHistory(nextPlan);
     events.emit("plan:updated", { at: new Date().toISOString() });
 
     const planUpdate: CoachFeedItem = {

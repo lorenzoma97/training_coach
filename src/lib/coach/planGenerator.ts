@@ -21,6 +21,11 @@ const weekSchema = z.object({
   sessions: z.array(sessionSchema),
 });
 
+// Accettiamo 1-4 per retrocompatibilità con piani esistenti in localStorage,
+// ma i nuovi generate/regenerate/adapt producono sempre 1 sola settimana (vedi
+// schemaHint + prompt). Le settimane extra eventualmente prodotte dal modello
+// vengono tollerate ma il flusso standard si basa su 1 settimana + rigenerazione
+// automatica al lunedì successivo.
 const planSchema = z.object({
   weeks: z.array(weekSchema).min(1).max(4),
   rationale: z.string(),
@@ -44,8 +49,9 @@ const schemaHint = `
       ]
     }
   ],
-  "rationale": "2-3 frasi che spiegano la logica del piano"
+  "rationale": "2-3 frasi che spiegano la logica del piano (settimana singola)"
 }
+IMPORTANTE: l'array "weeks" deve contenere UNA SOLA settimana con weekNumber=1.
 `.trim();
 
 export async function generateInitialPlan(
@@ -59,7 +65,7 @@ ${profileAsPrompt(profile)}
 OBIETTIVI:
 ${goalsAsPrompt(goals)}
 
-Genera un microciclo di 2 settimane (weeks con weekNumber 1 e 2) che porti l'utente verso gli obiettivi rispettando vincoli e sicurezza.
+Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'utente verso gli obiettivi rispettando vincoli e sicurezza. La settimana successiva sarà rigenerata lunedì prossimo sulla base dei dati reali del diario, non anticiparla ora.
 `.trim();
 
   const bCtx: BuildContext = {
@@ -76,7 +82,7 @@ Genera un microciclo di 2 settimane (weeks con weekNumber 1 e 2) che porti l'ute
     systemInstruction,
     userPrompt,
     schemaHint,
-    maxTokens: 3000,
+    maxTokens: 1800,
   });
   const parseResult = planSchema.safeParse(raw);
   if (!parseResult.success) {
@@ -139,8 +145,8 @@ ${planAsPrompt(currentPlan)}
 ULTIMI 14 GIORNI REALI DAL DIARIO:
 ${recentDaysText}
 
-Genera il nuovo microciclo di 2 settimane a partire dalla settimana prossima, adattando in base a aderenza, trend dolore/fatica, e risposta al carico.
-Se rilevi red flag, proponi deload esplicito nella settimana 1.
+Genera la NUOVA settimana (weekNumber=1, una sola) a partire dalla settimana prossima, adattando in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.
+Se rilevi red flag, proponi deload esplicito.
 `.trim();
 
   const bCtx: BuildContext = {
@@ -157,7 +163,7 @@ Se rilevi red flag, proponi deload esplicito nella settimana 1.
     systemInstruction,
     userPrompt,
     schemaHint,
-    maxTokens: 3000,
+    maxTokens: 1800,
   });
   const parseResult = planSchema.safeParse(raw);
   if (!parseResult.success) {
@@ -225,7 +231,7 @@ REGOLE NON VIOLABILI:
 - Se la richiesta è rischiosa (es. "voglio fare triplo volume"), proponi una versione sicura e spiega perché nel "rationale".
 - Non rimuovere tutti i giorni di riposo.
 
-Rispondi con il piano MODIFICATO completo (entrambe le settimane, tutte le sessioni). Il "rationale" DEVE menzionare esplicitamente cosa è cambiato rispetto al piano precedente e perché.
+Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le sessioni). Il "rationale" DEVE menzionare esplicitamente cosa è cambiato rispetto al piano precedente e perché.
 `.trim();
 
   const bCtx: BuildContext = {
@@ -240,7 +246,7 @@ Rispondi con il piano MODIFICATO completo (entrambe le settimane, tutte le sessi
     systemInstruction,
     userPrompt,
     schemaHint,
-    maxTokens: 3000,
+    maxTokens: 1800,
   });
   const parseResult = planSchema.safeParse(raw);
   if (!parseResult.success) {

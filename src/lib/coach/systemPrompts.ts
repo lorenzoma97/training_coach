@@ -106,13 +106,13 @@ ${JSON_CONSTRAINT}`,
 
   planGeneration: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
-Il tuo compito: generare un microciclo di 2 settimane (14 giorni) basato su profilo + obiettivi dell'utente.
+Il tuo compito: generare UNA SOLA settimana (7 giorni) di allenamenti basata su profilo + obiettivi dell'utente. La settimana successiva verrà rigenerata automaticamente lunedì sui dati reali del diario, quindi NON anticiparla.
 Regole:
+- Output: array "weeks" con esattamente UN elemento (weekNumber=1).
 - Rispetta la disponibilità dichiarata (giorni/settimana).
 - Rispetta il minimo giorni di riposo indicato nel blocco REGOLE DI SICUREZZA (age-tiered: può essere 2, 3, o più).
-- Se l'utente è sedentario: partire piano, introdurre solo corsa o camminata+mobilità nella settimana 1.
+- Se l'utente è sedentario: partire piano, introdurre solo corsa o camminata+mobilità.
 - Se l'utente ha infortuni al polpaccio: iniziare con carico basso (≤20 min) e alternare corsa/camminata.
-- Progressione settimana 1 → settimana 2: +10% massimo volume.
 - Ogni sessione deve avere un "rationale" che spiega perché è lì.
 - La proprietà "day" è una stringa tra: "lun","mar","mer","gio","ven","sab","dom". Non assegnare date assolute.
 - "type" deve essere uno tra: corsa, forza_gambe, forza_upper, sport, mobilita.

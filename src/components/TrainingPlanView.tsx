@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getJSON, setJSON } from "../lib/storage";
+import { getJSON } from "../lib/storage";
 import type { TrainingPlan, UserProfile, UserGoal } from "../lib/types";
 import { events } from "../lib/events";
 import { buildCoachContext, getLastNDays } from "../lib/diaryContext";
 import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach/planGenerator";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { profileHashForPlan } from "../lib/coach/planValidator";
+import { savePlanWithHistory, getPlanHistory } from "../lib/coach/planHistory";
 
 const ADAPT_QUICK_PROMPTS = [
   "Più intenso",
@@ -19,6 +20,8 @@ export default function TrainingPlanView() {
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [currentProfile, setCurrentProfile] = useState<UserProfile | null>(null);
   const [recentDays, setRecentDays] = useState<Array<{ date: string; workouts: any[] }>>([]);
+  const [history, setHistory] = useState<TrainingPlan[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [regenError, setRegenError] = useState<string | null>(null);
 
@@ -42,14 +45,16 @@ export default function TrainingPlanView() {
   };
 
   const load = async () => {
-    const [p, profile, days] = await Promise.all([
+    const [p, profile, days, hist] = await Promise.all([
       getJSON<TrainingPlan | null>("training-plan", null),
       getJSON<UserProfile | null>("user-profile", null),
       getLastNDays(14),
+      getPlanHistory(),
     ]);
     setPlan(p);
     setCurrentProfile(profile);
     setRecentDays(days);
+    setHistory(hist);
   };
 
   useEffect(() => {
@@ -116,7 +121,8 @@ export default function TrainingPlanView() {
         next = await generateInitialPlan(profile, goals);
         title = "✓ Piano iniziale generato";
       }
-      await setJSON("training-plan", next);
+      // Archivia il piano corrente nello storico prima di sovrascrivere (se esiste)
+      await savePlanWithHistory(next);
       events.emit("plan:updated", { at: new Date().toISOString() });
       setPlan(next);
       showSuccess(title, next.rationale);
@@ -137,7 +143,7 @@ export default function TrainingPlanView() {
       if (!profile) throw new Error("Profilo mancante.");
       const ctx = await buildCoachContext({ daysBack: 14 });
       const next = await adaptPlan(profile, goals, plan, ctx.recentDaysText, req);
-      await setJSON("training-plan", next);
+      await savePlanWithHistory(next);
       events.emit("plan:updated", { at: new Date().toISOString() });
       setPlan(next);
       setAdaptRequest("");
@@ -442,6 +448,71 @@ export default function TrainingPlanView() {
 
         {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
       </div>
+
+      {!isExpired && (
+        <div style={{
+          background: "#1A1A2E", borderRadius: "10px",
+          padding: "10px 14px", fontSize: "12px", color: "#94A3B8",
+          display: "flex", alignItems: "center", gap: "8px",
+          border: "1px solid rgba(255,255,255,0.06)",
+        }}>
+          <span>📅</span>
+          <span style={{ lineHeight: 1.5 }}>
+            La settimana prossima verrà rigenerata automaticamente lunedì sui tuoi dati reali, oppure puoi farlo ora con "Rigenera con dati recenti".
+          </span>
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div style={{ background: "#16213E", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)", overflow: "hidden" }}>
+          <button
+            onClick={() => setHistoryOpen(o => !o)}
+            aria-expanded={historyOpen}
+            style={{
+              width: "100%", padding: "14px 18px",
+              background: "transparent", border: "none",
+              color: "#CBD5E1", fontSize: "13px", fontWeight: 700,
+              display: "flex", alignItems: "center", gap: "10px",
+              cursor: "pointer", textAlign: "left",
+            }}
+          >
+            <span style={{ fontSize: "16px", transform: historyOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>▸</span>
+            <span style={{ flex: 1 }}>Settimane precedenti</span>
+            <span style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 500 }}>{history.length} piani archiviati</span>
+          </button>
+
+          {historyOpen && (
+            <div style={{ padding: "0 18px 18px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              {history.map((h: TrainingPlan, hi: number) => (
+                <div key={h.generatedAt + hi} style={{ background: "#1A1A2E", borderRadius: "10px", padding: "12px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "6px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                      {h.startDate ? `Settimana del ${new Date(h.startDate + "T12:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" })}` : new Date(h.generatedAt).toLocaleDateString("it-IT")}
+                    </div>
+                  </div>
+                  {h.rationale && (
+                    <div style={{ fontSize: "12px", color: "#94A3B8", marginBottom: "8px", lineHeight: 1.5, fontStyle: "italic" }}>
+                      {h.rationale}
+                    </div>
+                  )}
+                  {h.weeks.map((w: TrainingPlan["weeks"][number], wi: number) => (
+                    <div key={wi} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      {w.sessions.map((s: TrainingPlan["weeks"][number]["sessions"][number], si: number) => (
+                        <div key={si} style={{ fontSize: "12px", padding: "6px 8px", background: "#0F172A", borderRadius: "6px", display: "flex", gap: "8px", alignItems: "baseline" }}>
+                          <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", minWidth: "28px" }}>{s.day}</span>
+                          <span style={{ fontWeight: 600, color: "#CBD5E1" }}>{s.type}{s.subtype ? ` · ${s.subtype}` : ""}</span>
+                          <span style={{ color: "#64748B", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px" }}>{s.duration_min}min</span>
+                          <span style={{ color: "#64748B", fontSize: "11px", flex: 1, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.details}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ fontSize: "11px", color: "#94A3B8", textAlign: "center" }}>
         Generato {new Date(plan.generatedAt).toLocaleDateString("it-IT")} — Valido fino al {new Date(plan.validUntil).toLocaleDateString("it-IT")}
