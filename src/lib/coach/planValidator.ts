@@ -115,16 +115,27 @@ export function profileHashForPlan(profile: UserProfile): string {
 }
 
 /**
- * Data locale del prossimo "lunedì" (startDate del piano).
- * Se oggi è lunedì, ritorna oggi (il piano parte immediatamente).
+ * Data locale del lunedì della settimana CORRENTE (≤ fromDate).
+ * Se oggi è lunedì ritorna oggi, altrimenti il lunedì appena passato.
+ *
+ * Scelta di design: il piano è sempre ancorato alla settimana calendario
+ * in cui viene generato. Se l'utente genera il piano mercoledì, startDate
+ * = lunedì 2 giorni fa. Così "oggi" (mercoledì) matcha correttamente il
+ * giorno "mer" della settimana 1 nel piano. Le sessioni lun/mar di quella
+ * settimana appariranno come "SALTATA" — coerente con la realtà che
+ * quei giorni sono già passati.
+ *
+ * La variante "lunedì successivo" era controintuitiva: l'utente genera
+ * il piano per ADESSO, non per iniziare tra qualche giorno.
  */
 export function computePlanStartDate(fromDate: Date = new Date()): string {
   const d = new Date(fromDate);
-  // In it-IT lunedì=1. getDay() restituisce 0=dom,1=lun,...6=sab.
+  // In JS getDay(): 0=dom, 1=lun, ..., 6=sab.
+  // Giorni indietro per raggiungere il lunedì corrente:
+  //   lun=0, mar=1, mer=2, gio=3, ven=4, sab=5, dom=6
   const dow = d.getDay();
-  const offsetToMonday = dow === 1 ? 0 : dow === 0 ? 1 : (8 - dow);
-  d.setDate(d.getDate() + offsetToMonday);
-  // ritorna locale YYYY-MM-DD
+  const daysBack = (dow + 6) % 7;
+  d.setDate(d.getDate() - daysBack);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
