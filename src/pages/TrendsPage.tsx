@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getAllDays } from "../lib/diaryContext";
 import { events } from "../lib/events";
 import Sparkline, { type SparklinePoint } from "../components/Sparkline";
+import ZonesCard from "../components/ZonesCard";
 
 type Period = 7 | 14 | 30 | 90;
 
@@ -221,6 +222,11 @@ export default function TrendsPage() {
       <div style={{ marginBottom: "16px" }}>
         <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Trend</div>
         <h1 style={{ fontSize: "26px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.03em" }}>Andamento nel tempo</h1>
+      </div>
+
+      {/* Zone FC: card in cima per riferimento rapido durante lettura dei trend */}
+      <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "16px", marginBottom: "16px" }}>
+        <ZonesCard />
       </div>
 
       {/* Period selector */}

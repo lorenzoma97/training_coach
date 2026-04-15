@@ -3,6 +3,8 @@ import TrainingPlanView from "../components/TrainingPlanView";
 import CoachFeedList from "../components/CoachFeedList";
 import CoachChat from "../components/CoachChat";
 import GoalsEditor from "../components/GoalsEditor";
+import ZonesCard from "../components/ZonesCard";
+import ZonesAnalytics from "../components/ZonesAnalytics";
 import { hasApiKey } from "../lib/gemini";
 import { getJSON, setJSON } from "../lib/storage";
 import type { UserProfile, UserGoal, TrainingPlan } from "../lib/types";
@@ -11,7 +13,7 @@ import { generateInitialPlan } from "../lib/coach/planGenerator";
 import { maybeRunWeeklyReport } from "../lib/scheduler";
 import { translateGeminiError } from "../lib/geminiErrors";
 
-type Tab = "plan" | "goals" | "feed" | "chat";
+type Tab = "plan" | "goals" | "zones" | "feed" | "chat";
 
 export default function CoachPage() {
   const [tab, setTab] = useState<Tab>("plan");
@@ -157,6 +159,7 @@ export default function CoachPage() {
         {([
           { id: "plan" as const, label: "Piano" },
           { id: "goals" as const, label: "Obiettivi" },
+          { id: "zones" as const, label: "Zone" },
           { id: "feed" as const, label: "Feed" },
           { id: "chat" as const, label: "Chat" },
         ]).map(t => (
@@ -182,6 +185,19 @@ export default function CoachPage() {
             Modifica, aggiungi, archivia. Il coach dimensiona piano e feedback su questi obiettivi.
           </div>
           <GoalsEditor />
+        </div>
+      )}
+      {tab === "zones" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+          <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "18px 20px" }}>
+            <ZonesCard />
+          </div>
+          <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "18px 20px" }}>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "12px" }}>
+              Analytics — tempo per zona
+            </div>
+            <ZonesAnalytics />
+          </div>
         </div>
       )}
       {tab === "feed" && (

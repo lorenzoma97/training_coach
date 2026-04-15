@@ -8,6 +8,7 @@ import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach
 import { translateGeminiError } from "../lib/geminiErrors";
 import { profileHashForPlan } from "../lib/coach/planValidator";
 import { savePlanWithHistory, getPlanHistory } from "../lib/coach/planHistory";
+import ZonesCard from "./ZonesCard";
 
 const ADAPT_QUICK_PROMPTS = [
   "Più intenso",
@@ -291,6 +292,9 @@ export default function TrainingPlanView() {
         <div style={{ fontSize: "11px", color: "#94A3B8", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "6px", fontWeight: 600 }}>Razionale del piano</div>
         <div style={{ fontSize: "14px", lineHeight: 1.5 }}>{plan.rationale}</div>
       </div>
+
+      {/* Mini-badge zona Z2 di riferimento rapido durante la lettura del piano. */}
+      <ZonesCard compact highlightZone={2} />
 
       {(isExpiringSoon || isExpired) && (
         <div style={{

@@ -182,6 +182,12 @@ export default function DiaryApp() {
   const [dailyFields, setDailyFields] = useState({
     weight: "", sleep: "", sleepQ: "", fatigue: null as number | null, meds: "",
     bodyFat: "", muscleMass: "", bodyWater: "",
+    // FC a riposo mattutina (bpm) misurata prima di alzarsi. Usata da Karvonen
+    // per calcolare zone personalizzate + indicatore recupero (trend ↑ cronico = stress).
+    morningHR: "",
+    // Freschezza percepita 1-10 (surrogato dell'HRV: Saw 2016 conferma validità
+    // questionari soggettivi). 10 = lucido e pimpante, 1 = stanco/indolenzito.
+    morningFreshness: null as number | null,
     cyclePhase: "" as "" | "mestruazione" | "follicolare" | "ovulatoria" | "luteinica" | "amenorrea" | "menopausa" | "contraccettivo",
   });
 
@@ -524,7 +530,7 @@ export default function DiaryApp() {
               flex: 1, padding: "16px", background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
               border: "none", borderRadius: "14px", color: "#FFF", fontSize: "15px", fontWeight: 700, cursor: "pointer",
             }}>+ Allenamento</button>
-            <button onClick={() => { setDailyDate(today()); setDailyFields({ weight: "", sleep: "", sleepQ: "", fatigue: null, meds: "", bodyFat: "", muscleMass: "", bodyWater: "", cyclePhase: "" }); setScreen("daily"); }} style={{
+            <button onClick={() => { setDailyDate(today()); setDailyFields({ weight: "", sleep: "", sleepQ: "", fatigue: null, meds: "", bodyFat: "", muscleMass: "", bodyWater: "", morningHR: "", morningFreshness: null, cyclePhase: "" }); setScreen("daily"); }} style={{
               flex: 1, padding: "16px", background: "#16213E",
               border: "1px solid rgba(255,255,255,0.08)", borderRadius: "14px", color: "#E2E8F0",
               fontSize: "15px", fontWeight: 700, cursor: "pointer",
@@ -727,6 +733,33 @@ export default function DiaryApp() {
                 <option value="sufficiente">Sufficiente — qualche risveglio</option>
                 <option value="scarsa">Scarsa — stanco al risveglio</option>
               </select>
+            </div>
+            <div>
+              <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>FC a riposo mattutina</label>
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "6px" }}>
+                Misurata al risveglio prima di alzarti (da smartwatch/fascia o manualmente contando 60 sec). Abilita il calcolo zone Karvonen personalizzato + indicatore di recupero.
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <input type="number" min={35} max={100} value={dailyFields.morningHR} onChange={e => setDailyFields(p => ({ ...p, morningHR: e.target.value }))} placeholder="es. 52" style={{ ...inputStyle, flex: 1 }} />
+                <span style={{ fontSize: "13px", color: "#64748B" }}>bpm</span>
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "8px" }}>Freschezza percepita al risveglio</label>
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "6px" }}>
+                1 = molto stanco/indolenzito · 10 = lucido e pimpante. Usato dal coach come indicatore di recupero (Saw 2016).
+              </div>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                  <button key={n} onClick={() => setDailyFields(p => ({ ...p, morningFreshness: n }))} aria-label={`Freschezza ${n}`} aria-pressed={dailyFields.morningFreshness === n} style={{
+                    width: "44px", height: "44px", borderRadius: "10px",
+                    background: dailyFields.morningFreshness === n ? "#22C55E30" : "#1A1A2E",
+                    border: dailyFields.morningFreshness === n ? "2px solid #22C55E" : "1px solid rgba(255,255,255,0.08)",
+                    color: "#22C55E", fontSize: "15px", fontWeight: 700, cursor: "pointer",
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}>{n}</button>
+                ))}
+              </div>
             </div>
             <div>
               <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "8px" }}>Stanchezza Generale</label>
