@@ -8,6 +8,7 @@ import { CHUNKS, clearEmbeddings, ensureEmbeddings, getCacheStatus, CACHE_KEY, t
 import { translateGeminiError } from "../lib/geminiErrors";
 import { events } from "../lib/events";
 import BackupSection from "../components/BackupSection";
+import GoalsEditor from "../components/GoalsEditor";
 
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   gemini: "Google Gemini (consigliato)",
@@ -406,6 +407,16 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
             >
               {kbBusy ? "Rigenerazione in corso…" : "Rigenera knowledge base"}
             </button>
+          </div>
+
+          <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "20px" }}>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "12px" }}>
+              Obiettivi
+            </div>
+            <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "14px", lineHeight: 1.5 }}>
+              Gestisci i tuoi obiettivi attivi. Il coach dimensiona il piano su questi.
+            </div>
+            <GoalsEditor />
           </div>
 
           <BackupSection />

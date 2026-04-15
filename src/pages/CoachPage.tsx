@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import TrainingPlanView from "../components/TrainingPlanView";
 import CoachFeedList from "../components/CoachFeedList";
 import CoachChat from "../components/CoachChat";
+import GoalsEditor from "../components/GoalsEditor";
 import { hasApiKey } from "../lib/gemini";
 import { getJSON, setJSON } from "../lib/storage";
 import type { UserProfile, UserGoal, TrainingPlan } from "../lib/types";
@@ -10,7 +11,7 @@ import { generateInitialPlan } from "../lib/coach/planGenerator";
 import { maybeRunWeeklyReport } from "../lib/scheduler";
 import { translateGeminiError } from "../lib/geminiErrors";
 
-type Tab = "plan" | "feed" | "chat";
+type Tab = "plan" | "goals" | "feed" | "chat";
 
 export default function CoachPage() {
   const [tab, setTab] = useState<Tab>("plan");
@@ -155,6 +156,7 @@ export default function CoachPage() {
       <div role="tablist" style={{ display: "flex", gap: "6px", background: "#1A1A2E", padding: "4px", borderRadius: "12px", marginBottom: "16px" }}>
         {([
           { id: "plan" as const, label: "Piano" },
+          { id: "goals" as const, label: "Obiettivi" },
           { id: "feed" as const, label: "Feed" },
           { id: "chat" as const, label: "Chat" },
         ]).map(t => (
@@ -171,6 +173,17 @@ export default function CoachPage() {
       </div>
 
       {tab === "plan" && <TrainingPlanView />}
+      {tab === "goals" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>
+            Obiettivi
+          </div>
+          <div style={{ fontSize: "13px", color: "#94A3B8", lineHeight: 1.5 }}>
+            Modifica, aggiungi, archivia. Il coach dimensiona piano e feedback su questi obiettivi.
+          </div>
+          <GoalsEditor />
+        </div>
+      )}
       {tab === "feed" && (
         <>
           {setupStatus.hasKey && setupStatus.hasProfile && (
