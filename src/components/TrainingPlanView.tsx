@@ -3,10 +3,10 @@ import { getJSON } from "../lib/storage";
 import type { TrainingPlan, UserProfile, UserGoal } from "../lib/types";
 import { events } from "../lib/events";
 import { setJSON } from "../lib/storage";
+import { planStateHash } from "../lib/coach/planValidator";
 import { buildCoachContext, getLastNDays } from "../lib/diaryContext";
 import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach/planGenerator";
 import { translateGeminiError } from "../lib/geminiErrors";
-import { profileHashForPlan } from "../lib/coach/planValidator";
 import { savePlanWithHistory, getPlanHistory } from "../lib/coach/planHistory";
 import ZonesCard from "./ZonesCard";
 
@@ -21,6 +21,7 @@ const ADAPT_QUICK_PROMPTS = [
 export default function TrainingPlanView() {
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [currentProfile, setCurrentProfile] = useState<UserProfile | null>(null);
+  const [currentGoals, setCurrentGoals] = useState<UserGoal[]>([]);
   const [recentDays, setRecentDays] = useState<Array<{ date: string; workouts: any[] }>>([]);
   const [history, setHistory] = useState<TrainingPlan[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -47,14 +48,16 @@ export default function TrainingPlanView() {
   };
 
   const load = async () => {
-    const [p, profile, days, hist] = await Promise.all([
+    const [p, profile, goals, days, hist] = await Promise.all([
       getJSON<TrainingPlan | null>("training-plan", null),
       getJSON<UserProfile | null>("user-profile", null),
+      getJSON<UserGoal[]>("user-goals", []),
       getLastNDays(14),
       getPlanHistory(),
     ]);
     setPlan(p);
     setCurrentProfile(profile);
+    setCurrentGoals(goals);
     setRecentDays(days);
     setHistory(hist);
   };
@@ -63,15 +66,16 @@ export default function TrainingPlanView() {
     load();
     const offPlan = events.on("plan:updated", load);
     const offProfile = events.on("profile:updated", load);
+    const offGoals = events.on("goals:updated", load);
     const offWorkout = events.on("workout:saved", load);
-    return () => { offPlan(); offProfile(); offWorkout(); };
+    return () => { offPlan(); offProfile(); offGoals(); offWorkout(); };
   }, []);
 
-  // Profile hash check: se il profilo è cambiato rispetto al piano, segnala obsolescenza.
+  // State hash check: se profilo O goal sono cambiati rispetto al piano, segnala obsolescenza.
   const profileDrift = useMemo(() => {
     if (!plan || !currentProfile || !plan.profileHash) return false;
-    return plan.profileHash !== profileHashForPlan(currentProfile);
-  }, [plan, currentProfile]);
+    return plan.profileHash !== planStateHash(currentProfile, currentGoals);
+  }, [plan, currentProfile, currentGoals]);
 
   // Matching piano↔diario: per ogni giorno del piano, controlla se nel diario c'è un workout
   // registrato in quella data. Restituisce set di chiavi "weekN-dayStr" completate.
@@ -333,10 +337,10 @@ export default function TrainingPlanView() {
           borderRadius: "12px", padding: "12px 14px",
         }}>
           <div style={{ fontSize: "12px", color: "#F59E0B", fontWeight: 700, marginBottom: "4px" }}>
-            ⚠ Profilo cambiato dopo la generazione
+            ⚠ Profilo o obiettivi cambiati dopo la generazione
           </div>
           <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>
-            Età, esperienza, infortuni, disponibilità o aree dolore sono state modificate. Il piano corrente potrebbe non essere più ottimale — considera una rigenerazione.
+            Profilo (età, esperienza, infortuni, disponibilità, aree dolore) oppure obiettivi sono stati modificati dopo la generazione del piano. Il piano corrente potrebbe non essere più ottimale — considera una rigenerazione.
           </div>
         </div>
       )}

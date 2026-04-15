@@ -16,10 +16,12 @@ export interface BackupPayload {
     "user-profile"?: unknown;
     "user-goals"?: unknown;
     "training-plan"?: unknown;
+    "plan-history"?: unknown;
     "coach-feed"?: unknown;
     "coach-chat-history"?: unknown;
     "onboarding-completed"?: unknown;
     "last-weekly-report-date"?: unknown;
+    "last-motivation-date"?: unknown;
     "coach-feed-last-seen"?: unknown;
     // Diario
     "diary-index"?: string[];
@@ -32,10 +34,12 @@ const SIMPLE_KEYS = [
   "user-profile",
   "user-goals",
   "training-plan",
+  "plan-history",
   "coach-feed",
   "coach-chat-history",
   "onboarding-completed",
   "last-weekly-report-date",
+  "last-motivation-date",
   "coach-feed-last-seen",
 ] as const;
 

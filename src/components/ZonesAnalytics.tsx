@@ -47,8 +47,8 @@ export default function ZonesAnalytics() {
     return () => { offW(); offD(); offP(); };
   }, [period]);
 
-  const { tiz, totalMin, polar } = useMemo(() => {
-    if (!zones) return { tiz: [] as TimeInZone[], totalMin: 0, polar: { lowPct: 0, highPct: 0, isPolarized: false } };
+  const { tiz, totalMin, polar, totalSessions } = useMemo(() => {
+    if (!zones) return { tiz: [] as TimeInZone[], totalMin: 0, polar: { lowPct: 0, highPct: 0, isPolarized: false }, totalSessions: 0 };
     // Filtra workout nell'intervallo selezionato
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - period);
@@ -59,9 +59,15 @@ export default function ZonesAnalytics() {
     const filtered = workouts.filter(w => w._date >= cutoffKey);
     const tiz = timeInZones(filtered, zones.zones);
     const totalMin = tiz.reduce((a, z) => a + z.minutes, 0);
+    const totalSessions = tiz.reduce((a, z) => a + z.sessionCount, 0);
     const polar = polarizationCheck(tiz);
-    return { tiz, totalMin, polar };
+    return { tiz, totalMin, polar, totalSessions };
   }, [zones, workouts, period]);
+
+  // Soglia minima per mostrare il check 80/20: con meno di 4 sessioni di corsa
+  // la distribuzione è statisticamente rumorosa (una singola corsa pesa 100%).
+  const MIN_SESSIONS_FOR_POLAR = 4;
+  const enoughForPolar = totalSessions >= MIN_SESSIONS_FOR_POLAR;
 
   if (loading) return <div style={{ color: "#64748B", fontSize: "12px", padding: "8px 0" }}>Calcolo analytics…</div>;
   if (!zones) return null;
@@ -122,23 +128,33 @@ export default function ZonesAnalytics() {
             </div>
           </div>
 
-          <div style={{
-            background: polar.isPolarized ? "#14532D20" : "#78350F20",
-            border: `1px solid ${polar.isPolarized ? "#22C55E66" : "#F59E0B66"}`,
-            borderRadius: "12px", padding: "14px",
-          }}>
-            <div style={{ fontSize: "11px", color: polar.isPolarized ? "#22C55E" : "#F59E0B", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "8px", fontWeight: 700 }}>
-              Distribuzione polarizzata (Seiler 80/20)
+          {enoughForPolar ? (
+            <div style={{
+              background: polar.isPolarized ? "#14532D20" : "#78350F20",
+              border: `1px solid ${polar.isPolarized ? "#22C55E66" : "#F59E0B66"}`,
+              borderRadius: "12px", padding: "14px",
+            }}>
+              <div style={{ fontSize: "11px", color: polar.isPolarized ? "#22C55E" : "#F59E0B", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "8px", fontWeight: 700 }}>
+                Distribuzione polarizzata (Seiler 80/20)
+              </div>
+              <div style={{ fontSize: "22px", fontWeight: 800, color: "#E2E8F0", fontFamily: "'JetBrains Mono', monospace", marginBottom: "6px" }}>
+                {polar.lowPct}% / {polar.highPct}%
+              </div>
+              <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>
+                {polar.isPolarized
+                  ? `✓ Distribuzione polarizzata ok. Passi ${polar.lowPct}% del tempo in Z1+Z2 (bassa intensità) e ${polar.highPct}% in Z3+Z4+Z5 (alta intensità). Il modello 80/20 è quello che massimizza i guadagni endurance (Seiler 2010, Stöggl/Sperlich 2014).`
+                  : `⚠ Distribuzione sbilanciata: solo ${polar.lowPct}% in bassa intensità (target ≥75%). Probabilmente stai correndo troppo forte le sessioni "easy". Rallenta i fondi lenti: più volume a bassa intensità produce più miglioramento VO2max.`}
+              </div>
             </div>
-            <div style={{ fontSize: "22px", fontWeight: 800, color: "#E2E8F0", fontFamily: "'JetBrains Mono', monospace", marginBottom: "6px" }}>
-              {polar.lowPct}% / {polar.highPct}%
+          ) : (
+            <div style={{
+              background: "#1E293B40", border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: "12px", padding: "12px 14px",
+              fontSize: "12px", color: "#94A3B8", lineHeight: 1.5,
+            }}>
+              Distribuzione polarizzata non ancora calcolabile: servono almeno {MIN_SESSIONS_FOR_POLAR} sessioni di corsa con FC nell'intervallo (hai {totalSessions}). Con pochi campioni il rapporto Z1+Z2 vs Z3+Z4+Z5 è dominato da una singola corsa e non è indicativo.
             </div>
-            <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>
-              {polar.isPolarized
-                ? `✓ Distribuzione polarizzata ok. Passi ${polar.lowPct}% del tempo in Z1+Z2 (bassa intensità) e ${polar.highPct}% in Z3+Z4+Z5 (alta intensità). Il modello 80/20 è quello che massimizza i guadagni endurance (Seiler 2010, Stöggl/Sperlich 2014).`
-                : `⚠ Distribuzione sbilanciata: solo ${polar.lowPct}% in bassa intensità (target ≥75%). Probabilmente stai correndo troppo forte le sessioni "easy". Rallenta i fondi lenti: più volume a bassa intensità produce più miglioramento VO2max.`}
-            </div>
-          </div>
+          )}
         </>
       )}
 

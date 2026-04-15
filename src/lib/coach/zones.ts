@@ -103,14 +103,19 @@ export interface ComputeZonesInput {
 export function computeZones(input: ComputeZonesInput): ZonesResult {
   const { profile, fcRestLatest, recentWorkouts = [] } = input;
 
-  // FCmax: Tanaka teorica, sovrascritta da FCmax osservata se maggiore (segnale di test finito al massimo).
+  // FCmax: Tanaka teorica, sovrascritta da FCmax osservata solo se più osservazioni
+  // la confermano (protegge da spike cinturino isolati). Richiediamo ≥2 workout
+  // con fc_max > Tanaka + 3 bpm per adottare la nuova stima, e usiamo come riferimento
+  // il MASSIMO tra quelle osservazioni (non il percentile, per non perdere un PR legittimo).
   const fcMaxTanaka = tanakaFCmax(profile.age);
-  const observedMax = recentWorkouts
+  const fcMaxCandidates = recentWorkouts
     .map(w => Number(w.fields?.fc_max))
     .filter(n => Number.isFinite(n) && n > 100 && n < 230) as number[];
-  const fcMaxObserved = observedMax.length ? Math.max(...observedMax) : undefined;
-  // Usiamo la max osservata solo se supera la teorica di almeno 3 bpm (altrimenti rumore)
-  const fcMax = fcMaxObserved && fcMaxObserved > fcMaxTanaka + 3 ? fcMaxObserved : fcMaxTanaka;
+  const aboveTanakaThreshold = fcMaxCandidates.filter(n => n > fcMaxTanaka + 3);
+  const confirmedObserved = aboveTanakaThreshold.length >= 2 ? Math.max(...aboveTanakaThreshold) : undefined;
+  // Separiamo per trasparenza UI: mostriamo "osservata" solo se confermata (>1 volta sopra Tanaka+3)
+  const fcMaxObserved = confirmedObserved;
+  const fcMax = fcMaxObserved ?? fcMaxTanaka;
 
   // Estrai corse "easy" dal diario per range empirico (Fondo Lento + RPE ≤ 5 + no dolore alto)
   const easyRuns = recentWorkouts.filter(w => {
@@ -155,23 +160,27 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
   else if (fcRestLatest != null && fcRestLatest >= 35 && fcRestLatest <= 100) method = "karvonen";
   else method = "tanaka";
 
-  // Costruisci le 5 zone secondo il metodo scelto
+  // Costruisci le 5 zone secondo il metodo scelto.
+  // Se FCrest è disponibile, usiamo Karvonen (HRR) per TUTTE le zone, anche in
+  // modalità empirical — empirica sovrascrive solo Z2 con il range osservato.
+  // Questo evita di perdere la personalizzazione Karvonen quando salta in empirical.
+  const useKarvonen = (method === "karvonen" || method === "empirical") && typeof fcRestLatest === "number" && fcRestLatest >= 35 && fcRestLatest <= 100;
+
   const zones: Zone[] = ZONE_META.map((meta, i) => {
     const { lo, hi } = ZONE_BOUNDS_PCT[i];
     let hrLow: number, hrHigh: number;
 
-    if (method === "karvonen" && fcRestLatest) {
+    if (useKarvonen && fcRestLatest) {
       const band = karvonenBand(fcMax, fcRestLatest, lo, hi);
       hrLow = band.low;
       hrHigh = band.high;
     } else {
-      // Tanaka o empirical (per le altre zone non-Z2 useremo comunque % FCmax)
       hrLow = Math.round(lo * fcMax);
       hrHigh = Math.round(hi * fcMax);
     }
 
     // Override empirica SOLO per Z2: estende/restringe al range osservato nel diario.
-    // Le altre zone restano teoriche (non abbiamo abbastanza sessioni per ogni zona).
+    // Le altre zone restano Karvonen o Tanaka (non abbiamo abbastanza sessioni per ogni zona).
     if (method === "empirical" && meta.index === 2 && empiricalZ2Range) {
       hrLow = empiricalZ2Range.low;
       hrHigh = empiricalZ2Range.high;

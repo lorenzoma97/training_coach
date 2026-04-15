@@ -4,7 +4,7 @@ import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, planAsPrompt } from "../diaryContext";
 import type { UserProfile, UserGoal, TrainingPlan } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
-import { validatePlan, profileHashForPlan, computePlanStartDate } from "./planValidator";
+import { validatePlan, planStateHash, computePlanStartDate } from "./planValidator";
 
 const sessionSchema = z.object({
   day: z.enum(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]),
@@ -97,7 +97,7 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
     generatedAt: now.toISOString(),
     validUntil: validUntil.toISOString(),
     startDate: computePlanStartDate(now),
-    profileHash: profileHashForPlan(profile),
+    profileHash: planStateHash(profile, goals),
     weeks: parsed.weeks.map((w: z.infer<typeof weekSchema>) => ({
       weekNumber: w.weekNumber,
       focus: w.focus,
@@ -176,7 +176,7 @@ Se rilevi red flag, proponi deload esplicito.
     generatedAt: now.toISOString(),
     validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
     startDate: computePlanStartDate(now),
-    profileHash: profileHashForPlan(profile),
+    profileHash: planStateHash(profile, goals),
     weeks: parsed.weeks,
     rationale: parsed.rationale,
   };
@@ -259,7 +259,7 @@ Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le
     generatedAt: now.toISOString(),
     validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
     startDate: currentPlan.startDate ?? computePlanStartDate(now),
-    profileHash: profileHashForPlan(profile),
+    profileHash: planStateHash(profile, goals),
     weeks: parsed.weeks,
     rationale: parsed.rationale,
   };

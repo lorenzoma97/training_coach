@@ -2,7 +2,7 @@
 // L'LLM è istruito via prompt ma può sbagliare/ignorare regole. Qui controlliamo
 // le invarianti di sicurezza e correggiamo/avvisiamo se violate.
 
-import type { TrainingPlan, UserProfile, PlanWeek } from "../types";
+import type { TrainingPlan, UserProfile, PlanWeek, UserGoal } from "../types";
 import { restDaysMinForAge, SAFETY } from "./safetyRules";
 
 export interface PlanValidationIssue {
@@ -94,10 +94,22 @@ export function validatePlan(plan: TrainingPlan, profile: UserProfile): PlanVali
 }
 
 /**
- * Hash stabile dei campi profilo che influenzano il piano. Se cambia significa
- * che il piano generato prima potrebbe non essere più ottimale.
+ * Hash stabile dei campi profilo + obiettivi attivi che influenzano il piano.
+ * Se cambia significa che il piano generato prima potrebbe non essere più ottimale.
+ * Include anche i goal per rilevare il drift quando l'utente modifica obiettivi
+ * via GoalsEditor (altrimenti il piano resta invariato senza alcun hint).
  */
-export function profileHashForPlan(profile: UserProfile): string {
+export function planStateHash(profile: UserProfile, goals: UserGoal[] = []): string {
+  const activeGoals = goals
+    .filter(g => g.status !== "archived")
+    .map(g => ({
+      id: g.id,
+      smart: g.smartDescription,
+      // KPI influenza strutturalmente il piano (target + deadline)
+      metric: g.kpi.metric, target: g.kpi.target, deadline: g.kpi.deadline,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
   const relevant = {
     age: profile.age,
     sex: profile.sex,
@@ -106,12 +118,18 @@ export function profileHashForPlan(profile: UserProfile): string {
     painTrackingAreas: [...(profile.painTrackingAreas || [])].sort(),
     weekly_availability: profile.weekly_availability,
     equipment: [...(profile.equipment || [])].sort(),
+    goals: activeGoals,
   };
   // djb2 hash della serializzazione JSON: stabile cross-session.
   const s = JSON.stringify(relevant);
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
   return (h >>> 0).toString(36);
+}
+
+/** @deprecated usa planStateHash(profile, goals) che include anche i goal. */
+export function profileHashForPlan(profile: UserProfile): string {
+  return planStateHash(profile, []);
 }
 
 /**

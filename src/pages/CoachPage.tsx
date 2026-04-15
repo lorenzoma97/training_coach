@@ -7,6 +7,7 @@ import ZonesCard from "../components/ZonesCard";
 import ZonesAnalytics from "../components/ZonesAnalytics";
 import { hasApiKey } from "../lib/gemini";
 import { getJSON, setJSON } from "../lib/storage";
+import { savePlanWithHistory } from "../lib/coach/planHistory";
 import type { UserProfile, UserGoal, TrainingPlan } from "../lib/types";
 import { events } from "../lib/events";
 import { generateInitialPlan } from "../lib/coach/planGenerator";
@@ -92,7 +93,9 @@ export default function CoachPage() {
       const goals = await getJSON<UserGoal[]>("user-goals", []);
       if (!profile) { setPlanError("Compila prima il profilo."); return; }
       const plan = await generateInitialPlan(profile, goals);
-      await setJSON("training-plan", plan);
+      // Usa savePlanWithHistory così se un vecchio piano esiste (es. post-reset
+      // parziale) viene archiviato invece di perdersi silenziosamente.
+      await savePlanWithHistory(plan);
       events.emit("plan:updated", { at: new Date().toISOString() });
       await refreshSetup();
     } catch (e) {

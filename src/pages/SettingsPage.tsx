@@ -150,10 +150,15 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
         storage.delete("user-profile"),
         storage.delete("user-goals"),
         storage.delete("training-plan"),
+        storage.delete("plan-history"),
         storage.delete("coach-feed"),
         storage.delete("coach-chat-history"),
+        storage.delete("coach-feed-last-seen"),
         storage.delete("onboarding-completed"),
+        storage.delete("onboarding-draft"),
         storage.delete("last-weekly-report-date"),
+        storage.delete("last-motivation-date"),
+        storage.delete("pending-diary-openAdd"),
       ]);
       onResetOnboarding();
     } finally {
