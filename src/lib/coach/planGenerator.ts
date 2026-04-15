@@ -89,10 +89,10 @@ Genera un microciclo di 2 settimane (weeks con weekNumber 1 e 2) che porti l'ute
   return {
     generatedAt: now.toISOString(),
     validUntil: validUntil.toISOString(),
-    weeks: parsed.weeks.map(w => ({
+    weeks: parsed.weeks.map((w: z.infer<typeof weekSchema>) => ({
       weekNumber: w.weekNumber,
       focus: w.focus,
-      sessions: w.sessions.map(s => ({
+      sessions: w.sessions.map((s: z.infer<typeof sessionSchema>) => ({
         day: s.day,
         type: s.type,
         subtype: s.subtype,
@@ -149,6 +149,81 @@ Se rilevi red flag, proponi deload esplicito nella settimana 1.
   if (!parseResult.success) {
     console.error("[planGenerator] Zod parse failed:", parseResult.error.message);
     throw new Error("Il coach non è riuscito a generare un piano strutturato. Riprova tra qualche secondo.");
+  }
+  const parsed = parseResult.data;
+  const now = new Date();
+  return {
+    generatedAt: now.toISOString(),
+    validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
+    weeks: parsed.weeks,
+    rationale: parsed.rationale,
+  };
+}
+
+/**
+ * Adatta un piano esistente in base a una richiesta testuale dell'utente.
+ * Esempi: "più intenso", "non posso allenarmi giovedì", "voglio più forza",
+ * "settimana di deload", "aggiungi yoga il martedì".
+ * Il coach rispetta sempre le safety rules anche se l'utente chiede di sforzare.
+ */
+export async function adaptPlan(
+  profile: UserProfile,
+  goals: UserGoal[],
+  currentPlan: TrainingPlan,
+  recentDaysText: string,
+  userRequest: string,
+): Promise<TrainingPlan> {
+  const userPrompt = `
+PROFILO UTENTE:
+${profileAsPrompt(profile)}
+
+OBIETTIVI:
+${goalsAsPrompt(goals)}
+
+PIANO CORRENTE (da modificare):
+${planAsPrompt(currentPlan)}
+
+ULTIMI 14 GIORNI REALI DAL DIARIO:
+${recentDaysText}
+
+RICHIESTA SPECIFICA DELL'UTENTE:
+"${userRequest}"
+
+Il tuo compito: adattare il piano corrente in base ALLA RICHIESTA dell'utente, interpretandola sensatamente.
+Esempi di richieste possibili:
+- "più intenso/difficile" → aumenta intensità (intervalli, ripetute, carichi) mantenendo safety
+- "meno intenso/voglio solo mantenere" → riduci volume/intensità, più recovery
+- "non posso allenarmi [giorno]" → sposta la sessione in altro giorno della stessa settimana
+- "aggiungi [disciplina]" → integra sessioni del tipo richiesto se compatibile con disponibilità
+- "deload" → settimana 1 con -40-50% volume, intensità invariata (Bosquet 2007)
+- "preparami per [evento X data]" → riorganizza verso quella data con tapering finale se ≤2 settimane
+
+REGOLE NON VIOLABILI:
+- Rispetta SEMPRE le regole di sicurezza e le condizioni dichiarate.
+- Se la richiesta è rischiosa (es. "voglio fare triplo volume"), proponi una versione sicura e spiega perché nel "rationale".
+- Non rimuovere tutti i giorni di riposo.
+
+Rispondi con il piano MODIFICATO completo (entrambe le settimane, tutte le sessioni). Il "rationale" DEVE menzionare esplicitamente cosa è cambiato rispetto al piano precedente e perché.
+`.trim();
+
+  const bCtx: BuildContext = {
+    profile,
+    hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
+    hasStrengthInPlan: true,
+    detectedConditions: extractConditionsFromProfile(profile),
+  };
+  const systemInstruction = PROMPTS.planGeneration() + "\n\n" + buildConditionalPrompt(bCtx);
+
+  const raw = await generateJSON<unknown>({
+    systemInstruction,
+    userPrompt,
+    schemaHint,
+    maxTokens: 3000,
+  });
+  const parseResult = planSchema.safeParse(raw);
+  if (!parseResult.success) {
+    console.error("[adaptPlan] Zod parse failed:", parseResult.error.message);
+    throw new Error("Il coach non è riuscito a generare un piano strutturato. Riprova con una richiesta più chiara.");
   }
   const parsed = parseResult.data;
   const now = new Date();
