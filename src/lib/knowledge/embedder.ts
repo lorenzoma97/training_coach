@@ -17,16 +17,20 @@ export interface EmbeddingCache {
 /** Soglia minima di chunks presenti per considerare la cache "ready". */
 const READY_THRESHOLD = 0.8;
 
+// Bump quando cambia il modello embedding: invalida tutte le cache esistenti.
+// v2 = migrazione da text-embedding-004 (dismesso 2026-01) a gemini-embedding-001.
+const EMBEDDER_SCHEMA_VERSION = "v2";
+
 function computeVersion(): string {
   const sig = CHUNKS.map(c => c.id).join(",") + "|n=" + CHUNKS.length;
   // djb2 hash
   let h = 5381;
   for (let i = 0; i < sig.length; i++) h = ((h << 5) + h) + sig.charCodeAt(i);
-  // Includi il provider nell'identità del cache: embeddings di provider diversi
+  // Includi provider + schema version: embeddings di provider/modelli diversi
   // hanno dimensione/semantica differenti e non sono compatibili.
   const cfg = getCurrentConfigSync();
   const prov = cfg?.provider ?? "none";
-  return String(h >>> 0) + "-" + prov;
+  return `${EMBEDDER_SCHEMA_VERSION}-${h >>> 0}-${prov}`;
 }
 
 function getEmbedder() {

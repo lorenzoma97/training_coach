@@ -35,12 +35,20 @@ export default function TrendsPage() {
     loadDays();
     const onResize = () => setWidth(Math.min(window.innerWidth - 56, 504));
     window.addEventListener("resize", onResize);
-    const off = events.on("data:externalChange", ({ key }) => {
+
+    // Reagisce a salvataggi live nello STESSO tab (via event bus)
+    const offLocal1 = events.on("workout:saved", loadDays);
+    const offLocal2 = events.on("daily:saved", loadDays);
+    // + cross-tab (altri dispositivi/finestre)
+    const offExt = events.on("data:externalChange", ({ key }) => {
       if (key.startsWith("day:") || key === "diary-index") loadDays();
     });
+
     return () => {
       window.removeEventListener("resize", onResize);
-      off();
+      offLocal1();
+      offLocal2();
+      offExt();
     };
   }, []);
 

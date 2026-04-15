@@ -263,28 +263,59 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     if (myReqId === feasibilityReqIdRef.current) setCheckingAny(false);
   };
 
-  const acceptProposalAt = (idx: number) => {
-    const check = pendingChecks[idx];
-    if (!check) return;
+  // Helper condiviso: crea un goal a partire da descrizione/kpi/reasoning forniti
+  const addGoalAndClearSlot = (idx: number, original: string, smart: string, kpi: UserGoal["kpi"], realistic: boolean, reasoning: string) => {
     const goal: UserGoal = {
       id: Date.now().toString(36) + "-" + idx,
-      originalDescription: goalTexts[idx].trim(),
-      smartDescription: check.counterProposal.description,
-      kpi: check.counterProposal.kpi,
-      realistic: check.realistic,
-      coachReasoning: check.reasoning,
+      originalDescription: original,
+      smartDescription: smart,
+      kpi,
+      realistic,
+      coachReasoning: reasoning,
       status: "active",
       createdAt: new Date().toISOString(),
     };
     setGoals(g => [...g, goal]);
-    // Azzero solo quel slot
     setGoalTexts(prev => prev.map((v, i) => i === idx ? "" : v));
     setPendingChecks(prev => prev.map((v, i) => i === idx ? null : v));
     setCheckErrors(prev => prev.map((v, i) => i === idx ? "" : v));
-    // Riduci goalsCount se quello era l'ultimo
     const remaining = goalTexts.filter((t, i) => i !== idx && t.trim()).length;
     const needed = Math.max(1, remaining);
     if (needed < goalsCount) setGoalsCount(needed as 1 | 2 | 3);
+  };
+
+  const acceptProposalAt = (idx: number) => {
+    const check = pendingChecks[idx];
+    if (!check) return;
+    addGoalAndClearSlot(
+      idx,
+      goalTexts[idx].trim(),
+      check.counterProposal.description,
+      check.counterProposal.kpi,
+      check.realistic,
+      check.reasoning,
+    );
+  };
+
+  // Accetta l'obiettivo ORIGINALE dell'utente ignorando la controproposta del coach.
+  // Utile quando l'utente vuole fare uno sforzo extra / target ambizioso consapevolmente.
+  const keepOriginalAt = (idx: number) => {
+    const check = pendingChecks[idx];
+    const original = goalTexts[idx].trim();
+    if (!original) return;
+    if (!check?.realistic) {
+      if (!confirm(
+        `Il coach consiglia una versione meno ambiziosa. Se vuoi comunque tenere '${original}', il piano sarà dimensionato sul tuo target originale.\n\nATTENZIONE: accetti il rischio di un carico superiore a quello raccomandato. Procedere?`
+      )) return;
+    }
+    addGoalAndClearSlot(
+      idx,
+      original,
+      original, // originale diventa la versione "definitiva"
+      check?.counterProposal.kpi ?? { metric: "obiettivo utente", target: "—", deadline: "—" },
+      false, // segnala nel dato che non è stato "validato realistic" dal coach
+      check ? `Utente ha scelto di mantenere il goal originale, preferendo un carico più ambizioso. Ragionamento originale del coach: ${check.reasoning}` : "Utente ha scelto il goal originale senza verifica coach.",
+    );
   };
 
   const discardProposalAt = (idx: number) => {
@@ -676,12 +707,33 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
                             {check.counterProposal.kpi.metric}: {check.counterProposal.kpi.target} — {check.counterProposal.kpi.deadline}
                           </div>
                         </div>
-                        <div style={{ display: "flex", gap: "8px" }}>
-                          <button onClick={() => acceptProposalAt(i)} style={{ ...primaryBtn, flex: 1, padding: "10px", fontSize: "13px" }}>
-                            {check.realistic ? "Conferma" : "Accetta"}
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          <button onClick={() => acceptProposalAt(i)} style={{ ...primaryBtn, flex: "1 1 140px", padding: "10px", fontSize: "13px" }}>
+                            {check.realistic ? "Conferma" : "Accetta proposta"}
                           </button>
-                          <button onClick={() => discardProposalAt(i)} style={{ ...ghostBtn, flex: 1, fontSize: "13px", padding: "8px 12px" }}>Modifica</button>
+                          {!check.realistic && (
+                            <button
+                              onClick={() => keepOriginalAt(i)}
+                              title="Tieni l'obiettivo originale, accettando un carico più ambizioso di quello raccomandato"
+                              style={{
+                                flex: "1 1 140px", padding: "10px",
+                                background: "transparent",
+                                border: "1px solid #F59E0B66",
+                                borderRadius: "10px",
+                                color: "#F59E0B", fontWeight: 700, fontSize: "13px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              💪 Tengo il mio
+                            </button>
+                          )}
+                          <button onClick={() => discardProposalAt(i)} style={{ ...ghostBtn, flex: "1 1 100px", fontSize: "13px", padding: "8px 12px" }}>Modifica</button>
                         </div>
+                        {!check.realistic && (
+                          <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "8px", lineHeight: 1.4 }}>
+                            <b style={{ color: "#F59E0B" }}>"Tengo il mio"</b> mantiene l'obiettivo che hai scritto. Il coach dimensionerà comunque il piano sul tuo target — accetti un carico superiore a quello raccomandato.
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

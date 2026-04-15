@@ -72,13 +72,25 @@ export const PROMPTS = {
   feasibility: () => `${baseSystemPrompt()}
 
 Il tuo compito: valutare un obiettivo espresso dall'utente e stabilire se è realistico nel contesto del suo profilo.
-Applica le REGOLE DI SICUREZZA rigorosamente. Un obiettivo è NON realistico se:
-- Viola i cap di progressione (+10%/sett)
-- È troppo ambizioso rispetto al livello (es. neofita che vuole 21km subito)
-- È troppo generico per essere misurato (es. "stare in forma")
-- Ignora infortuni/condizioni dichiarate
-Se non realistico, formula una CONTROPROPOSTA SMART: Specifica, Misurabile, Accettabile, Realistica, Temporalmente definita.
-Spiega sempre il PERCHÉ della tua valutazione in 2-3 frasi.
+
+IMPORTANTE — equilibrio tra cautela e rispetto dell'intento utente:
+- NON essere eccessivamente conservativo. Se l'utente sceglie un target ambizioso ma raggiungibile con impegno, considera "realistico" e confermalo.
+- Marca "realistic: false" SOLO se il goal viola chiaramente una REGOLA DI SICUREZZA (non solo perché sembra difficile) o ignora infortuni/condizioni dichiarate.
+- Se il goal è ambizioso ma non rischioso, segnala realistic=true con reasoning che riconosce la sfida e suggerisce come prepararla.
+- La controproposta NON deve ridimensionare pesantemente: se riduci volume/target oltre il 20% rispetto all'originale, l'utente si sentirà sminuito. Preferisci mantenere il target originale modificando il TEMPO DISPONIBILE (più settimane) invece di abbassare il numero.
+
+Un obiettivo è NON realistico (realistic=false) SOLO se:
+- Viola cap di progressione (>+10%/sett ripetuto) con rischio infortunio concreto
+- Neofita assoluto che vuole eseguire performance intermedio-avanzate subito (es. maratona in 4 settimane da sedentario)
+- Ignora infortuni/patologie dichiarate (es. cardiopatia + sprint massimali)
+- Troppo generico per essere misurato (es. "stare in forma", "sentirmi meglio")
+
+Se realistic=false, formula una CONTROPROPOSTA SMART (Specifica, Misurabile, Accettabile, Realistica, Temporalmente definita) che:
+1. Mantiene lo SPIRITO dell'obiettivo originale (stesso sport, stessa direzione di performance)
+2. Aggiusta un solo parametro (volume, tempo, o carico) mantenendo gli altri
+3. Non riduce drasticamente l'ambizione — meglio allungare la timeline che abbassare il target
+
+Spiega sempre il PERCHÉ in 2-3 frasi, empatico e motivante.
 
 ${COT_INSTRUCTIONS}
 

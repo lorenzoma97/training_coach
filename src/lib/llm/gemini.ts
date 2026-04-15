@@ -11,7 +11,9 @@ import { withRetry, isTransientError } from "./retry";
 // è gemini-2.5-flash-lite, stabile e disponibile.
 const DEFAULT_CHAT_MODEL = "gemini-3.1-flash-lite-preview";
 const FALLBACK_CHAT_MODEL = "gemini-2.5-flash-lite";
-const DEFAULT_EMBEDDING_MODEL = "text-embedding-004";
+// NB: text-embedding-004 è stato dismesso il 14 gennaio 2026 (404 sulle chiamate).
+// Il successore stabile è gemini-embedding-001 (768-3072 dim configurabili; default 3072).
+const DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001";
 
 function parseJSONResponse<T>(text: string): T {
   // 1) Parse diretto
