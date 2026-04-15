@@ -34,6 +34,12 @@ export interface StreamChatParams {
   systemInstruction: string;
   history: ChatTurn[];
   userMessage: string;
+  /**
+   * Opzionale: segnale per interrompere lo stream lato caller.
+   * Il produttore deve fermarsi al primo chunk dopo l'abort. I chunk già ricevuti
+   * restano a carico del consumer (persist parziale).
+   */
+  signal?: AbortSignal;
 }
 
 export interface LLMClient {

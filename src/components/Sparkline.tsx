@@ -1,6 +1,6 @@
 // Mini chart SVG a line-path, zero dipendenze.
-// Gestisce gap (valori null/undefined).
-import { useMemo } from "react";
+// Gestisce gap (valori null/undefined) e tooltip hover/tap interattivo.
+import { useMemo, useRef, useState } from "react";
 
 export interface SparklinePoint {
   date: string;  // YYYY-MM-DD
@@ -32,9 +32,16 @@ export default function Sparkline({
   /** Se true, valori minori = più alti sul grafico (utile per passo: più basso = migliore). */
   invertY?: boolean;
 }) {
-  const { path, area, lastValue, dots, axisMin, axisMax } = useMemo(() => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const { path, area, lastValue, dots, axisMin, axisMax, allCoords } = useMemo(() => {
     const nums = points.map(p => p.value).filter((v): v is number => v != null && Number.isFinite(v));
-    if (nums.length === 0) return { path: "", area: "", lastValue: null, dots: [] as { x: number; y: number }[], axisMin: 0, axisMax: 1 };
+    if (nums.length === 0) return {
+      path: "", area: "", lastValue: null,
+      dots: [] as { x: number; y: number }[], axisMin: 0, axisMax: 1,
+      allCoords: [] as Array<{ x: number; y: number; idx: number } | null>,
+    };
     const min = yMin ?? Math.min(...nums);
     const max = yMax ?? Math.max(...nums);
     const range = max - min || 1;
@@ -44,7 +51,6 @@ export default function Sparkline({
 
     const toXY = (i: number, v: number) => {
       const x = pad + (i / Math.max(1, points.length - 1)) * w;
-      // invertY: valori minori appaiono in alto (utile per passo)
       const ratio = invertY ? (max - v) / range : (v - min) / range;
       const y = pad + h - ratio * h;
       return { x, y };
@@ -53,11 +59,13 @@ export default function Sparkline({
     let pathStr = "";
     let areaStr = "";
     const ds: { x: number; y: number }[] = [];
+    const coords: Array<{ x: number; y: number; idx: number } | null> = [];
     let inSegment = false;
-    let firstX = 0, lastX = 0, lastY = 0;
+    let firstX = 0, lastX = 0;
 
     points.forEach((p, i) => {
       if (p.value == null || !Number.isFinite(p.value)) {
+        coords.push(null);
         inSegment = false;
         return;
       }
@@ -69,8 +77,9 @@ export default function Sparkline({
       } else {
         pathStr += ` L ${x} ${y}`;
       }
-      lastX = x; lastY = y;
+      lastX = x;
       ds.push({ x, y });
+      coords.push({ x, y, idx: i });
     });
 
     if (ds.length > 0) {
@@ -78,10 +87,34 @@ export default function Sparkline({
     }
 
     const last = nums[nums.length - 1];
-    return { path: pathStr, area: areaStr, lastValue: last, dots: ds, axisMin: min, axisMax: max };
+    return { path: pathStr, area: areaStr, lastValue: last, dots: ds, axisMin: min, axisMax: max, allCoords: coords };
   }, [points, width, height, yMin, yMax, invertY]);
 
   const fmt = (v: number) => formatValue ? formatValue(v) : (Number.isInteger(v) ? String(v) : v.toFixed(1));
+
+  // Converte coordinate pixel → indice punto più vicino (lineare per layout orizzontale)
+  const handleMove = (clientX: number) => {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const relX = clientX - rect.left;
+    // Cerca il punto più vicino con dato valido
+    let bestIdx: number | null = null;
+    let bestDist = Infinity;
+    for (const c of allCoords) {
+      if (!c) continue;
+      const d = Math.abs(c.x - relX);
+      if (d < bestDist) { bestDist = d; bestIdx = c.idx; }
+    }
+    setHoverIdx(bestIdx);
+  };
+
+  const fmtDate = (iso: string) => {
+    try {
+      const [y, m, d] = iso.split("-").map(Number);
+      const dt = new Date(y, m - 1, d);
+      return dt.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+    } catch { return iso; }
+  };
 
   if (!path) {
     return (
@@ -91,16 +124,47 @@ export default function Sparkline({
     );
   }
 
+  const hoverCoord = hoverIdx != null ? allCoords[hoverIdx] : null;
+  const hoverPoint = hoverIdx != null ? points[hoverIdx] : null;
+
   return (
     <div style={{ position: "relative", width, height }}>
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
+      <svg
+        ref={svgRef}
+        width={width} height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        style={{ display: "block", touchAction: "pan-y" }}
+        onMouseMove={e => handleMove(e.clientX)}
+        onMouseLeave={() => setHoverIdx(null)}
+        onTouchStart={e => { const t = e.touches[0]; if (t) handleMove(t.clientX); }}
+        onTouchMove={e => { const t = e.touches[0]; if (t) handleMove(t.clientX); }}
+        onTouchEnd={() => setHoverIdx(null)}
+      >
         <path d={area} fill={color} opacity={0.12} />
         <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
         {showDots && dots.map((d, i) => (
           <circle key={i} cx={d.x} cy={d.y} r={2.5} fill={color} />
         ))}
+        {hoverCoord && (
+          <>
+            <line x1={hoverCoord.x} x2={hoverCoord.x} y1={0} y2={height} stroke={color} strokeWidth={1} strokeDasharray="2 2" opacity={0.5} />
+            <circle cx={hoverCoord.x} cy={hoverCoord.y} r={4} fill={color} stroke="#0B0F1A" strokeWidth={1.5} />
+          </>
+        )}
       </svg>
-      {lastValue != null && (
+      {hoverPoint && hoverPoint.value != null ? (
+        <div role="tooltip" style={{
+          position: "absolute", top: 2, right: 6,
+          fontSize: "11px", fontWeight: 700, color,
+          fontFamily: "'JetBrains Mono', monospace",
+          background: "#0B0F1ACC", padding: "4px 8px", borderRadius: "6px",
+          border: `1px solid ${color}40`,
+          pointerEvents: "none",
+        }}>
+          <div style={{ color: "#94A3B8", fontSize: "9px", fontWeight: 600, letterSpacing: "0.05em" }}>{fmtDate(hoverPoint.date)}</div>
+          <div>{fmt(hoverPoint.value)}{unit || ""}</div>
+        </div>
+      ) : lastValue != null && (
         <div style={{
           position: "absolute", top: 4, right: 6,
           fontSize: "11px", fontWeight: 700, color,

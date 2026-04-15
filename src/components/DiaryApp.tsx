@@ -73,7 +73,14 @@ const PAIN_LEVELS = [
 ];
 
 const FATIGUE_COLORS = (n: number) => n <= 3 ? "#22C55E" : n <= 6 ? "#EAB308" : n <= 8 ? "#F97316" : "#EF4444";
-const today = () => new Date().toISOString().split("T")[0];
+const today = () => {
+  // Local date (not UTC) to avoid cross-midnight logging bugs (Europe/Rome UTC+1/+2).
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 const fmtDate = (d: string) => { const dt = new Date(d + "T12:00:00"); return dt.toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" }); };
 const fmtDateFull = (d: string) => { const dt = new Date(d + "T12:00:00"); return dt.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" }); };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -154,6 +161,8 @@ export default function DiaryApp() {
   const [addPainByArea, setAddPainByArea] = useState<Record<string, { pre: number | null; during: number | null; post: number | null }>>({});
   const [addRpe, setAddRpe] = useState<number | null>(null);
   const [addNotes, setAddNotes] = useState("");
+  // Se editingWorkoutId è settato, handleSaveWorkout sostituirà invece di creare.
+  const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
 
   // Zone di dolore da tracciare, lette dal profilo utente. Se vuote → pain picker nascosto.
   const [painAreas, setPainAreas] = useState<string[]>([]);
@@ -234,6 +243,7 @@ export default function DiaryApp() {
       setAddPainByArea({});
       setAddRpe(null);
       setAddNotes("");
+      setEditingWorkoutId(null);
       setScreen("add");
     });
     return off;
@@ -252,30 +262,75 @@ export default function DiaryApp() {
     try {
       const date = addDate;
       let dayData = (await loadDay(date)) || { daily: null, workouts: [] };
-      const newWorkout = {
-        id: uid(), type: addType, fields: { ...addFields },
-        pain: { ...addPainByArea }, rpe: addRpe, notes: addNotes,
-        createdAt: new Date().toISOString(),
-      };
-      dayData.workouts.push(newWorkout);
-      await saveDay(date, dayData);
+      if (editingWorkoutId) {
+        // Modifica: sostituisce i campi del workout esistente, preservando id + createdAt.
+        const idx = dayData.workouts.findIndex((w: any) => w.id === editingWorkoutId);
+        if (idx < 0) throw new Error("Workout non trovato (potrebbe essere stato eliminato).");
+        const existing = dayData.workouts[idx];
+        const updated = {
+          ...existing,
+          type: addType,
+          fields: { ...addFields },
+          pain: { ...addPainByArea },
+          rpe: addRpe,
+          notes: addNotes,
+          updatedAt: new Date().toISOString(),
+        };
+        dayData.workouts[idx] = updated;
+        await saveDay(date, dayData);
+        events.emit("workout:saved", { date, workout: updated });
+        savedOk = true;
+        flash("Allenamento aggiornato ✓");
+      } else {
+        const newWorkout = {
+          id: uid(), type: addType, fields: { ...addFields },
+          pain: { ...addPainByArea }, rpe: addRpe, notes: addNotes,
+          createdAt: new Date().toISOString(),
+        };
+        dayData.workouts.push(newWorkout);
+        await saveDay(date, dayData);
 
-      let idx = await loadIndex();
-      if (!idx.includes(date)) { idx.push(date); await saveIndex(idx); }
+        let idx = await loadIndex();
+        if (!idx.includes(date)) { idx.push(date); await saveIndex(idx); }
 
-      events.emit("workout:saved", { date, workout: newWorkout });
+        events.emit("workout:saved", { date, workout: newWorkout });
+        savedOk = true;
+        flash("Allenamento salvato ✓");
+      }
 
-      savedOk = true;
       setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes("");
-      flash("Allenamento salvato ✓");
+      setEditingWorkoutId(null);
       await refresh();
       setScreen("home");
-    } catch (e) {
+    } catch (e: any) {
       console.error("[handleSaveWorkout]", e);
-      if (!savedOk) flash("Errore nel salvataggio ✗");
+      if (!savedOk) flash(e?.message?.includes("Spazio locale") ? e.message : "Errore nel salvataggio ✗");
     } finally {
       setSaving(false);
     }
+  };
+
+  // Apre il form in modalità modifica: popola addFields/Pain/Rpe/Notes dal workout esistente.
+  const openEditWorkout = (date: string, w: any) => {
+    setAddDate(date);
+    setAddType(w.type);
+    setAddFields({ ...(w.fields || {}) });
+    // Normalizza pain: se legacy { pre, during, post }, lo espande a { polpaccio: {...} }
+    const rawPain = w.pain && typeof w.pain === "object" ? w.pain : {};
+    const isLegacy = "pre" in rawPain || "during" in rawPain || "post" in rawPain;
+    if (isLegacy) {
+      setAddPainByArea({ polpaccio: { pre: rawPain.pre ?? null, during: rawPain.during ?? null, post: rawPain.post ?? null } });
+    } else {
+      const normalized: Record<string, { pre: number | null; during: number | null; post: number | null }> = {};
+      for (const [area, v] of Object.entries(rawPain as Record<string, any>)) {
+        normalized[area] = { pre: v?.pre ?? null, during: v?.during ?? null, post: v?.post ?? null };
+      }
+      setAddPainByArea(normalized);
+    }
+    setAddRpe(w.rpe ?? null);
+    setAddNotes(w.notes ?? "");
+    setEditingWorkoutId(w.id);
+    setScreen("add");
   };
 
   const handleSaveDaily = async () => {
@@ -596,7 +651,7 @@ export default function DiaryApp() {
                   border: "none", borderRadius: "14px", color: "#FFF",
                   fontSize: "16px", fontWeight: 800,
                   cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1,
-                }}>{saving ? "Salvataggio…" : "Salva Sessione"}</button>
+                }}>{saving ? "Salvataggio…" : editingWorkoutId ? "Aggiorna Sessione" : "Salva Sessione"}</button>
               </>
             )}
           </div>
@@ -764,6 +819,10 @@ export default function DiaryApp() {
                       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
                         <span style={{ fontSize: "20px" }}>{wt?.icon}</span>
                         <span style={{ fontWeight: 700, fontSize: "15px", flex: 1 }}>{wt?.label}{w.fields?.tipo ? ` — ${w.fields.tipo}` : ""}</span>
+                        <button onClick={() => openEditWorkout(detailDate, w)} style={{
+                          background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+                          color: "#CBD5E1", fontSize: "12px", padding: "5px 10px", cursor: "pointer", fontWeight: 600,
+                        }}>Modifica</button>
                         <button onClick={() => handleDeleteWorkout(detailDate, w.id)} style={{
                           background: "#7F1D1D30", border: "1px solid #7F1D1D50", borderRadius: "8px",
                           color: "#EF4444", fontSize: "12px", padding: "5px 10px", cursor: "pointer", fontWeight: 600,
@@ -817,7 +876,7 @@ export default function DiaryApp() {
               </div>
             )}
 
-            <button onClick={() => { setAddDate(detailDate); setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes(""); setScreen("add"); }} style={{
+            <button onClick={() => { setAddDate(detailDate); setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes(""); setEditingWorkoutId(null); setScreen("add"); }} style={{
               width: "100%", padding: "14px", marginTop: "16px",
               background: "#1A1A2E", border: "1px dashed rgba(255,255,255,0.15)",
               borderRadius: "14px", color: "#94A3B8", fontSize: "14px", fontWeight: 600, cursor: "pointer",

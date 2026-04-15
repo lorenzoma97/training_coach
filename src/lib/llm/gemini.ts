@@ -5,6 +5,7 @@ import type {
 } from "./types";
 import { LLMKeyMissingError } from "./types";
 import { withRetry, isTransientError } from "./retry";
+import { events } from "../events";
 
 // Default: gemini-3.1-flash-lite-preview (stesso modello usato in nutribot v3).
 // Il fallback automatico (usato quando il primario dà 503 persistente dopo retry)
@@ -67,6 +68,11 @@ function createGeminiClient(config: LLMConfig): LLMClient {
     } catch (e) {
       if (modelId !== FALLBACK_CHAT_MODEL && isTransientError(e)) {
         console.warn(`[Gemini] Primario '${modelId}' sovraccarico. Fallback a '${FALLBACK_CHAT_MODEL}'.`);
+        events.emit("llm:fallbackActivated", {
+          primary: modelId,
+          fallback: FALLBACK_CHAT_MODEL,
+          reason: (e as Error)?.message || "Errore transitorio (503/429)",
+        });
         return await withRetry(fallback, { maxRetries: 1 });
       }
       throw e;
@@ -118,8 +124,10 @@ function createGeminiClient(config: LLMConfig): LLMClient {
         return chat.sendMessageStream(params.userMessage);
       };
       // Fallback ok solo prima che parta lo stream (altrimenti perderemmo token già ricevuti)
+      if (params.signal?.aborted) return;
       const result = await withFallback(() => startStream(modelId), () => startStream(FALLBACK_CHAT_MODEL));
       for await (const chunk of result.stream) {
+        if (params.signal?.aborted) return;
         const t = chunk.text();
         if (t) yield t;
       }

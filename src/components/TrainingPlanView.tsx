@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getJSON, setJSON } from "../lib/storage";
 import type { TrainingPlan, UserProfile, UserGoal } from "../lib/types";
 import { events } from "../lib/events";
-import { buildCoachContext } from "../lib/diaryContext";
+import { buildCoachContext, getLastNDays } from "../lib/diaryContext";
 import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach/planGenerator";
 import { translateGeminiError } from "../lib/geminiErrors";
+import { profileHashForPlan } from "../lib/coach/planValidator";
 
 const ADAPT_QUICK_PROMPTS = [
   "Più intenso",
@@ -16,6 +17,8 @@ const ADAPT_QUICK_PROMPTS = [
 
 export default function TrainingPlanView() {
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
+  const [currentProfile, setCurrentProfile] = useState<UserProfile | null>(null);
+  const [recentDays, setRecentDays] = useState<Array<{ date: string; workouts: any[] }>>([]);
   const [regenerating, setRegenerating] = useState(false);
   const [regenError, setRegenError] = useState<string | null>(null);
 
@@ -38,13 +41,58 @@ export default function TrainingPlanView() {
     successTimerRef.current = setTimeout(() => setSuccessMsg(null), 12000);
   };
 
-  const load = async () => setPlan(await getJSON<TrainingPlan | null>("training-plan", null));
+  const load = async () => {
+    const [p, profile, days] = await Promise.all([
+      getJSON<TrainingPlan | null>("training-plan", null),
+      getJSON<UserProfile | null>("user-profile", null),
+      getLastNDays(14),
+    ]);
+    setPlan(p);
+    setCurrentProfile(profile);
+    setRecentDays(days);
+  };
 
   useEffect(() => {
     load();
-    const off = events.on("plan:updated", load);
-    return off;
+    const offPlan = events.on("plan:updated", load);
+    const offProfile = events.on("profile:updated", load);
+    const offWorkout = events.on("workout:saved", load);
+    return () => { offPlan(); offProfile(); offWorkout(); };
   }, []);
+
+  // Profile hash check: se il profilo è cambiato rispetto al piano, segnala obsolescenza.
+  const profileDrift = useMemo(() => {
+    if (!plan || !currentProfile || !plan.profileHash) return false;
+    return plan.profileHash !== profileHashForPlan(currentProfile);
+  }, [plan, currentProfile]);
+
+  // Matching piano↔diario: per ogni giorno del piano, controlla se nel diario c'è un workout
+  // registrato in quella data. Restituisce set di chiavi "weekN-dayStr" completate.
+  const completedSessions = useMemo(() => {
+    if (!plan || !plan.startDate || !recentDays.length) return new Set<string>();
+    const done = new Set<string>();
+    const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+    const [sy, sm, sd] = plan.startDate.split("-").map(Number);
+    const start = new Date(sy, sm - 1, sd);
+    for (let w = 0; w < plan.weeks.length; w++) {
+      const week = plan.weeks[w];
+      for (const s of week.sessions) {
+        const dayIdx = DAY_KEYS.indexOf(s.day);
+        if (dayIdx < 0) continue;
+        const sessionDate = new Date(start);
+        sessionDate.setDate(start.getDate() + w * 7 + dayIdx);
+        const y = sessionDate.getFullYear();
+        const m = String(sessionDate.getMonth() + 1).padStart(2, "0");
+        const d = String(sessionDate.getDate()).padStart(2, "0");
+        const dateKey = `${y}-${m}-${d}`;
+        const dayEntry = recentDays.find((rd: { date: string; workouts: any[] }) => rd.date === dateKey);
+        if (dayEntry && (dayEntry.workouts || []).length > 0) {
+          done.add(`${week.weekNumber}-${s.day}-${sessionDate.getTime()}`);
+        }
+      }
+    }
+    return done;
+  }, [plan, recentDays]);
 
   const handleRegenerate = async () => {
     if (regenerating) return;
@@ -131,9 +179,20 @@ export default function TrainingPlanView() {
     );
   }
 
-  const today = new Date().getDay();
+  const todayDate = new Date();
   const DAY_MAP = ["dom","lun","mar","mer","gio","ven","sab"];
-  const todayKey = DAY_MAP[today];
+  const todayKey = DAY_MAP[todayDate.getDay()];
+
+  // Se il piano ha startDate, calcoliamo in quale settimana siamo "oggi" rispetto al piano.
+  // Altrimenti fallback legacy: week 1 == settimana corrente.
+  const todayPlanWeekNumber = (() => {
+    if (!plan.startDate) return 1;
+    const [y, m, d] = plan.startDate.split("-").map(Number);
+    const start = new Date(y, m - 1, d);
+    const diffDays = Math.floor((todayDate.getTime() - start.getTime()) / (24 * 3600 * 1000));
+    if (diffDays < 0) return 0; // piano non ancora iniziato
+    return Math.floor(diffDays / 7) + 1; // 1-based
+  })();
 
   const registerToday = (type: string) => {
     events.emit("diary:openAdd", { type });
@@ -182,37 +241,89 @@ export default function TrainingPlanView() {
           <div style={{ fontSize: "12px", color: isExpired ? "#EF4444" : "#F59E0B", fontWeight: 700, marginBottom: "4px" }}>
             {isExpired ? "⚠ Piano scaduto" : `⏰ Piano in scadenza (${daysLeft} giorni)`}
           </div>
+          <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5, marginBottom: isExpired ? "10px" : 0 }}>
+            {isExpired ? "Il piano sottostante non viene più mostrato per evitare confusione. Rigenera o adatta per riceverne uno aggiornato." : "Presto il coach dovrà produrre il microciclo successivo."}
+          </div>
+          {isExpired && (
+            <button
+              onClick={handleRegenerate}
+              disabled={regenerating}
+              style={{
+                padding: "10px 14px",
+                background: regenerating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
+                border: "none", borderRadius: "10px", color: "#FFF",
+                fontSize: "13px", fontWeight: 700,
+                cursor: regenerating ? "wait" : "pointer",
+                opacity: regenerating ? 0.5 : 1,
+              }}
+            >
+              {regenerating ? "⏳ Rigenerazione…" : "🔁 Rigenera ora"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {profileDrift && !isExpired && (
+        <div style={{
+          background: "#F59E0B15", border: "1px solid #F59E0B66",
+          borderRadius: "12px", padding: "12px 14px",
+        }}>
+          <div style={{ fontSize: "12px", color: "#F59E0B", fontWeight: 700, marginBottom: "4px" }}>
+            ⚠ Profilo cambiato dopo la generazione
+          </div>
           <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>
-            {isExpired ? "Rigenera il piano per ricevere sessioni aggiornate." : "Presto il coach dovrà produrre il microciclo successivo."}
+            Età, esperienza, infortuni, disponibilità o aree dolore sono state modificate. Il piano corrente potrebbe non essere più ottimale — considera una rigenerazione.
           </div>
         </div>
       )}
 
-      {plan.weeks.map(w => (
+      {!isExpired && plan.weeks.map((w: TrainingPlan["weeks"][number]) => (
         <div key={w.weekNumber} style={{ background: "#16213E", borderRadius: "14px", padding: "18px 20px", border: "1px solid rgba(255,255,255,0.06)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "12px" }}>
             <div style={{ fontSize: "11px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase" }}>Settimana {w.weekNumber}</div>
             <div style={{ fontSize: "13px", color: "#CBD5E1", fontWeight: 600 }}>{w.focus}</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {w.sessions.map((s, i) => {
-              const isToday = w.weekNumber === 1 && s.day === todayKey;
+            {w.sessions.map((s: TrainingPlan["weeks"][number]["sessions"][number], i: number) => {
+              // "Oggi" = il giorno della settimana corrente del piano (non hardcoded week 1)
+              const isToday = w.weekNumber === todayPlanWeekNumber && s.day === todayKey;
+              // È nel passato (già dovrebbe essere stata fatta)?
+              const isPast = w.weekNumber < todayPlanWeekNumber ||
+                (w.weekNumber === todayPlanWeekNumber && ["lun","mar","mer","gio","ven","sab","dom"].indexOf(s.day) < ["lun","mar","mer","gio","ven","sab","dom"].indexOf(todayKey));
+              // Matching con diario: sessione completata se c'è un workout in quel giorno
+              let isCompleted = false;
+              if (plan.startDate) {
+                const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+                const dayIdx = DAY_KEYS.indexOf(s.day);
+                if (dayIdx >= 0) {
+                  const [sy, sm, sd] = plan.startDate.split("-").map(Number);
+                  const start = new Date(sy, sm - 1, sd);
+                  const sessionDate = new Date(start);
+                  sessionDate.setDate(start.getDate() + (w.weekNumber - 1) * 7 + dayIdx);
+                  isCompleted = completedSessions.has(`${w.weekNumber}-${s.day}-${sessionDate.getTime()}`);
+                }
+              }
+              const bg = isCompleted ? "#14532D40" : isToday ? "#E8553A15" : isPast ? "#1A1A2E80" : "#1A1A2E";
+              const borderColor = isCompleted ? "#22C55E66" : isToday ? "#E8553A66" : "transparent";
               return (
                 <div key={`${w.weekNumber}-${s.day}-${i}`} style={{
                   padding: "12px 14px",
-                  background: isToday ? "#E8553A15" : "#1A1A2E",
-                  border: isToday ? "1px solid #E8553A66" : "1px solid transparent",
+                  background: bg,
+                  border: `1px solid ${borderColor}`,
                   borderRadius: "10px", fontSize: "13px",
+                  opacity: isPast && !isCompleted ? 0.55 : 1,
                 }}>
                   <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px" }}>
-                    <span style={{ fontWeight: 700, textTransform: "uppercase", color: isToday ? "#E8553A" : "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{s.day}</span>
+                    <span style={{ fontWeight: 700, textTransform: "uppercase", color: isCompleted ? "#22C55E" : isToday ? "#E8553A" : "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{s.day}</span>
                     <span style={{ fontWeight: 600 }}>{s.type}{s.subtype ? ` · ${s.subtype}` : ""}</span>
                     <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{s.duration_min}min</span>
-                    {isToday && <span style={{ color: "#E8553A", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
+                    {isCompleted && <span style={{ color: "#22C55E", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>✓ FATTA</span>}
+                    {!isCompleted && isToday && <span style={{ color: "#E8553A", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
+                    {!isCompleted && !isToday && isPast && <span style={{ color: "#64748B", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>SALTATA</span>}
                   </div>
                   <div style={{ color: "#CBD5E1", lineHeight: 1.5 }}>{s.details}</div>
                   <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", marginTop: "6px", lineHeight: 1.5 }}>{s.rationale}</div>
-                  {isToday && (
+                  {isToday && !isCompleted && (
                     <button onClick={() => registerToday(s.type)} style={{
                       marginTop: "10px", padding: "10px 14px",
                       background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",

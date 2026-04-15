@@ -25,6 +25,14 @@ const PROVIDER_PLACEHOLDER: Record<ProviderId, string> = {
 type Step = "intro" | "apiKey" | "profile" | "goals" | "disclaimer" | "plan";
 const STEPS: Step[] = ["intro", "apiKey", "profile", "goals", "disclaimer", "plan"];
 
+interface OnboardingDraft {
+  step?: Step;
+  goalsCount?: 1 | 2 | 3;
+  goalTexts?: string[];
+  acceptedDisclaimer?: boolean;
+  goalsNeedRecheck?: boolean;
+}
+
 const cardStyle: React.CSSProperties = {
   background: "#16213E", border: "1px solid rgba(255,255,255,0.06)",
   borderRadius: "16px", padding: "20px",
@@ -56,6 +64,9 @@ const EXP_OPTIONS: Array<{ v: Experience; label: string; hint: string }> = [
 
 export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState<Step>("intro");
+  const [goalsNeedRecheck, setGoalsNeedRecheck] = useState(false);
+  const [acceptedDisclaimer, setAcceptedDisclaimer] = useState(false);
+  const draftLoadedRef = useRef(false);
 
   // Provider/modello/chiave (multi-LLM)
   const [provider, setProvider] = useState<ProviderId>("gemini");
@@ -93,8 +104,29 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         setSessionHours(String(hInt));
         setSessionMinutes(String(mInt));
       }
+      // Carica goal già accettati
+      const existingGoals = await getJSON<UserGoal[]>("user-goals", []);
+      if (existingGoals.length) setGoals(existingGoals);
+      // Ripristina draft (step corrente, testi goal non ancora confermati, flag disclaimer)
+      const draft = await getJSON<OnboardingDraft | null>("onboarding-draft", null);
+      if (draft) {
+        if (draft.step && STEPS.includes(draft.step)) setStep(draft.step);
+        if (draft.goalsCount) setGoalsCount(draft.goalsCount);
+        if (Array.isArray(draft.goalTexts) && draft.goalTexts.length === 3) setGoalTexts(draft.goalTexts);
+        if (draft.acceptedDisclaimer) setAcceptedDisclaimer(true);
+        if (draft.goalsNeedRecheck) setGoalsNeedRecheck(true);
+      }
+      draftLoadedRef.current = true;
     })();
   }, []);
+
+  // Persistenza draft: salva ad ogni cambio di step/goalTexts/goalsCount/acceptedDisclaimer/goalsNeedRecheck.
+  // Non partire prima del caricamento iniziale per evitare di sovrascrivere il draft esistente.
+  useEffect(() => {
+    if (!draftLoadedRef.current) return;
+    const draft: OnboardingDraft = { step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck };
+    setJSON("onboarding-draft", draft).catch(() => { /* ignore quota here, non-critical */ });
+  }, [step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck]);
 
   const onProviderChange = (p: ProviderId) => {
     setProvider(p);
@@ -180,19 +212,30 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     return Number.isFinite(n) && n > 0 ? n : undefined;
   };
 
-  const canProceedProfile = !!(
-    profile.age && profile.age >= 10 &&
-    profile.weight_kg && profile.weight_kg >= 25 &&
-    profile.height_cm && profile.height_cm >= 100 &&
-    profile.experience
-  );
+  // Validazione range realistici. Età 10-100 (minori non sono target; >100 è dato errato).
+  // Peso 25-300 kg, altezza 100-250 cm: coprono la popolazione adulta senza bypass tastiera.
+  // Giorni disponibili 1-7 (già enforced). Ore/sessione <= 4.
+  const profileValidationError = (() => {
+    if (!profile.age || profile.age < 10) return "Età minima 10 anni.";
+    if (profile.age > 100) return "Età massima 100 anni.";
+    if (!profile.weight_kg || profile.weight_kg < 25) return "Peso minimo 25 kg.";
+    if (profile.weight_kg > 300) return "Peso massimo 300 kg.";
+    if (!profile.height_cm || profile.height_cm < 100) return "Altezza minima 100 cm.";
+    if (profile.height_cm > 250) return "Altezza massima 250 cm.";
+    if (!profile.experience) return "Seleziona un livello di esperienza.";
+    const daysN = parseInt(daysRaw, 10);
+    if (!daysN || daysN < 1 || daysN > 7) return "Indica giorni/settimana tra 1 e 7.";
+    return null;
+  })();
+  const canProceedProfile = profileValidationError === null;
 
   const saveProfileAndNext = async () => {
     const now = new Date().toISOString();
-    // Forza parse dei raw input CSV anche se l'utente non ha mai fatto blur
-    const injuriesFinal = parseCSV(injuriesRaw || (profile.injuries || []).join(", "));
-    const equipmentFinal = parseCSV(equipmentRaw || (profile.equipment || []).join(", "));
-    const painAreasFinal = parseCSV(painAreasRaw || (profile.painTrackingAreas || []).join(", "));
+    // Parse dei raw input CSV. Se l'utente ha svuotato volutamente il campo (raw === ""),
+    // rispetta la sua scelta: NON ripristinare il valore precedente.
+    const injuriesFinal = parseCSV(injuriesRaw);
+    const equipmentFinal = parseCSV(equipmentRaw);
+    const painAreasFinal = parseCSV(painAreasRaw);
 
     // Disponibilità: giorni raw + ore/minuti → weekly_availability
     const daysFinal = Math.max(1, Math.min(7, parseInt(daysRaw, 10) || 3));
@@ -200,16 +243,34 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     const minsInt = Math.max(0, Math.min(59, parseInt(sessionMinutes, 10) || 0));
     const hoursPerSessionFinal = hrsInt + minsInt / 60 || 1;
 
+    const menstrualFinal: UserProfile["menstrualCycle"] =
+      profile.sex === "f" ? profile.menstrualCycle : undefined;
+
+    // Rileva modifiche rilevanti vs. profilo salvato → invalida i goal esistenti.
+    const prev = await getJSON<UserProfile | null>("user-profile", null);
+    const relevantChanged = prev ? (
+      prev.age !== profile.age ||
+      prev.sex !== profile.sex ||
+      prev.experience !== profile.experience ||
+      JSON.stringify(prev.injuries || []) !== JSON.stringify(injuriesFinal) ||
+      JSON.stringify(prev.painTrackingAreas || []) !== JSON.stringify(painAreasFinal) ||
+      prev.weekly_availability?.days !== daysFinal
+    ) : false;
+
     const full: UserProfile = {
       age: profile.age!, sex: profile.sex!, weight_kg: profile.weight_kg!, height_cm: profile.height_cm!,
       experience: profile.experience!, injuries: injuriesFinal, meds: profile.meds || "",
       weekly_availability: { days: daysFinal, hoursPerSession: hoursPerSessionFinal },
       equipment: equipmentFinal, notes: profile.notes,
       painTrackingAreas: painAreasFinal,
-      createdAt: now, updatedAt: now,
+      menstrualCycle: menstrualFinal,
+      createdAt: prev?.createdAt ?? now, updatedAt: now,
     };
     await setJSON("user-profile", full);
     events.emit("profile:updated", { at: now });
+    if (relevantChanged && goals.length > 0) {
+      setGoalsNeedRecheck(true);
+    }
     setStep("goals");
   };
 
@@ -357,6 +418,8 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
 
   const finish = async () => {
     await setJSON("onboarding-completed", true);
+    // Cleanup draft: onboarding completato, non serve più il riprendi-da-dove-eri.
+    try { await setJSON("onboarding-draft", null); } catch { /* ignore */ }
     onDone();
   };
 
@@ -379,7 +442,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Benvenuto</div>
             <h2 style={{ fontSize: "28px", fontWeight: 900, margin: "6px 0 8px", letterSpacing: "-0.03em" }}>Diario & Coach</h2>
             <p style={{ color: "#94A3B8", fontSize: "15px", margin: 0, lineHeight: 1.5 }}>
-              Traccia i tuoi allenamenti, ricevi un coach AI che ti guida. In 4 step definiamo profilo, obiettivi e primo piano.
+              Traccia i tuoi allenamenti, ricevi un coach AI che ti guida. In pochi step definiamo provider AI, profilo, obiettivi, regole di sicurezza e primo piano.
             </p>
           </div>
 
@@ -527,6 +590,86 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             </div>
           </div>
 
+          {profile.sex === "f" && (
+            <div style={cardStyle}>
+              <label style={labelStyle}>Ciclo mestruale (opzionale)</label>
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "10px", lineHeight: 1.5 }}>
+                Attivare aiuta il coach a contestualizzare fatica/performance nelle diverse fasi (Elliott-Sale 2020) e a riconoscere segnali di RED-S (amenorrea persistente, Mountjoy IOC 2023). Puoi saltare e attivarlo in seguito.
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "13px", color: "#CBD5E1" }}>
+                <input
+                  type="checkbox"
+                  checked={!!profile.menstrualCycle?.enabled}
+                  onChange={e => setProfile(p => ({
+                    ...p,
+                    menstrualCycle: {
+                      enabled: e.target.checked,
+                      contraception: p.menstrualCycle?.contraception ?? "none",
+                      lastPeriodStart: p.menstrualCycle?.lastPeriodStart,
+                      avgCycleLengthDays: p.menstrualCycle?.avgCycleLengthDays,
+                    },
+                  }))}
+                />
+                Traccia il ciclo mestruale
+              </label>
+              {profile.menstrualCycle?.enabled && (
+                <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr", gap: "10px" }}>
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Contraccezione ormonale</div>
+                    <select
+                      style={{ ...inputStyle, fontFamily: "inherit" }}
+                      value={profile.menstrualCycle?.contraception ?? "none"}
+                      onChange={e => setProfile(p => ({
+                        ...p,
+                        menstrualCycle: { ...(p.menstrualCycle ?? { enabled: true }), contraception: e.target.value as any },
+                      }))}
+                    >
+                      <option value="none">Nessuna</option>
+                      <option value="combined_pill">Pillola combinata</option>
+                      <option value="progestin_only">Pillola solo progestinico</option>
+                      <option value="iud_hormonal">IUD ormonale</option>
+                      <option value="iud_copper">IUD rame</option>
+                      <option value="other">Altra</option>
+                    </select>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Inizio ultimo ciclo</div>
+                      <input
+                        type="date"
+                        style={inputStyle}
+                        value={profile.menstrualCycle?.lastPeriodStart ?? ""}
+                        onChange={e => setProfile(p => ({
+                          ...p,
+                          menstrualCycle: { ...(p.menstrualCycle ?? { enabled: true }), lastPeriodStart: e.target.value || undefined },
+                        }))}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Lunghezza media (giorni)</div>
+                      <input
+                        type="number" min={15} max={60}
+                        style={inputStyle}
+                        value={profile.menstrualCycle?.avgCycleLengthDays ?? ""}
+                        placeholder="es. 28"
+                        onChange={e => {
+                          const n = parseInt(e.target.value, 10);
+                          setProfile(p => ({
+                            ...p,
+                            menstrualCycle: {
+                              ...(p.menstrualCycle ?? { enabled: true }),
+                              avgCycleLengthDays: Number.isFinite(n) && n >= 15 && n <= 60 ? n : undefined,
+                            },
+                          }));
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={cardStyle}>
             <label style={labelStyle}>Livello di esperienza</label>
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -613,6 +756,12 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             )}
           </div>
 
+          {profileValidationError && (
+            <div style={{ fontSize: "13px", color: "#F59E0B", padding: "10px 12px", background: "#F59E0B15", borderRadius: "8px", border: "1px solid #F59E0B33" }}>
+              {profileValidationError}
+            </div>
+          )}
+
           <button disabled={!canProceedProfile} onClick={saveProfileAndNext} style={{ ...primaryBtn, opacity: canProceedProfile ? 1 : 0.5, cursor: canProceedProfile ? "pointer" : "not-allowed" }}>
             Continua →
           </button>
@@ -634,6 +783,16 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
               <div style={{ fontWeight: 700, marginBottom: "6px", color: "#F59E0B" }}>⚠ Chiave Gemini mancante</div>
               <div style={{ fontSize: "13px", color: "#CBD5E1", marginBottom: "10px" }}>Torna allo step precedente per configurarla, oppure salta: potrai aggiungere obiettivi dopo.</div>
               <button onClick={() => setStep("apiKey")} style={{ ...ghostBtn, fontSize: "13px", padding: "8px 14px" }}>← Configura chiave</button>
+            </div>
+          )}
+
+          {goalsNeedRecheck && goals.length > 0 && (
+            <div style={{ ...cardStyle, border: "1px solid #F59E0B66", background: "#F59E0B15" }}>
+              <div style={{ fontWeight: 700, marginBottom: "6px", color: "#F59E0B" }}>⚠ Profilo modificato dopo la verifica obiettivi</div>
+              <div style={{ fontSize: "13px", color: "#CBD5E1", marginBottom: "10px", lineHeight: 1.5 }}>
+                Hai cambiato età, esperienza, infortuni o disponibilità dopo aver confermato i goal. La controproposta del coach potrebbe non essere più ottimale. Puoi ri-verificare un goal cliccando "Modifica" e "Verifica" di nuovo, oppure procedere comunque.
+              </div>
+              <button onClick={() => setGoalsNeedRecheck(false)} style={{ ...ghostBtn, fontSize: "13px", padding: "8px 14px" }}>Ho capito, procedo</button>
             </div>
           )}
 
@@ -669,15 +828,28 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             <div style={cardStyle}>
               <label style={labelStyle}>Quanti obiettivi vuoi aggiungere?</label>
               <div style={{ display: "flex", gap: "8px", marginBottom: "14px" }}>
-                {([1, 2, 3] as const).filter(n => n <= 3 - goals.length).map(n => (
-                  <button key={n} onClick={() => setGoalsCount(n)} style={{
-                    flex: 1, padding: "10px",
-                    background: goalsCount === n ? "#E8553A22" : "#1A1A2E",
-                    border: goalsCount === n ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: "10px", color: goalsCount === n ? "#E8553A" : "#CBD5E1",
-                    fontWeight: 700, fontSize: "14px", cursor: "pointer",
-                  }}>{n}</button>
-                ))}
+                {([1, 2, 3] as const).filter(n => n <= 3 - goals.length).map(n => {
+                  const tryChangeCount = () => {
+                    // Se stiamo RIDUCENDO e ci sono testi compilati negli slot che scomparirebbero,
+                    // chiedi conferma invece di perderli silenziosamente.
+                    if (n < goalsCount) {
+                      const willHideTexts = goalTexts.slice(n, goalsCount).some(t => t.trim());
+                      if (willHideTexts) {
+                        if (!confirm(`Stai riducendo a ${n} obiettivi. I testi che hai scritto negli altri slot verranno nascosti (ma non cancellati, tornano se rialzi il numero). Procedere?`)) return;
+                      }
+                    }
+                    setGoalsCount(n);
+                  };
+                  return (
+                    <button key={n} onClick={tryChangeCount} style={{
+                      flex: 1, padding: "10px",
+                      background: goalsCount === n ? "#E8553A22" : "#1A1A2E",
+                      border: goalsCount === n ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: "10px", color: goalsCount === n ? "#E8553A" : "#CBD5E1",
+                      fontWeight: 700, fontSize: "14px", cursor: "pointer",
+                    }}>{n}</button>
+                  );
+                })}
               </div>
 
               {Array.from({ length: goalsCount }).map((_, i) => {
@@ -789,10 +961,10 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
           <div style={cardStyle}>
             <ul style={{ paddingLeft: "18px", lineHeight: 1.7, color: "#E2E8F0", fontSize: "14px", margin: 0 }}>
               <li><b>Non sostituisce</b> medico, fisioterapista o preparatore. Dubbi clinici → specialista.</li>
-              <li><b>Dolore ≥ 3</b> (scala 0-4+) nelle zone monitorate = <b>stop immediato</b>, consulta specialista.</li>
-              <li><b>Progressione volume max +10% a settimana</b>. Nessuna scorciatoia.</li>
-              <li><b>Almeno 2 giorni di riposo</b> o recovery a settimana.</li>
-              <li>Combo <b>sonno ≤6h + stanchezza ≥8/10 per 2 giorni</b> = deload obbligatorio.</li>
+              <li><b>Dolore ≥ 4</b> (a spillo, scala 0-4+) nelle zone monitorate = <b>stop immediato</b>, consulta specialista. Dolore 3 = riduci intensità. Dolore 2 = monitora trend.</li>
+              <li><b>Spike singola sessione max +20%</b> vs. la più lunga recente (Johansen 2025). Cap +10%/settimana come safeguard prudenziale per neofiti.</li>
+              <li><b>Almeno {isSenior ? 3 : isMidAge ? 3 : 2} giorni di riposo</b> o recovery a settimana{isSenior ? " (e max 2 giorni consecutivi di allenamento)" : ""}.</li>
+              <li>Combo <b>sonno &lt;7h + stanchezza ≥8/10 per 3 giorni consecutivi</b> = deload obbligatorio (Walsh 2021).</li>
               <li>Il coach può sbagliare. <b>La decisione finale è sempre tua</b>.</li>
             </ul>
           </div>
@@ -831,9 +1003,33 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             </div>
           )}
 
+          <div style={{ ...cardStyle, background: "#1A1A2E", borderColor: acceptedDisclaimer ? "#22C55E66" : "rgba(255,255,255,0.06)" }}>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", cursor: "pointer", fontSize: "13px", lineHeight: 1.5, color: "#CBD5E1" }}>
+              <input
+                type="checkbox"
+                checked={acceptedDisclaimer}
+                onChange={e => setAcceptedDisclaimer(e.target.checked)}
+                style={{ marginTop: "3px" }}
+              />
+              <span>
+                Ho letto le regole di sicurezza, capisco che questa app <b>non è un dispositivo medico</b> e non sostituisce il parere di professionisti sanitari qualificati. Accetto di usarla come strumento di supporto sotto la mia responsabilità.
+              </span>
+            </label>
+          </div>
+
           <div style={{ display: "flex", gap: "10px" }}>
             <button onClick={() => setStep("goals")} style={ghostBtn}>← Indietro</button>
-            <button onClick={() => setStep("plan")} style={{ ...primaryBtn, flex: 1 }}>Ho capito →</button>
+            <button
+              onClick={() => setStep("plan")}
+              disabled={!acceptedDisclaimer}
+              style={{
+                ...primaryBtn, flex: 1,
+                opacity: acceptedDisclaimer ? 1 : 0.5,
+                cursor: acceptedDisclaimer ? "pointer" : "not-allowed",
+              }}
+            >
+              Continua →
+            </button>
           </div>
         </div>
         );

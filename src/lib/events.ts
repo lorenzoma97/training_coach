@@ -13,6 +13,12 @@ export type EventMap = {
   /** Emesso quando localStorage è stato modificato in un'ALTRA tab/finestra.
    *  Permette ai componenti di ri-leggere i dati e sincronizzarsi. */
   "data:externalChange": { key: string };
+  /** Emesso quando il provider LLM migra automaticamente un modello deprecato. */
+  "llm:migrated": { fromModelId: string; toModelId: string; reason: string };
+  /** Emesso quando il modello primario LLM fallisce e si passa al fallback. */
+  "llm:fallbackActivated": { primary: string; fallback: string; reason: string };
+  /** Emesso quando la chat history cambia (per sync cross-tab/componente). */
+  "chat:historyChanged": { length: number };
 };
 
 const listeners = new Map<keyof EventMap, Set<Handler<any>>>();

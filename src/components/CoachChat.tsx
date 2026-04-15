@@ -6,10 +6,13 @@ import { getJSON, setJSON } from "../lib/storage";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { retrieveRelevantChunks, chunksAsPromptBlock } from "../lib/knowledge";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "../lib/coach/promptBuilder";
+import { events } from "../lib/events";
 import RichText from "./RichText";
 
 type Msg = { id: string; role: "user" | "model"; content: string };
 const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+const HISTORY_KEY = "coach-chat-history";
 
 const QUICK_PROMPTS = [
   "Come sta andando la settimana?",
@@ -25,16 +28,40 @@ export default function CoachChat() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [waitingFirstToken, setWaitingFirstToken] = useState(false);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const waitingRef = useRef(false); // closure-safe per evitare stale read nel loop streaming
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Persiste lo snapshot corrente dei messaggi (anche parziale su abort/unmount).
+  const persistRef = useRef<() => void>(() => {});
+  const loadHistory = async () => {
+    const saved = await getJSON<Msg[]>(HISTORY_KEY, []);
+    setMessages(saved.map(m => m.id ? m : { ...m, id: genId() }));
+  };
 
   useEffect(() => {
-    (async () => {
-      const saved = await getJSON<Msg[]>("coach-chat-history", []);
-      // Migration: aggiungi id ai messaggi legacy senza id
-      setMessages(saved.map(m => m.id ? m : { ...m, id: genId() }));
-    })();
+    void loadHistory();
+    // Cross-tab + cross-component sync: ricarica quando un'altra tab/mano modifica la history.
+    const offExt = events.on("data:externalChange", e => { if (e.key === HISTORY_KEY) void loadHistory(); });
+    const offChat = events.on("chat:historyChanged", () => { void loadHistory(); });
+    // Notifica fallback LLM (es. Gemini 3.1-preview 503 → 2.5-flash-lite)
+    const offFb = events.on("llm:fallbackActivated", p => {
+      setFallbackNotice(`Modello primario ${p.primary} momentaneamente occupato — sto usando ${p.fallback}.`);
+    });
+    // Persist su chiusura pagina: garantisce che eventuali token parziali non vadano persi.
+    const onBeforeUnload = () => { try { persistRef.current(); } catch { /* ignore */ } };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      offExt();
+      offChat();
+      offFb();
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      // Se lo stream è in corso quando il componente viene smontato, fermalo e persist
+      abortRef.current?.abort();
+      try { persistRef.current(); } catch { /* ignore */ }
+    };
   }, []);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
@@ -51,6 +78,7 @@ export default function CoachChat() {
     if (!text.trim() || loading) return;
     if (!hasApiKey()) { setError("Chiave Gemini non configurata. Vai in Impostazioni."); return; }
     setError("");
+    setFallbackNotice(null);
 
     const userMsg: Msg = { id: genId(), role: "user", content: text };
     const newMessages = [...messages, userMsg];
@@ -59,6 +87,21 @@ export default function CoachChat() {
     setLoading(true);
     setWaitingFirstToken(true);
     waitingRef.current = true;
+
+    // Abort controller per questo stream (permette Stop + persist parziale)
+    const abort = new AbortController();
+    abortRef.current = abort;
+
+    const modelMsgId = genId();
+    let acc = "";
+    // Setter snapshot-based per persist (anche su abort/unmount)
+    persistRef.current = () => {
+      if (!acc && !newMessages.length) return;
+      const snapshot: Msg[] = acc
+        ? [...newMessages, { id: modelMsgId, role: "model" as const, content: acc }]
+        : newMessages;
+      void setJSON(HISTORY_KEY, snapshot.slice(-50)).catch(() => { /* ignore */ });
+    };
 
     try {
       const ctx = await buildCoachContext({ daysBack: 14 });
@@ -94,15 +137,15 @@ ${ctx.recentDaysText}
 DOMANDA UTENTE: ${text}
 `.trim();
 
-      const modelMsgId = genId();
       setMessages(m => [...m, { id: modelMsgId, role: "model", content: "" }]);
-      let acc = "";
       const history = newMessages.slice(0, -1).map(m => ({ role: m.role, parts: m.content }));
       for await (const chunk of streamChat({
         systemInstruction,
         history,
         userMessage: contextBlock,
+        signal: abort.signal,
       })) {
+        if (abort.signal.aborted) break;
         acc += chunk;
         if (waitingRef.current) {
           waitingRef.current = false;
@@ -111,21 +154,40 @@ DOMANDA UTENTE: ${text}
         setMessages(m => m.map(x => x.id === modelMsgId ? { ...x, content: acc } : x));
       }
 
-      const final = [...newMessages, { id: modelMsgId, role: "model" as const, content: acc }];
-      await setJSON("coach-chat-history", final.slice(-50));
+      // Salva sempre (anche se abortito: preserva il parziale)
+      const final: Msg[] = acc
+        ? [...newMessages, { id: modelMsgId, role: "model" as const, content: acc }]
+        : newMessages;
+      await setJSON(HISTORY_KEY, final.slice(-50));
+      events.emit("chat:historyChanged", { length: final.length });
     } catch (e: any) {
-      setError(translateGeminiError(e));
-      setMessages(m => m.slice(0, -1));
+      if (abort.signal.aborted && acc) {
+        // Stream interrotto dall'utente ma abbiamo ricevuto qualcosa → salva parziale.
+        const final: Msg[] = [...newMessages, { id: modelMsgId, role: "model" as const, content: acc + "\n\n_(risposta interrotta)_" }];
+        await setJSON(HISTORY_KEY, final.slice(-50)).catch(() => { /* ignore */ });
+        events.emit("chat:historyChanged", { length: final.length });
+      } else {
+        setError(translateGeminiError(e));
+        setMessages(m => m.slice(0, -1));
+      }
     }
     setLoading(false);
     setWaitingFirstToken(false);
     waitingRef.current = false;
+    abortRef.current = null;
+    persistRef.current = () => {};
+  };
+
+  const stopStream = () => {
+    abortRef.current?.abort();
   };
 
   const clearChat = async () => {
     if (!confirm("Cancellare tutta la conversazione? Non è reversibile.")) return;
+    abortRef.current?.abort();
     setMessages([]);
-    await setJSON("coach-chat-history", []);
+    await setJSON(HISTORY_KEY, []);
+    events.emit("chat:historyChanged", { length: 0 });
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -173,6 +235,13 @@ DOMANDA UTENTE: ${text}
         </div>
       )}
 
+      {fallbackNotice && (
+        <div style={{ color: "#FCD34D", fontSize: "12px", padding: "6px 10px", background: "#78350F30", border: "1px solid #78350F", borderRadius: "8px", marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+          <span>⚠ {fallbackNotice}</span>
+          <button onClick={() => setFallbackNotice(null)} aria-label="Chiudi" style={{ marginLeft: "auto", background: "none", border: "none", color: "#FCD34D", fontSize: "14px", cursor: "pointer" }}>×</button>
+        </div>
+      )}
+
       {messages.length === 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
           {QUICK_PROMPTS.map(p => (
@@ -202,13 +271,23 @@ DOMANDA UTENTE: ${text}
             resize: "none", lineHeight: 1.4, maxHeight: "140px", minHeight: "44px",
           }}
         />
-        <button onClick={() => send(input)} disabled={loading || !input.trim()} aria-label="Invia messaggio" style={{
-          padding: "12px 18px", minWidth: "56px", minHeight: "44px",
-          background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
-          border: "none", borderRadius: "12px", color: "#FFF",
-          fontWeight: 700, fontSize: "18px",
-          cursor: loading ? "wait" : "pointer", opacity: (!input.trim() || loading) ? 0.5 : 1,
-        }}>{loading ? "…" : "→"}</button>
+        {loading ? (
+          <button onClick={stopStream} aria-label="Interrompi risposta" title="Interrompi (il parziale viene salvato)" style={{
+            padding: "12px 18px", minWidth: "56px", minHeight: "44px",
+            background: "#7F1D1D",
+            border: "1px solid #EF4444", borderRadius: "12px", color: "#FCA5A5",
+            fontWeight: 700, fontSize: "16px",
+            cursor: "pointer",
+          }}>■</button>
+        ) : (
+          <button onClick={() => send(input)} disabled={!input.trim()} aria-label="Invia messaggio" style={{
+            padding: "12px 18px", minWidth: "56px", minHeight: "44px",
+            background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+            border: "none", borderRadius: "12px", color: "#FFF",
+            fontWeight: 700, fontSize: "18px",
+            cursor: "pointer", opacity: !input.trim() ? 0.5 : 1,
+          }}>→</button>
+        )}
       </div>
 
       <div style={{ fontSize: "11px", color: "#94A3B8", textAlign: "center", marginTop: "4px" }}>

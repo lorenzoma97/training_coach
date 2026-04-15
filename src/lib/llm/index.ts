@@ -7,6 +7,7 @@ import { geminiAdapter } from "./gemini";
 import { openaiAdapter } from "./openai";
 import { anthropicAdapter } from "./anthropic";
 import { getJSON, setJSON, storage } from "../storage";
+import { events } from "../events";
 
 export * from "./types";
 export { geminiAdapter, openaiAdapter, anthropicAdapter };
@@ -65,6 +66,11 @@ export async function getLLMConfig(): Promise<LLMConfig | null> {
       const migrated: LLMConfig = { ...parsed, modelId: geminiAdapter.defaultChatModel };
       await setJSON(CONFIG_KEY, migrated);
       console.info(`[LLM migration] Modello '${parsed.modelId}' instabile → migrato a '${migrated.modelId}'`);
+      events.emit("llm:migrated", {
+        fromModelId: parsed.modelId,
+        toModelId: migrated.modelId,
+        reason: "Modello obsoleto/instabile: migrato al default stabile",
+      });
       return migrated;
     }
     return parsed;

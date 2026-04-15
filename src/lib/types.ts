@@ -1,6 +1,24 @@
 export type Sex = "m" | "f" | "other";
 export type Experience = "sedentary" | "occasional" | "regular" | "competitive";
 
+/**
+ * Tracking opzionale del ciclo mestruale per donne. Rilevante per:
+ * (a) contestualizzazione di stanchezza/performance durante fasi luteali
+ * (Elliott-Sale 2020: effect size trivial ma varianza individuale alta),
+ * (b) rilevamento segnali RED-S (Mountjoy IOC 2023) — amenorrea persistente
+ * è red flag di low energy availability.
+ */
+export interface MenstrualCycle {
+  /** Tracking attivo? Se false, il profilo non usa questi campi. */
+  enabled: boolean;
+  /** Contraccezione ormonale (influenza la ciclicità dei sintomi). */
+  contraception?: "none" | "combined_pill" | "progestin_only" | "iud_hormonal" | "iud_copper" | "other";
+  /** Data inizio ultimo ciclo (YYYY-MM-DD). Opzionale. */
+  lastPeriodStart?: string;
+  /** Lunghezza media del ciclo in giorni, tipicamente 21-35. */
+  avgCycleLengthDays?: number;
+}
+
 export interface UserProfile {
   age: number;
   sex: Sex;
@@ -19,6 +37,8 @@ export interface UserProfile {
    * "spalla". Configurabili nell'onboarding se sono dichiarati infortuni.
    */
   painTrackingAreas?: string[];
+  /** Mostrato solo se sex === "f". */
+  menstrualCycle?: MenstrualCycle;
   createdAt: string;
   updatedAt: string;
 }
@@ -55,8 +75,21 @@ export interface PlanWeek {
 export interface TrainingPlan {
   generatedAt: string;
   validUntil: string;
+  /**
+   * Data del primo giorno della settimana 1 (YYYY-MM-DD, locale).
+   * Serve per il matching "oggi" con una sessione pianificata indipendentemente
+   * dalla settimana corrente. Se assente, il consumatore assume week1 == settimana
+   * corrente (comportamento legacy). Riempito automaticamente dal generator.
+   */
+  startDate?: string;
   weeks: PlanWeek[];
   rationale: string;
+  /**
+   * Hash dei campi profilo che hanno influenzato la generazione (age, injuries,
+   * experience, availability, painTrackingAreas). Se il profilo cambia, il piano
+   * può essere marcato come "potenzialmente obsoleto" senza invalidarlo.
+   */
+  profileHash?: string;
 }
 
 export type FeedType = "session-feedback" | "weekly-report" | "alert" | "motivation" | "plan-update";

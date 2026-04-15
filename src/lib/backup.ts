@@ -67,6 +67,20 @@ export async function buildBackup(): Promise<BackupPayload> {
   };
 }
 
+/**
+ * Shape minima di un giorno: oggetto con almeno una tra { daily, workouts }.
+ * Evita che un JSON malevolo scriva stringhe arbitrarie dentro `day:*`.
+ */
+function isValidDayShape(v: unknown): boolean {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const d = v as Record<string, unknown>;
+  // Almeno uno dei due campi canonici deve essere un oggetto/array
+  const dailyOk = d.daily === undefined || (typeof d.daily === "object" && d.daily !== null && !Array.isArray(d.daily));
+  const workoutsOk = d.workouts === undefined || Array.isArray(d.workouts);
+  const hasAtLeastOne = d.daily !== undefined || d.workouts !== undefined;
+  return dailyOk && workoutsOk && hasAtLeastOne;
+}
+
 /** Valida la struttura base del payload e ne estrae una versione sicura. */
 export function validateBackup(raw: unknown): { ok: true; payload: BackupPayload } | { ok: false; error: string } {
   if (!raw || typeof raw !== "object") return { ok: false, error: "File non valido (non è un oggetto)" };
@@ -124,6 +138,10 @@ export async function restoreBackup(payload: BackupPayload, opts: RestoreOptions
   for (const [date, dayData] of Object.entries(d.days)) {
     // sanity check: date come YYYY-MM-DD
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    if (!isValidDayShape(dayData)) {
+      report.skippedKeys.push(`day:${date} (shape non valida)`);
+      continue;
+    }
     await setJSON(`day:${date}`, dayData);
     report.restoredDays++;
   }

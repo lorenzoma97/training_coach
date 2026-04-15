@@ -4,6 +4,7 @@ import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, planAsPrompt } from "../diaryContext";
 import type { UserProfile, UserGoal, TrainingPlan } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
+import { validatePlan, profileHashForPlan, computePlanStartDate } from "./planValidator";
 
 const sessionSchema = z.object({
   day: z.enum(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]),
@@ -86,9 +87,11 @@ Genera un microciclo di 2 settimane (weeks con weekNumber 1 e 2) che porti l'ute
 
   const now = new Date();
   const validUntil = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
-  return {
+  const plan: TrainingPlan = {
     generatedAt: now.toISOString(),
     validUntil: validUntil.toISOString(),
+    startDate: computePlanStartDate(now),
+    profileHash: profileHashForPlan(profile),
     weeks: parsed.weeks.map((w: z.infer<typeof weekSchema>) => ({
       weekNumber: w.weekNumber,
       focus: w.focus,
@@ -103,6 +106,17 @@ Genera un microciclo di 2 settimane (weeks con weekNumber 1 e 2) che porti l'ute
     })),
     rationale: parsed.rationale,
   };
+  // Validator deterministico post-LLM: logga violazioni safety anche se il modello
+  // le ha ignorate. Non ri-generiamo automaticamente (caro in token) — segnaliamo.
+  const validation = validatePlan(plan, profile);
+  if (!validation.ok) {
+    console.warn("[planGenerator] Violazioni safety nel piano generato:",
+      validation.issues.map(i => i.message).join(" | "));
+    plan.rationale = plan.rationale +
+      "\n\n[Validator] Avvertenze rilevate: " +
+      validation.issues.map(i => i.message).join(" ");
+  }
+  return plan;
 }
 
 /** Rigenera il piano per la settimana successiva integrando i dati reali. */
@@ -152,12 +166,20 @@ Se rilevi red flag, proponi deload esplicito nella settimana 1.
   }
   const parsed = parseResult.data;
   const now = new Date();
-  return {
+  const plan: TrainingPlan = {
     generatedAt: now.toISOString(),
     validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
+    startDate: computePlanStartDate(now),
+    profileHash: profileHashForPlan(profile),
     weeks: parsed.weeks,
     rationale: parsed.rationale,
   };
+  const validation = validatePlan(plan, profile);
+  if (!validation.ok) {
+    console.warn("[regenerateNextWeek] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
+    plan.rationale = plan.rationale + "\n\n[Validator] Avvertenze: " + validation.issues.map(i => i.message).join(" ");
+  }
+  return plan;
 }
 
 /**
@@ -227,10 +249,18 @@ Rispondi con il piano MODIFICATO completo (entrambe le settimane, tutte le sessi
   }
   const parsed = parseResult.data;
   const now = new Date();
-  return {
+  const plan: TrainingPlan = {
     generatedAt: now.toISOString(),
     validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
+    startDate: currentPlan.startDate ?? computePlanStartDate(now),
+    profileHash: profileHashForPlan(profile),
     weeks: parsed.weeks,
     rationale: parsed.rationale,
   };
+  const validation = validatePlan(plan, profile);
+  if (!validation.ok) {
+    console.warn("[adaptPlan] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
+    plan.rationale = plan.rationale + "\n\n[Validator] Avvertenze: " + validation.issues.map(i => i.message).join(" ");
+  }
+  return plan;
 }
