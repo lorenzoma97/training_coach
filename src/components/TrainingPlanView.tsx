@@ -189,6 +189,27 @@ export default function TrainingPlanView() {
   const DAY_MAP = ["dom","lun","mar","mer","gio","ven","sab"];
   const todayKey = DAY_MAP[todayDate.getDay()];
 
+  // Formatta il range "start - start+6gg" in italiano. Gestisce cross-month/year.
+  const formatWeekRange = (startISO: string | undefined): string => {
+    if (!startISO) return "";
+    try {
+      const [y, m, d] = startISO.split("-").map(Number);
+      const start = new Date(y, m - 1, d);
+      const end = new Date(start); end.setDate(start.getDate() + 6);
+      const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+      const sameYear = start.getFullYear() === end.getFullYear();
+      const monthFmt = (dt: Date) => dt.toLocaleDateString("it-IT", { month: "long" });
+      const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+      if (sameMonth) {
+        return `${start.getDate()}-${end.getDate()} ${capitalize(monthFmt(start))} ${start.getFullYear()}`;
+      }
+      if (sameYear) {
+        return `${start.getDate()} ${capitalize(monthFmt(start))} - ${end.getDate()} ${capitalize(monthFmt(end))} ${end.getFullYear()}`;
+      }
+      return `${start.getDate()} ${capitalize(monthFmt(start))} ${start.getFullYear()} - ${end.getDate()} ${capitalize(monthFmt(end))} ${end.getFullYear()}`;
+    } catch { return ""; }
+  };
+
   // Se il piano ha startDate, calcoliamo in quale settimana siamo "oggi" rispetto al piano.
   // Altrimenti fallback legacy: week 1 == settimana corrente.
   const todayPlanWeekNumber = (() => {
@@ -483,11 +504,18 @@ export default function TrainingPlanView() {
 
           {historyOpen && (
             <div style={{ padding: "0 18px 18px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              {history.map((h: TrainingPlan, hi: number) => (
+              {history.map((h: TrainingPlan, hi: number) => {
+                // La history è newest-first. Numeriamo dal più vecchio: oldest = Settimana 1.
+                const weekLabel = history.length - hi;
+                const dateRange = formatWeekRange(h.startDate) || new Date(h.generatedAt).toLocaleDateString("it-IT");
+                return (
                 <div key={h.generatedAt + hi} style={{ background: "#1A1A2E", borderRadius: "10px", padding: "12px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "6px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                      {h.startDate ? `Settimana del ${new Date(h.startDate + "T12:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" })}` : new Date(h.generatedAt).toLocaleDateString("it-IT")}
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "6px", flexWrap: "wrap" }}>
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                      Settimana {weekLabel}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>
+                      {dateRange}
                     </div>
                   </div>
                   {h.rationale && (
@@ -508,7 +536,8 @@ export default function TrainingPlanView() {
                     </div>
                   ))}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
