@@ -77,7 +77,7 @@ export default function CoachChat() {
       const conditionalBlock = buildConditionalPrompt(bCtx);
 
       const systemInstruction = [
-        PROMPTS.chat(),
+        PROMPTS.chat({ age: ctx.profile?.age }),
         conditionalBlock,
         ragBlock,
       ].filter(Boolean).join("\n\n");

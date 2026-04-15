@@ -11,10 +11,16 @@ Il tuo stile:
 - Non elencare infinite opzioni: proponi 1 azione chiara e 1 alternativa se utile.
 `.trim();
 
-export function baseSystemPrompt(extraContext?: string): string {
+export interface PromptCtx {
+  age?: number | null;
+  extraContext?: string;
+}
+
+export function baseSystemPrompt(ctx?: PromptCtx | string): string {
+  const resolved: PromptCtx = typeof ctx === "string" ? { extraContext: ctx } : (ctx ?? {});
   return `${COACH_PERSONA}
 
-${safetyRulesAsPrompt()}
+${safetyRulesAsPrompt({ age: resolved.age })}
 
 SCALA DOLORE POLPACCIO (usata nel diario):
 0=nessun dolore, 1=fastidio vago, 2=avvertibile, 3=localizzato (riduci), 4+=a spillo (STOP).
@@ -29,7 +35,7 @@ TIPI DI SESSIONE DISPONIBILI NEL DIARIO (il coach deve proporre questi tipi):
 - sport (tennis, padel, calcio)
 - mobilita (stretching, mobilità dinamica, propriocezione, camminata, foam rolling, piscina)
 
-${extraContext || ""}`.trim();
+${resolved.extraContext || ""}`.trim();
 }
 
 export const COT_INSTRUCTIONS = `
@@ -69,7 +75,7 @@ ESEMPIO DI FEEDBACK BEN FORMATO (solo riferimento di stile, non copiare valori):
 `.trim();
 
 export const PROMPTS = {
-  feasibility: () => `${baseSystemPrompt()}
+  feasibility: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
 Il tuo compito: valutare un obiettivo espresso dall'utente e stabilire se è realistico nel contesto del suo profilo.
 
@@ -98,12 +104,12 @@ ${ANTI_HALLUCINATION}
 
 ${JSON_CONSTRAINT}`,
 
-  planGeneration: () => `${baseSystemPrompt()}
+  planGeneration: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
 Il tuo compito: generare un microciclo di 2 settimane (14 giorni) basato su profilo + obiettivi dell'utente.
 Regole:
 - Rispetta la disponibilità dichiarata (giorni/settimana).
-- Almeno 2 giorni di riposo o recovery/settimana.
+- Rispetta il minimo giorni di riposo indicato nel blocco REGOLE DI SICUREZZA (age-tiered: può essere 2, 3, o più).
 - Se l'utente è sedentario: partire piano, introdurre solo corsa o camminata+mobilità nella settimana 1.
 - Se l'utente ha infortuni al polpaccio: iniziare con carico basso (≤20 min) e alternare corsa/camminata.
 - Progressione settimana 1 → settimana 2: +10% massimo volume.
@@ -116,7 +122,7 @@ ${COT_INSTRUCTIONS}
 
 ${JSON_CONSTRAINT}`,
 
-  sessionFeedback: () => `${baseSystemPrompt()}
+  sessionFeedback: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
 Il tuo compito: dare un feedback breve (80-120 parole) sull'ultima sessione appena salvata.
 Struttura obbligatoria in 3 parti:
@@ -124,7 +130,7 @@ Struttura obbligatoria in 3 parti:
 2. "signalsToMonitor": eventuali trend/segnali da tenere d'occhio (dolore in crescita, sonno, etc.).
 3. "whatToDoNext": cosa fare domani (riposo/sessione specifica/aggiustamento).
 
-Se ci sono red flag (dolore ≥3, RPE sproporzionato, combo sonno-stanchezza): segnalali in "redFlags" e alza "severity" a "warn" o "danger".
+Se ci sono red flag (dolore ≥2 da monitorare / ≥3 riduci / ≥4 STOP, RPE sproporzionato, combo sonno-stanchezza): segnalali in "redFlags" e alza "severity" a "warn" (≥2) o "danger" (≥4 o dolore in peggioramento).
 Tono sempre pedagogico: se critichi, spiega perché. Se incoraggi, cita un dato reale.
 
 ${COT_INSTRUCTIONS}
@@ -135,7 +141,7 @@ ${SESSION_FEEDBACK_EXAMPLE}
 
 ${JSON_CONSTRAINT}`,
 
-  weeklyReport: () => `${baseSystemPrompt()}
+  weeklyReport: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
 Il tuo compito: produrre il report della settimana appena conclusa.
 
@@ -159,7 +165,7 @@ ${COT_INSTRUCTIONS}
 
 ${JSON_CONSTRAINT}`,
 
-  chat: () => `${baseSystemPrompt()}
+  chat: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
 Il tuo compito: rispondere alle domande dell'utente in modo conversazionale, sempre coerente con profilo, obiettivi, piano attivo e storico diario.
 Se l'utente ti chiede cose fuori dal tuo ambito (nutrizione dettagliata, diagnosi medica): rimanda a un professionista ma dai comunque contesto generale.
@@ -171,7 +177,7 @@ ${ANTI_HALLUCINATION}
 
 ${AUTONOMY_TONE}`,
 
-  motivation: () => `${baseSystemPrompt()}
+  motivation: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
 Il tuo compito: scrivere un messaggio di check-in motivazionale breve (60-100 parole) quando rilevi un calo di attività.
 Non colpevolizzare. Riconosci la difficoltà, proponi una piccola azione recuperabile (es. 20min di camminata), ricorda il "perché" originale dell'utente (uno dei suoi obiettivi).

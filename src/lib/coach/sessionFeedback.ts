@@ -89,7 +89,7 @@ Dai feedback strutturato. Se ci sono red flag locali, includili in redFlags e al
     currentCadence: params.workout.fields?.cadenza ? Number(params.workout.fields.cadenza) : null,
     detectedConditions: extractConditionsFromProfile(ctx.profile),
   };
-  const systemInstruction = PROMPTS.sessionFeedback() + "\n\n" + buildConditionalPrompt(bCtx);
+  const systemInstruction = PROMPTS.sessionFeedback({ age: ctx.profile?.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
   const raw = await generateJSON<unknown>({
     systemInstruction,

@@ -59,7 +59,7 @@ Se il piano non copre una disciplina, planned_min = 0.
     hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
     detectedConditions: extractConditionsFromProfile(ctx.profile),
   };
-  const systemInstruction = PROMPTS.weeklyReport() + "\n\n" + buildConditionalPrompt(bCtx);
+  const systemInstruction = PROMPTS.weeklyReport({ age: ctx.profile?.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
   const raw = await generateJSON<unknown>({
     systemInstruction,

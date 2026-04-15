@@ -18,11 +18,11 @@ export const CHUNKS: KnowledgeChunk[] = [
     sectionNumber: 1,
     title: "Progressione del carico — la regola del 10%",
     topics: ["progressione", "volume settimanale", "training load", "10% rule", "injury prevention", "single-session spike"],
-    content: `Il coach applica in safetyRules.ts un cap di progressione settimanale del volume pari al 10% (weeklyVolumeIncreaseMaxPct: 10). Questa è una euristica conservativa usata come safeguard soprattutto per neofiti.
+    content: `Il coach applica in safetyRules.ts due regole distinte. La regola primaria è ora lo spike di singola sessione (sessionSpikeMaxPct: 30): alert se la durata della sessione corrente supera di oltre +30% la sessione più lunga negli ultimi giorni. Il cap settimanale +10% (weeklyVolumeIncreaseMaxPct) è mantenuto come safeguard di secondo livello per neofiti assoluti.
 
-L'evidenza scientifica mette in discussione la regola come dogma. Buist et al. (Am J Sports Med, 2008) in un RCT su 532 neofiti non trovano differenze di incidenza infortuni tra progressione +10%/settimana e progressione libera. Nielsen et al. (JOSPT, 2014) mostrano che solo aumenti superiori al 30% a settimana aumentano il rischio per specifici infortuni da overuse; sotto il 30% l'associazione è debole. Il paradigm shift più recente viene da Johansen et al. (Br J Sports Med, 2025), cohort study su 5200 runner: il predittore forte del rischio non è il volume settimanale cumulativo ma lo spike della singola sessione rispetto alla sessione più lunga degli ultimi 30 giorni — spike del 10-30% correla con +64% rischio overuse.
+L'evidenza scientifica mette in discussione la regola del 10% come dogma. Buist et al. (Am J Sports Med, 2008) in un RCT su 532 neofiti non trovano differenze di incidenza infortuni tra progressione +10%/settimana e progressione libera. Nielsen et al. (JOSPT, 2014) mostrano che solo aumenti superiori al 30% a settimana aumentano il rischio per specifici infortuni da overuse; sotto il 30% l'associazione è debole. Il paradigm shift decisivo viene da Johansen et al. (Br J Sports Med, 2025), cohort study su 5200 runner: il predittore forte del rischio non è il volume settimanale cumulativo ma lo spike della singola sessione rispetto alla sessione più lunga degli ultimi 30 giorni — spike del 10-30% correla con +64% rischio overuse.
 
-Implicazione per il coach: la regola del 10%/settimana resta una safeguard prudenziale utile per principianti ma non è rigorosamente evidence-based. Il segnale davvero predittivo è lo spike della singola sessione vs. le sessioni recenti. Quando genera o valuta piani, il coach dovrebbe pesare di più la variazione della singola sessione rispetto al recente, non solo il totale settimanale. Warning: non presentare il 10%/settimana come "legge" scientifica; presentarlo come linea prudenziale.`,
+Implicazione per il coach: la logica è stata aggiornata per mettere lo spike della singola sessione come metrica primaria. Il checkLocalRedFlags ora calcola il delta vs. la sessione più lunga recente e segnala warning se >+30%. Warning: non presentare il 10%/settimana come "legge" scientifica; presentarlo come linea prudenziale secondaria.`,
     primaryCitation: "Johansen 2025 (Br J Sports Med)",
     links: [
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC12421110/",
@@ -98,15 +98,16 @@ Implicazione per il coach: il dato RPE raccolto dal diario è già evidence-base
     sectionNumber: 6,
     title: "Overtraining e monitoraggio del recupero",
     topics: ["overtraining", "OTS", "NFOR", "recovery", "HRV", "sleep fatigue red flag", "Meeusen"],
-    content: `Il coach, tramite checkLocalRedFlags in safetyRules.ts, segnala deload obbligatorio quando l'utente registra sonno ≤6h combinato con stanchezza ≥8/10 per almeno 2 giorni consecutivi.
+    content: `Il coach, tramite checkLocalRedFlags in safetyRules.ts, segnala deload obbligatorio quando l'utente registra sonno <7h combinato con stanchezza ≥8/10 per almeno 3 giorni consecutivi.
 
-Evidenza: Meeusen et al. (ECSS/ACSM Joint Consensus, 2013) è il riferimento internazionale che distingue Functional Overreaching (FOR), Non-Functional Overreaching (NFOR) e Overtraining Syndrome (OTS); prevalenza NFOR/OTS circa 10% negli endurance; criteri diagnostici multidimensionali (psicologici, fisiologici, training). Saw et al. (Br J Sports Med, 2016) mostrano che i questionari soggettivi (fatigue, mood, sleep, soreness) sono spesso più sensibili ai cambi di carico rispetto ai marker oggettivi come CK o cortisolo. Kellmann et al. (Int J Sports Physiol Perform, 2018) consolidano la valutazione multidimensionale di fatigue e recovery. Plews et al. (2013) indicano che l'HRV va usato come media settimanale + coefficiente di variazione, non misure isolate. Buchheit (2014) sintetizza le misure HR-based.
+Evidenza: Meeusen et al. (ECSS/ACSM Joint Consensus, 2013) è il riferimento internazionale che distingue Functional Overreaching (FOR), Non-Functional Overreaching (NFOR) e Overtraining Syndrome (OTS); prevalenza NFOR/OTS circa 10% negli endurance; criteri diagnostici multidimensionali (psicologici, fisiologici, training). Watson et al. (AASM/SRS Consensus, 2015) raccomandano ≥7h/notte per adulti 18-60. Walsh et al. (Br J Sports Med, 2021) — expert consensus su sleep e atleti — indicano che restrizione <7h per ≥3 notti consecutive degrada performance e immunità, e suggeriscono di usare media mobile 7gg invece di soglie singola-notte. Fullagar et al. (Sports Med, 2015) mostrano che la restrizione cronica parziale (<6h × 3+ notti) è più dannosa di una singola notte acuta. Saw et al. (Br J Sports Med, 2016) mostrano che i questionari soggettivi sono più sensibili ai cambi di carico rispetto ai marker oggettivi.
 
-Implicazione per il coach: le soglie hardcoded (sonno 6h + fatica 8) sono euristiche plausibili allineate al principio che i soggettivi contano (Saw 2016). In v2 l'upgrade naturale è integrare HRV media e variabilità via wearable. Warning: un giorno singolo di stanchezza/sonno basso non equivale a overtraining; cercare persistenza ≥2-3 giorni e peggioramento del trend.`,
-    primaryCitation: "Meeusen ECSS/ACSM 2013",
+Implicazione per il coach: la soglia è stata aggiornata da "≤6h × 2gg" a "<7h × 3gg" per allinearsi ai target AASM/Walsh 2021 e ridurre falsi positivi da variabilità weekend. In v2 l'upgrade naturale è integrare HRV e uno sleep-debt cumulativo (differenza 7.5h target vs. ore reali sommata su 7gg).`,
+    primaryCitation: "Meeusen ECSS/ACSM 2013; Walsh BJSM 2021",
     links: [
       "https://www.sportgeneeskunde.com/wp-content/uploads/Meeusen-et-al-2013-Overtraining-Consensus-ECSS-ACSM.pdf",
-      "https://pmc.ncbi.nlm.nih.gov/articles/PMC3936188/"
+      "https://pmc.ncbi.nlm.nih.gov/articles/PMC3936188/",
+      "https://pubmed.ncbi.nlm.nih.gov/33144349/"
     ]
   },
   {
@@ -114,11 +115,11 @@ Implicazione per il coach: le soglie hardcoded (sonno 6h + fatica 8) sono eurist
     sectionNumber: 7,
     title: "Dolore come guida al carico — modello Silbernagel",
     topics: ["dolore", "tendinopatia", "polpaccio", "Silbernagel", "pain-monitoring", "return to sport"],
-    content: `Il diario raccoglie dolore al polpaccio su scala 0-4+ (pre, durante, post sessione). La regola hardcoded del coach è: punteggio ≥3 implica STOP immediato.
+    content: `Il diario raccoglie dolore su scala 0-4+ (pre, durante, post sessione), configurabile per area corporea. La regola hardcoded del coach è allineata alla semantica della scala: ≥4 (a spillo) = STOP immediato, =3 (localizzato) = riduci intensità, =2 (avvertibile) = monitora trend.
 
 Evidenza: Silbernagel et al. (Am J Sports Med, 2007) è il paper di riferimento sulla tendinopatia achillea: l'attività può continuare se il dolore resta ≤5/10, non aumenta significativamente durante, e torna a baseline entro il giorno dopo; nessun effetto negativo rispetto al riposo completo. Silbernagel e Crossley (JOSPT, 2015) definiscono un framework di ritorno allo sport basato su pain-monitoring e Borg-RPE con livelli light/medium/high e giorni di recupero crescenti. Alfredson et al. (1998) hanno consolidato il protocollo eccentrico del polpaccio come trattamento per tendinopatia achillea. Rio et al. (2015) forniscono la base neurofisiologica dell'analgesia indotta da esercizio isometrico.
 
-Implicazione per il coach: la soglia "≥3 su scala 0-4 = STOP" è più conservativa di Silbernagel (≤5/10) ed è appropriata per neofiti o dubbi diagnostici. Per tendinopatie croniche già stabili si può rilassare la soglia con monitoraggio a 24h post-attività. Warning: se il dolore cambia sede, peggiora progressivamente o diventa notturno, il coach deve rinviare a fisioterapista/medico; non è compito dell'LLM fare diagnosi differenziale.`,
+Implicazione per il coach: la soglia "≥4 = STOP, =3 = riduci" è allineata sia alla semantica della scala (4="a spillo", 3="localizzato/riduci") sia alla tolleranza Silbernagel (≤5/10 ≈ ≤2/4). Per tendinopatie croniche già stabili in riabilitazione il coach può tollerare fino a 5/10 con monitoraggio del ritorno a baseline entro 24h. Warning: se il dolore cambia sede, peggiora progressivamente o diventa notturno, il coach deve rinviare a fisioterapista/medico; non è compito dell'LLM fare diagnosi differenziale.`,
     primaryCitation: "Silbernagel 2007 (Am J Sports Med)",
     links: [
       "https://pubmed.ncbi.nlm.nih.gov/17307888/",
@@ -195,11 +196,11 @@ Implicazione per il coach: il prompt di planGenerator dovrebbe iniettare i range
     sectionNumber: 12,
     title: "Sonno — impatto su performance e recupero",
     topics: ["sonno", "sleep", "Watson AASM", "sleep extension", "recupero", "sleep debt", "7-9 ore"],
-    content: `Il check giornaliero raccoglie ore di sonno, qualità e stanchezza. La regola checkLocalRedFlags attiva deload se sonno ≤6h combinato con fatica ≥8/10 per 2 giorni consecutivi.
+    content: `Il check giornaliero raccoglie ore di sonno, qualità e stanchezza. La regola checkLocalRedFlags attiva deload se sonno <7h combinato con fatica ≥8/10 per 3 giorni consecutivi (aggiornata da 6h/2gg ad aprile 2026 per allineamento Walsh BJSM 2021).
 
 Evidenza: Fullagar et al. (Sports Med, 2015) è la review cardinale: il sonno insufficiente riduce performance sport-specifica, cognizione e tempo di reazione; compiti massimali brevi sono meno colpiti, performance prolungate e cognitive molto. Mah et al. (Sleep, 2011) è un landmark sugli atleti di basket collegiale: estendere il sonno a ≥10h per 5-7 settimane migliora sprint, accuratezza di tiro e mood, con dose-risposta positiva. Watson et al. (AASM/SRS Joint Consensus, Sleep 2015) raccomandano ufficialmente per adulti 18-60 almeno 7h/notte; <6h cronico aumenta rischio cardiovascolare, metabolico, cognitivo. Vitale et al. (Int J Sports Med, 2019) offrono linee guida pratiche di sleep hygiene (regolarità, 7-9h, ambiente, timing caffeina). Fox et al. (2025) sintetizzano restrizione sonno, monitoraggio e interventi (extension, nap, hygiene).
 
-Implicazione per il coach: la soglia 6h è coerente con Watson 2015; in v2 raccomandare proattivamente 7-9h via check-in motivazionale e introdurre un indicatore "sleep debt cumulativo" (differenza tra target 7.5h e ore reali, sommata su 7 giorni). Warning: non demonizzare una notte singola breve; conta la media su 7-14 giorni e la regolarità.`,
+Implicazione per il coach: la soglia <7h × 3gg consecutivi è allineata a Walsh 2021 e al target AASM/Watson 2015 (≥7h). Residuo v2: raccomandare proattivamente 7-9h via check-in motivazionale e introdurre un indicatore "sleep debt cumulativo" (differenza tra target 7.5h e ore reali, sommata su 7 giorni). Warning: non demonizzare una notte singola breve; conta la media su 7-14 giorni e la regolarità.`,
     primaryCitation: "Watson AASM 2015",
     links: [
       "https://link.springer.com/article/10.1007/s40279-014-0260-0",

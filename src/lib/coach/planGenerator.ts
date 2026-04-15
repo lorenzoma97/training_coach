@@ -69,7 +69,7 @@ Genera un microciclo di 2 settimane (weeks con weekNumber 1 e 2) che porti l'ute
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
   };
-  const systemInstruction = PROMPTS.planGeneration() + "\n\n" + buildConditionalPrompt(bCtx);
+  const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
   const raw = await generateJSON<unknown>({
     systemInstruction,
@@ -137,7 +137,7 @@ Se rilevi red flag, proponi deload esplicito nella settimana 1.
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
   };
-  const systemInstruction = PROMPTS.planGeneration() + "\n\n" + buildConditionalPrompt(bCtx);
+  const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
   const raw = await generateJSON<unknown>({
     systemInstruction,
@@ -212,7 +212,7 @@ Rispondi con il piano MODIFICATO completo (entrambe le settimane, tutte le sessi
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
   };
-  const systemInstruction = PROMPTS.planGeneration() + "\n\n" + buildConditionalPrompt(bCtx);
+  const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
   const raw = await generateJSON<unknown>({
     systemInstruction,

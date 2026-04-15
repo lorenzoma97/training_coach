@@ -49,7 +49,7 @@ Se è già realistico e SMART, "realistic" = true e "counterProposal" confermer�
     hasRunningGoal: RUNNING_GOAL_RE.test(goalDescription),
     detectedConditions: extractConditionsFromProfile(profile),
   };
-  const systemInstruction = PROMPTS.feasibility() + "\n\n" + buildConditionalPrompt(bCtx);
+  const systemInstruction = PROMPTS.feasibility({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
   const raw = await generateJSON<unknown>({
     systemInstruction,

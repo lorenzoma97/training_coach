@@ -5,7 +5,7 @@ Questo documento mappa ogni regola e comportamento del coach AI a **paper peer-r
 - il paper/consenso che lo supporta (o lo mette in discussione)
 - dove è implementato nel repo
 
-Ultimo aggiornamento ricerca: 2026-04.
+Ultimo aggiornamento ricerca: 2026-04-15 (fix safety rules: spike-detection, pain 3-livelli, sonno <7h×3gg, rest-days age-tiered).
 
 ---
 
@@ -20,8 +20,11 @@ Ultimo aggiornamento ricerca: 2026-04.
 | Buist I. et al., *No effect of a graded training program on the number of running-related injuries in novice runners* | 2008 | Am J Sports Med | Nessuna differenza tra progressione +10%/sett e progressione "libera" su 532 neofiti (RCT). La regola del 10% **non** è supportata come misura preventiva. |
 | Nielsen RO. et al., *Excessive progression in weekly running distance and risk of running-related injuries* | 2014 | J Orthop Sports Phys Ther | Aumenti >30%/sett aumentano il rischio per specifici infortuni; sotto il 30% l'associazione è debole. |
 | Johansen K. et al., *How much running is too much? Identifying high-risk running sessions in a 5200-person cohort study* | 2025 | Br J Sports Med | Paradigm shift: il rischio non è il volume settimanale ma gli **spike della singola sessione** rispetto alla più lunga degli ultimi 30gg. Spike 10-30% → +64% rischio overuse. |
+| **Videbæk S. et al., *Incidence of Running-Related Injuries Per 1000h of running in Different Types of Runners: A Systematic Review and Meta-Analysis*** | 2015 | Sports Med | Novice injury rate ~17.8/1000h vs. 7.7/1000h recreational. Programmi novice tipici: **20-30 min/sessione, 2-3×/sett**. |
+| Buist I. et al., *Incidence and risk factors of running-related injuries during preparation for a 4-mile recreational running event* | 2010 | Br J Sports Med | Protocolli novice: ~30 min/sessione × 3/sett (~90 min/sett) con progressione +10%/sett. Training error = principale predittore. |
+| Piercy KL. et al. (ACSM/HHS), *The Physical Activity Guidelines for Americans* | 2018 | JAMA | Sedentari: partire **150 min/sett moderata** gradualmente. "Start low, go slow". |
 
-**Implicazione per il coach**: la regola del 10%/sett è **conservativa ma non rigorosamente evidence-based**. Vale come safeguard prudenziale per neofiti; è il *single-session spike* vs. recente che andrebbe pesato di più.
+**Implicazione per il coach** (aggiornata 2026-04): la regola primaria in `safetyRules.ts` è ora `sessionSpikeMaxPct: 20` — `checkLocalRedFlags` calcola il delta tra la durata della sessione corrente e la sessione più lunga degli ultimi 7gg (ideale 30gg, limite tecnico: abbiamo solo una finestra 7gg in memoria runtime) e segnala warning se spike >+20%. La scelta di 20% è il punto intermedio della banda di rischio 10-30% identificata da Johansen: più basso genererebbe troppi falsi positivi per normale progressione, più alto lascerebbe scoperta metà della banda. Il cap `weeklyVolumeIncreaseMaxPct: 10` rimane come safeguard di secondo livello per neofiti assoluti, con la nota esplicita che non è rigorosamente evidence-based.
 
 Link: [Johansen 2025 (PMC)](https://pmc.ncbi.nlm.nih.gov/articles/PMC12421110/) · [Nielsen 2014 (JOSPT)](https://www.jospt.org/doi/10.2519/jospt.2014.5164) · [Canadian Running summary](https://runningmagazine.ca/sections/training/the-10-per-cent-mileage-rule-isnt-what-you-think-study-warns/)
 
@@ -137,7 +140,12 @@ Link: [Meeusen 2013 (PDF sportgeneeskunde)](https://www.sportgeneeskunde.com/wp-
 | Alfredson H. et al., *Heavy-load eccentric calf muscle training...* | 1998 | Am J Sports Med | Protocollo eccentrico Alfredson — trattamento consolidato per tendinopatia achillea. |
 | Rio E. et al., *Isometric exercise induces analgesia and reduces inhibition in patellar tendinopathy* | 2015 | Br J Sports Med | Base neurofisiologica per l'analgesia da carico. |
 
-**Implicazione forte sul coach**: la soglia "≥3 = STOP" sulla scala 0-4 è più conservativa di Silbernagel (≤5/10). Per tendinopatie croniche **stabili**, si può rilassare la soglia con monitoraggio 24h post-attività. La versione attuale è corretta per neofiti/dubbi diagnostici; in v2 aggiungere "modalità riabilitazione" che adotta il protocollo Silbernagel esplicito.
+**Implicazione forte sul coach** (aggiornata 2026-04): le soglie sono state allineate alla **semantica verbale della scala** (0-4: 2=avvertibile, 3=localizzato/riduci, 4=a spillo/STOP). Evitiamo la traduzione numerica 2/4 ↔ 5/10 (non validata: la nostra scala è ordinale-semantica, quella di Silbernagel è VAS lineare). Tre livelli in `safetyRules.ts`:
+- `painStopThreshold: 4` → STOP + consulenza specialista (prima era 3, contraddiceva la scala verbale)
+- `painWarnThreshold: 3` → riduci intensità
+- `painMonitorThreshold: 2` → monitora trend (prima invisibile: falsa sicurezza)
+
+Il principio Silbernagel (dolore tollerabile se non peggiora e rientra a baseline entro 24h) è espresso nel prompt in termini qualitativi, non tramite mapping numerico cross-scala.
 
 Link: [Silbernagel 2007 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/17307888/) · [Silbernagel 2015 return-to-sport (JOSPT)](https://www.jospt.org/doi/10.2519/jospt.2015.5885)
 
@@ -230,15 +238,16 @@ Link: [Ratamess 2009 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/19204579/) · [AC
 
 | Paper | Anno | Rivista | Punto chiave |
 |---|---|---|---|
-| **Fullagar HHK. et al., *Sleep and Athletic Performance: The Effects of Sleep Loss on Exercise Performance, and Physiological and Cognitive Responses to Exercise*** | 2015 | Sports Med | **Review cardinale.** Sleep loss riduce performance sport-specifica, cognizione, tempo di reazione. Compiti massimali brevi meno colpiti; performance prolungate e cognitive molto colpite. |
+| **Fullagar HHK. et al., *Sleep and Athletic Performance: The Effects of Sleep Loss on Exercise Performance, and Physiological and Cognitive Responses to Exercise*** | 2015 | Sports Med | **Review cardinale.** Sleep loss riduce performance sport-specifica, cognizione, tempo di reazione. Restrizione cronica parziale (<6h × 3+ notti) **più dannosa** di singola notte acuta. |
+| **Walsh NP. et al., *Sleep and the athlete: narrative review and 2021 expert consensus recommendations*** | 2021 | Br J Sports Med | **Consensus expert 2021.** Atleti: target 7-9h; <7h per ≥3 notti consecutive degrada performance/immunità. Raccomandato uso di **media mobile 7gg** invece di soglie singola-notte. |
 | Mah CD. et al., *The effects of sleep extension on the athletic performance of collegiate basketball players* | 2011 | Sleep | **Landmark.** Estendere sonno a ≥10h/notte per 5-7 settimane → sprint più veloci, accuratezza tiri migliore, mood migliore. Dose-risposta positiva al sonno. |
 | Watson NF. et al. (AASM/SRS Joint Consensus), *Recommended amount of sleep for a healthy adult* | 2015 | Sleep / J Clin Sleep Med | **Consensus ufficiale.** Adulti 18-60 anni: ≥7h/notte per salute ottimale. <6h cronico → rischio cardiovascolare, metabolico, cognitivo. |
 | Vitale KC. et al., *Sleep Hygiene for Optimizing Recovery in Athletes: Review and Recommendations* | 2019 | Int J Sports Med | Linee guida pratiche: regolarità orari, 7-9h minimo, ambiente, caffeina timing. |
 | Fox JL. et al., *A Narrative Review of the Impact of Sleep on Athletes* | 2025 | PMC | Review recente su restrizione sonno, monitoraggio, interventi (sleep extension, nap, hygiene). |
 
-**Implicazione per il coach**: la soglia "6h" è **coerente** con Watson 2015. Azione v2: raccomandare proattivamente 7-9h via check-in motivazionale. Considerare aggiunta di un indicatore "sleep debt cumulativo" (differenza tra 7.5h target e ore reali, sommata su 7gg).
+**Implicazione per il coach** (aggiornata 2026-04): soglia aggiornata da "≤6h × 2gg" a **"<7h × 3gg"** in `safetyRules.ts` per allinearsi al target AASM (≥7h) e alla raccomandazione Walsh 2021 (≥3 notti consecutive). Il vecchio threshold generava falsi positivi da variabilità weekend. Azione v2 residua: sleep debt cumulativo (differenza target 7.5h vs. reali, sommata su 7gg) + media mobile.
 
-Link: [Fullagar 2015 (Springer)](https://link.springer.com/article/10.1007/s40279-014-0260-0) · [Fullagar 2015 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/25315456/) · [Vitale 2019 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/30665263/) · [Fox 2025 (PMC)](https://pmc.ncbi.nlm.nih.gov/articles/PMC11779686/)
+Link: [Fullagar 2015 (Springer)](https://link.springer.com/article/10.1007/s40279-014-0260-0) · [Walsh 2021 BJSM (PubMed)](https://pubmed.ncbi.nlm.nih.gov/33144349/) · [Vitale 2019 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/30665263/) · [Fox 2025 (PMC)](https://pmc.ncbi.nlm.nih.gov/articles/PMC11779686/)
 
 ---
 
@@ -311,10 +320,19 @@ Link: [Elliott-Sale 2020 (Springer)](https://link.springer.com/article/10.1007/s
 | Tanaka H., Seals DR., *Endurance exercise performance in Masters athletes: age-associated changes and underlying physiological mechanisms* | 2008 | J Physiol | Declino performance ~10%/decade dopo 30-40 anni, accelerazione dopo 70. Causa dominante: riduzione VO2max (cardiaca + muscolare). |
 | Lepers R., Cattagni T., *Do older athletes reach limits in their performance during marathon running?* | 2012 | Age | Longevità performance: master ben allenati mantengono ottimi livelli fino a 60-70 anni con training appropriato. |
 | Reaburn P., Dascombe B., *Endurance performance in masters athletes* | 2008 | Eur Rev Aging Phys Act | Recupero post-sessione più lento: +24-48h vs. giovani. Adattare frequenza. |
+| **Fell J., Williams AD., *The effect of aging on skeletal-muscle recovery from exercise: possible implications for aging athletes*** | 2008 | J Aging Phys Act | Review fondativa: master endurance richiedono recupero inter-sessione più lungo; raccomanda **≥1 giorno separazione hard** e **max 4 sessioni HI/sett**. |
+| **Doering TM. et al., *Postexercise Recovery of Skeletal Muscle Damage and Protein Synthesis in Older Men*** | 2016 | Int J Sport Nutr Exerc Metab | Master necessitano **+24-48h extra** vs. giovani per risoluzione muscle damage. |
+| Borde R. et al., *Dose-Response Relationships of Resistance Training in Healthy Old Adults: A Systematic Review and Meta-Analysis* | 2015 | Sports Med | Frequenza ottimale forza in anziani: **2d/sett con 48-72h** tra sessioni. |
+| Easthope CS. et al., *Effects of a trail running competition on muscular performance and efficiency in well-trained young and master athletes* | 2010 | Eur J Appl Physiol | Recupero neuromuscolare master ~72h vs. ~48h giovani post-endurance event. |
 
-**Implicazione per il coach**: azione v2 in `planGenerator`: per utenti ≥50 anni ridurre frequenza sessioni ad alta intensità (max 2/sett) e inserire giorni di recovery attivo. Per ≥65, adottare linee guida ACSM 2009 (volume ≤150min moderata/sett come baseline). Considerare formula FCmax alternativa per master: alcuni studi suggeriscono `220 - 0.93 × età` più accurata per atleti master ben allenati (Tanaka è già migliore di 220-età però).
+**Implicazione per il coach** (aggiornata 2026-04): giorni riposo minimi ora **age-tiered** in `safetyRules.ts` via `restDaysMinForAge()`:
+- **<50 anni**: 2 giorni riposo/sett (baseline)
+- **50-64 anni**: 3 giorni riposo/sett (Fell 2008, Doering 2016)
+- **≥65 anni**: 3 giorni + max 2 giorni consecutivi allenamento (Chodzko-Zajko ACSM 2009, Borde 2015)
 
-Link: [ACSM 2009 older adults (PDF)](https://www.bewegenismedicijn.nl/files/downloads/acsm_position_stand_exercise_and_physical_activity_for_older_adults.pdf) · [Chodzko-Zajko 2009 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/19516148/)
+Il prompt `safetyRulesAsPrompt(ctx)` riceve `age` dal profilo utente e inietta automaticamente la regola appropriata. Residuo v2: differenziare volume/frequenza HIIT per fascia età in `planGenerator`.
+
+Link: [ACSM 2009 older adults (PDF)](https://www.bewegenismedicijn.nl/files/downloads/acsm_position_stand_exercise_and_physical_activity_for_older_adults.pdf) · [Chodzko-Zajko 2009 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/19516148/) · [Fell & Williams 2008 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/18212398/) · [Doering 2016 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/26479490/) · [Borde 2015 (PubMed)](https://pubmed.ncbi.nlm.nih.gov/26420238/)
 
 ---
 
@@ -510,13 +528,14 @@ Link: [Silva 2023 Olympic athletes (Springer)](https://link.springer.com/article
 
 | Regola hardcoded in `SAFETY` | Paper di riferimento |
 |---|---|
-| `weeklyVolumeIncreaseMaxPct: 10` | Buist 2008, Nielsen 2014, Johansen 2025 (da ripesare in v2) |
-| `restDaysMinPerWeek: 2` | Principio generale di supercompensazione — review Seiler 2010; per master: Reaburn 2008 |
-| `beginnerRunCapMinutesPerSession: 25` | ACSM guidelines 2021 + Nielsen 2014 |
-| `painStopThreshold: 3` (scala 0-4) | Silbernagel 2007 (soglia più conservativa della loro 5/10) |
+| `sessionSpikeMaxPct: 20` **(regola primaria)** | Johansen 2025 (Br J Sports Med) — punto intermedio della banda di rischio 10-30% |
+| `weeklyVolumeIncreaseMaxPct: 10` **(safeguard secondario)** | Buist 2008 (regola non evidence-based), Nielsen 2014 |
+| `restDaysMinForAge()` age-tiered (2/3/3) | Chodzko-Zajko ACSM 2009 (≥65), Fell & Williams 2008, Doering 2016, Borde 2015 |
+| `beginnerRunCapMinutesPerSession: 25` / `beginnerRunCapMinutesPerWeek: 90` | Videbæk 2015 (20-30 min novice), Buist 2010 (~90 min/sett baseline), ACSM/Piercy 2018 |
+| `painStopThreshold: 4`, `painWarnThreshold: 3`, `painMonitorThreshold: 2` (scala 0-4) | Allineamento semantica verbale della scala del diario + principio Silbernagel 2007 (tolleranza se non peggiora + return-to-baseline 24h) |
 | `rpeEasySessionCap: 6` su Z2 | Foster 2001, Haddad 2017 — RPE >6 = zona soglia, non Z2 |
 | `z2UpperPct: 0.75` FCmax | Seiler 2010, Stöggl/Sperlich 2014 |
-| `sleepFatigueRedFlag` combo | Meeusen 2013 (ECSS/ACSM), Saw 2016, Watson AASM 2015 |
+| `sleepFatigueRedFlag` combo `<7h × 3gg` | Watson AASM 2015 (target ≥7h), Walsh BJSM 2021 (≥3 notti consec.), Fullagar 2015, Saw 2016 |
 | `maxHRFormula: 208 - 0.7 * age` | Tanaka 2001 (±10bpm, ±5-10% con wearable PPG: Mühlen 2021) |
 | **Forza — set/rep/%1RM** (da iniettare) | Ratamess ACSM 2009 + ACSM 2025 overview |
 | **Strength+endurance concomitante** | Rønnestad & Mujika 2014, Beattie 2014 |
@@ -532,6 +551,16 @@ Link: [Silva 2023 Olympic athletes (Springer)](https://link.springer.com/article
 | **Heat stress modifier** | ACSM Sawka 2007, Périard 2015 |
 | **Body composition tracking** | Silva 2023, Ackland IOC 2012, Campa 2021, Kasper 2021 |
 | **Pain areas configurabili** (non hardcoded polpaccio) | Silbernagel 2007 adattato a zone multiple |
+
+---
+
+## Gap noti di ancoraggio scientifico (2026-04)
+
+Alcuni valori numerici sono euristiche editoriali senza ancoraggio diretto a un singolo paper. Li documentiamo esplicitamente:
+
+- **`fatigueMin: 8` su scala 0-10**: Saw 2016 e Kellmann 2018 confermano che i questionari soggettivi sono validi, ma non forniscono un cutoff specifico su scala 0-10 (Hooper-Mackinnon usa 1-7 con ≥5/7 come red flag, ≈71%). Scegliamo 8/10 (80%) come compromesso prudente: soglia più alta del cutoff Hooper per evitare falsi positivi da fatica transitoria, ancorata però nella parte alta della scala.
+- **Cutoff `restDaysMinMidAge` a 50 anni**: Chodzko-Zajko ACSM 2009 definisce esplicitamente 65+; Fell 2008 e Doering 2016 parlano di "master" senza cutoff numerico (le federazioni usano 35-40). Tanaka-Seals 2008 documenta declino performance ~10%/decade post-40 con accelerazione post-70. 50 è scelta editoriale intermedia tra l'inizio del declino (40) e il cutoff ACSM (65): garantisce tier intermedio senza proliferare fasce. Residuo v2: considerare tier a 55 allineandosi al declino VO2max più marcato.
+- **`beginnerMaxRaceDistanceAt8w: 5 km`**: non ancorato a un singolo paper. Coerente con Couch-to-5k standard e ACSM/Piercy 2018 (150 min/sett baseline per sedentari, raggiungibile in 8 sett). Euristica prudenziale.
 
 ---
 
