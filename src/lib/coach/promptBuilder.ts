@@ -8,6 +8,8 @@ import { chronicConditionBlock } from "./promptModules/chronicConditionRules";
 import { recoveryBlock } from "./promptModules/recoveryModalities";
 import { cadenceAdviceBlock } from "./promptModules/biomechanicsRunning";
 import { bodyCompositionBlock, type BodyCompSummary } from "./promptModules/bodyComposition";
+import { zonesBlock } from "./promptModules/zonesBlock";
+import type { ZonesResult, TimeInZone } from "./zones";
 
 export type WorkoutTypeId = "corsa" | "forza_gambe" | "forza_upper" | "sport" | "mobilita";
 
@@ -28,6 +30,12 @@ export interface BuildContext {
   bodyComp?: BodyCompSummary;
   /** Delta body-comp ultimi 7gg (valore attuale - 7gg fa). */
   bodyCompTrend7d?: BodyCompSummary;
+  /** Zone FC personalizzate (Tanaka/Karvonen/Empirica). Iniettate quando il contesto include corsa o obiettivo running. */
+  zones?: ZonesResult;
+  /** Tempo trascorso per zona ultimi N giorni + check polarizzato 80/20. */
+  zonesTimeInZone?: TimeInZone[];
+  zonesPolar?: { lowPct: number; highPct: number; isPolarized: boolean };
+  zonesTotalSessions?: number;
 }
 
 export function extractConditionsFromProfile(profile: UserProfile | null): string[] {
@@ -73,6 +81,10 @@ export function buildConditionalPrompt(ctx: BuildContext): string {
   }
   if (ctx.bodyComp && (ctx.bodyComp.bodyFat != null || ctx.bodyComp.muscleMass != null || ctx.bodyComp.bodyWater != null)) {
     blocks.push(bodyCompositionBlock(ctx.bodyComp, ctx.bodyCompTrend7d));
+  }
+  // Zone FC personalizzate: inietta quando c'è contesto corsa (workout o obiettivo)
+  if (ctx.zones && (ctx.workoutType === "corsa" || ctx.hasRunningGoal)) {
+    blocks.push(zonesBlock(ctx.zones, ctx.zonesTimeInZone, ctx.zonesPolar, ctx.zonesTotalSessions));
   }
 
   return blocks.join("\n\n");

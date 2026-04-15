@@ -91,6 +91,8 @@ export function formatDaysForLLM(days: Array<{ date: string; daily: any; workout
       if (d.weight) parts.push(`peso ${d.weight}kg`);
       if (d.sleep) parts.push(`sonno ${d.sleep}h (${d.sleepQ || "n/a"})`);
       if (d.fatigue) parts.push(`stanchezza ${d.fatigue}/10`);
+      if (d.morningHR) parts.push(`FC riposo mattut. ${d.morningHR}bpm`);
+      if (d.morningFreshness) parts.push(`freschezza ${d.morningFreshness}/10`);
       if (d.meds) parts.push(`farmaci: ${d.meds}`);
       if (d.bodyFat) parts.push(`BF ${d.bodyFat}%`);
       if (d.muscleMass) parts.push(`massa musc ${d.muscleMass}`);

@@ -5,6 +5,7 @@ import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt, format
 import type { SessionFeedback } from "../types";
 import { checkLocalRedFlags } from "./safetyRules";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext, type WorkoutTypeId } from "./promptBuilder";
+import { computeZonesContext } from "./zones";
 
 const schema = z.object({
   howItWent: z.string(),
@@ -30,11 +31,19 @@ export async function analyzeSession(params: {
 }): Promise<SessionFeedback> {
   const ctx = await buildCoachContext({ daysBack: 7 });
 
+  // Zone FC personalizzate (Tanaka/Karvonen/Empirica) + tempo-per-zona + polar.
+  // Usate per (a) sostituire soglia Tanaka fissa in checkLocalRedFlags,
+  // (b) iniettare il blocco zones nel prompt LLM.
+  const zonesCtx = computeZonesContext(ctx.profile, ctx.recentDaysRaw || []);
+  const z2 = zonesCtx?.zones?.zones.find(x => x.index === 2);
+  const zoneZ2 = z2 ? { low: z2.hrLow, high: z2.hrHigh } : undefined;
+
   // Red flag locali (heuristics client-side — utili se la rete fallisce)
   const local = checkLocalRedFlags({
     workout: params.workout,
     last7Days: ctx.recentDaysRaw,
     profile: ctx.profile ? { age: ctx.profile.age } : null,
+    zoneZ2,
   });
 
   const workoutLine = formatDaysForLLM([{
@@ -88,6 +97,10 @@ Dai feedback strutturato. Se ci sono red flag locali, includili in redFlags e al
     lastSessionIntensity: rpeNum >= 8 ? "hard" : rpeNum >= 5 ? "moderate" : "light",
     currentCadence: params.workout.fields?.cadenza ? Number(params.workout.fields.cadenza) : null,
     detectedConditions: extractConditionsFromProfile(ctx.profile),
+    zones: zonesCtx?.zones ?? undefined,
+    zonesTimeInZone: zonesCtx?.timeInZone,
+    zonesPolar: zonesCtx?.polar,
+    zonesTotalSessions: zonesCtx?.totalSessions,
   };
   const systemInstruction = PROMPTS.sessionFeedback({ age: ctx.profile?.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 

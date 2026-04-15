@@ -6,6 +6,7 @@ import { getJSON, setJSON } from "../lib/storage";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { retrieveRelevantChunks, chunksAsPromptBlock } from "../lib/knowledge";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "../lib/coach/promptBuilder";
+import { computeZonesContext } from "../lib/coach/zones";
 import { events } from "../lib/events";
 import RichText from "./RichText";
 
@@ -111,11 +112,16 @@ export default function CoachChat() {
       const ragBlock = chunksAsPromptBlock(ragResults);
 
       // Injection condizionale: moduli basati sul profilo/contesto utente
+      const zonesCtxChat = computeZonesContext(ctx.profile, ctx.recentDaysRaw || []);
       const bCtx: BuildContext = {
         profile: ctx.profile,
         hasRunningGoal: ctx.goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription || "")),
         hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
         detectedConditions: extractConditionsFromProfile(ctx.profile),
+        zones: zonesCtxChat?.zones ?? undefined,
+        zonesTimeInZone: zonesCtxChat?.timeInZone,
+        zonesPolar: zonesCtxChat?.polar,
+        zonesTotalSessions: zonesCtxChat?.totalSessions,
       };
       const conditionalBlock = buildConditionalPrompt(bCtx);
 

@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
-import { profileAsPrompt, goalsAsPrompt, planAsPrompt } from "../diaryContext";
+import { profileAsPrompt, goalsAsPrompt, planAsPrompt, getLastNDays } from "../diaryContext";
 import type { UserProfile, UserGoal, TrainingPlan } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 import { validatePlan, planStateHash, computePlanStartDate } from "./planValidator";
+import { computeZonesContext } from "./zones";
 
 const sessionSchema = z.object({
   day: z.enum(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]),
@@ -58,6 +59,10 @@ export async function generateInitialPlan(
   profile: UserProfile,
   goals: UserGoal[],
 ): Promise<TrainingPlan> {
+  // Zone FC personalizzate: onboarding ha storico nullo → Tanaka. Carichiamo
+  // comunque per sicurezza (es. onboarding ripetuto con diario esistente).
+  const recentDaysForZones = await getLastNDays(60).catch(() => []);
+  const zonesCtxInit = computeZonesContext(profile, recentDaysForZones);
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
@@ -75,6 +80,10 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
     // attivare il modulo strengthForEndurance quando il contesto corsa è presente.
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
+    zones: zonesCtxInit?.zones ?? undefined,
+    zonesTimeInZone: zonesCtxInit?.timeInZone,
+    zonesPolar: zonesCtxInit?.polar,
+    zonesTotalSessions: zonesCtxInit?.totalSessions,
   };
   const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
@@ -149,6 +158,8 @@ Genera la NUOVA settimana (weekNumber=1, una sola) a partire dalla settimana pro
 Se rilevi red flag, proponi deload esplicito.
 `.trim();
 
+  const recentDaysForZonesRegen = await getLastNDays(60).catch(() => []);
+  const zonesCtxRegen = computeZonesContext(profile, recentDaysForZonesRegen);
   const bCtx: BuildContext = {
     profile,
     hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
@@ -156,6 +167,10 @@ Se rilevi red flag, proponi deload esplicito.
     // attivare il modulo strengthForEndurance quando il contesto corsa è presente.
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
+    zones: zonesCtxRegen?.zones ?? undefined,
+    zonesTimeInZone: zonesCtxRegen?.timeInZone,
+    zonesPolar: zonesCtxRegen?.polar,
+    zonesTotalSessions: zonesCtxRegen?.totalSessions,
   };
   const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
@@ -234,11 +249,17 @@ REGOLE NON VIOLABILI:
 Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le sessioni). Il "rationale" DEVE menzionare esplicitamente cosa è cambiato rispetto al piano precedente e perché.
 `.trim();
 
+  const recentDaysForZonesAdapt = await getLastNDays(60).catch(() => []);
+  const zonesCtxAdapt = computeZonesContext(profile, recentDaysForZonesAdapt);
   const bCtx: BuildContext = {
     profile,
     hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
+    zones: zonesCtxAdapt?.zones ?? undefined,
+    zonesTimeInZone: zonesCtxAdapt?.timeInZone,
+    zonesPolar: zonesCtxAdapt?.polar,
+    zonesTotalSessions: zonesCtxAdapt?.totalSessions,
   };
   const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 

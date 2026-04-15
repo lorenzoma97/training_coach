@@ -4,6 +4,7 @@ import { PROMPTS } from "./systemPrompts";
 import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt, extractBodyComp } from "../diaryContext";
 import type { WeeklyReport } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
+import { computeZonesContext } from "./zones";
 
 const schema = z.object({
   summary: z.string(),
@@ -51,6 +52,7 @@ Se il piano non copre una disciplina, planned_min = 0.
 `.trim();
 
   const bc = extractBodyComp(ctx.recentDaysRaw);
+  const zonesCtx = computeZonesContext(ctx.profile, ctx.recentDaysRaw || []);
   const bCtx: BuildContext = {
     profile: ctx.profile,
     bodyComp: bc.latest,
@@ -58,6 +60,10 @@ Se il piano non copre una disciplina, planned_min = 0.
     hasRunningGoal: ctx.goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
     hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
     detectedConditions: extractConditionsFromProfile(ctx.profile),
+    zones: zonesCtx?.zones ?? undefined,
+    zonesTimeInZone: zonesCtx?.timeInZone,
+    zonesPolar: zonesCtx?.polar,
+    zonesTotalSessions: zonesCtx?.totalSessions,
   };
   const systemInstruction = PROMPTS.weeklyReport({ age: ctx.profile?.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 

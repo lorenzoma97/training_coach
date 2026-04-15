@@ -89,6 +89,12 @@ export function checkLocalRedFlags(input: {
   workout?: any;
   last7Days?: any[];
   profile?: { age?: number } | null;
+  /**
+   * Se fornita, usa questa zona Z2 personalizzata (Karvonen o empirica) invece
+   * della soglia generica Tanaka 75%. Evita di rimproverare un utente che corre
+   * correttamente nella sua Z2 più alta (es. atleta con FCrest bassa).
+   */
+  zoneZ2?: { low: number; high: number };
 }): RedFlagCheck {
   const reasons: string[] = [];
   let level: "none" | "warn" | "danger" = "none";
@@ -148,12 +154,24 @@ export function checkLocalRedFlags(input: {
   const fcMedia = toNum(w?.fields?.fc_media);
   const age = toNum(input.profile?.age);
   if (fcMedia !== null && age !== null && age > 0) {
-    const fcMax = 208 - 0.7 * age;
-    const pct = fcMedia / fcMax;
     const tipo = (w?.fields?.tipo || "").toLowerCase();
-    if ((tipo.includes("fondo lento") || tipo.includes("z2")) && pct > SAFETY.z2UpperPct) {
-      reasons.push(`FC media ${fcMedia} bpm = ${Math.round(pct * 100)}% FCmax: troppo alta per Z2.`);
-      if (level === "none") level = "warn";
+    const isEasy = tipo.includes("fondo lento") || tipo.includes("z2");
+    if (isEasy) {
+      // Priorità: se abbiamo zoneZ2 personalizzata (Karvonen o empirica), usiamola.
+      // Altrimenti fallback alla soglia Tanaka 75% (comportamento legacy).
+      if (input.zoneZ2) {
+        if (fcMedia > input.zoneZ2.high) {
+          reasons.push(`FC media ${fcMedia} bpm sopra la tua Z2 personalizzata (${input.zoneZ2.low}-${input.zoneZ2.high} bpm): stavi andando troppo forte per essere un fondo lento.`);
+          if (level === "none") level = "warn";
+        }
+      } else {
+        const fcMax = 208 - 0.7 * age;
+        const pct = fcMedia / fcMax;
+        if (pct > SAFETY.z2UpperPct) {
+          reasons.push(`FC media ${fcMedia} bpm = ${Math.round(pct * 100)}% FCmax (Tanaka): troppo alta per Z2. Aggiungi FC a riposo mattutina nel check per una zona più personalizzata.`);
+          if (level === "none") level = "warn";
+        }
+      }
     }
   }
 

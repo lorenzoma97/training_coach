@@ -78,6 +78,54 @@ Implicazione per il coach: 80% Z1-Z2 / 20% Z3+ è un default ragionevole da codi
     ]
   },
   {
+    id: "sec-4b-zones-5tier-karvonen-empirical",
+    sectionNumber: 4,
+    title: "Zone FC a 5 livelli, Karvonen (HRR) e derivazione empirica",
+    topics: ["Z1", "Z2", "Z3", "Z4", "Z5", "Karvonen", "HRR", "recovery", "tempo", "threshold", "VO2max", "soglia anaerobica", "zone FC personalizzate", "empirica", "dal diario"],
+    content: `Il coach espone all'utente un modello a 5 zone di frequenza cardiaca (Coggan/Friel, standard usato in Garmin/Strava/Polar):
+- Z1 Recovery (50-60% FCmax): camminata e recupero attivo. RPE 1-3.
+- Z2 Easy / Fondo Lento (60-75% FCmax): volume base conversazionale. RPE 3-5. Zona dove l'atleta endurance passa ~80% del tempo.
+- Z3 Tempo / Marathon pace (75-85% FCmax): passo gara 21-42 km. RPE 5-7.
+- Z4 Threshold / Soglia (85-92% FCmax): ripetute lunghe, passo gara 10 km. RPE 7-8.
+- Z5 VO2max / Intervals (92-100% FCmax): ripetute brevi 400-1000m, massimali. RPE 8-10.
+
+Le zone sono derivate in cascata dai dati disponibili dell'utente (src/lib/coach/zones.ts):
+1. TANAKA (solo età): FCmax = 208 - 0.7 × età. Ogni zona è una % di FCmax. Errore individuale ±10 bpm (Tanaka 2001). Disponibile sempre.
+2. KARVONEN (HRR): se l'utente registra la FC a riposo mattutina nel check (campo morningHR), il coach passa al metodo Karvonen. Formula per ogni zona: FCtarget = FCrest + pct × (FCmax − FCrest). Karvonen (1957) è più personalizzato: un atleta allenato con FCrest bassa avrà range bpm più alti rispetto a Tanaka generica. I range salgono leggermente per tutte le zone.
+3. EMPIRICA: se l'utente ha registrato ≥5 corse "Fondo Lento" con RPE ≤ 5, la Z2 viene derivata dal 25°-75° percentile della FC media effettiva osservata. Le altre zone (Z1, Z3, Z4, Z5) usano comunque Karvonen se disponibile, altrimenti Tanaka. Questo è il metodo più affidabile per Z2 perché riflette la fisiologia reale dell'utente (Seiler 2010 — la soglia LT1 varia individualmente ±15%).
+
+Evidenza: Karvonen M.J. et al. (1957) "The effects of training on heart rate" è il paper originale sulla Heart Rate Reserve. Seiler S. (2010) definisce le 3 zone funzionali (sotto LT1, tra LT1 e LT2, sopra LT2); Coggan e Friel hanno successivamente esteso a 5 zone per la prescrizione pratica. Roecker et al. (Int J Sports Med, 2002) confermano che la variabilità inter-individuale della FC a parità di % FCmax è significativa (±10-15%), giustificando metodi più personalizzati di Tanaka.
+
+Implicazione per il coach: quando commenta la FC media di una corsa, deve confrontarla con la zona personalizzata dell'utente (metodo = empirical > karvonen > tanaka), NON con la soglia Tanaka generica. Se l'utente ha Z2 empirica più alta della teorica, non va rimproverato per "FC troppo alta" se resta nel suo range. Per ogni zona suggerita nel piano, il coach cita il range bpm personalizzato. Warning: la FC da wearable PPG ha errore ±5-10% (Mühlen 2021), interpretare i numeri come bande non come cutoff.`,
+    primaryCitation: "Karvonen 1957 + Coggan/Friel 5-zone model",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/13470504/",
+      "https://pubmed.ncbi.nlm.nih.gov/12436270/"
+    ]
+  },
+  {
+    id: "sec-4c-polarization-check-practical",
+    sectionNumber: 4,
+    title: "Check polarizzato 80/20 — lettura pratica della distribuzione per zona",
+    topics: ["polarizzazione", "80/20", "sbilanciata", "intensità", "tempo in zona", "distribuzione", "training load"],
+    content: `Il coach analizza il tempo trascorso in ciascuna zona FC negli ultimi 7/14/30/90 giorni (src/components/ZonesAnalytics.tsx) e lo confronta con il modello polarizzato 80/20.
+
+Operativamente: viene bucket ogni corsa con fc_media nota nella zona corrispondente (bucketing semplice su fc_media singola — documentato come approssimazione perché manca il sample HR granulare). La durata totale per zona viene sommata, quindi si calcola:
+- % bassa intensità = tempo in Z1+Z2 / tempo totale
+- % alta intensità = tempo in Z3+Z4+Z5 / tempo totale
+
+Se % bassa ≥ 75% (tolleranza rispetto all'80% di Seiler 2010 per campioni piccoli): distribuzione polarizzata OK. Altrimenti SBILANCIATA → il coach deve suggerire di rallentare i fondi lenti (non di evitare i lavori di qualità). Soglia minima di 4 sessioni di corsa con FC tracciata per calcolare il check — sotto quella il rapporto è dominato statisticamente da una singola corsa.
+
+Errore tipico del runner amatoriale (documentato in Stöggl/Sperlich 2014): correre il "fondo lento" troppo velocemente, finendo in Z3 senza accorgersene. Il coach deve identificarlo confrontando fc_media dichiarata vs. zona personalizzata dell'utente e intervenire con nudge gentili. Non con allarmi.
+
+Implicazione per il coach: in weeklyReport citare esplicitamente il rapporto % bassa/alta intensità quando disponibile. In chat, se l'utente chiede "come sta andando l'intensità", usare questi numeri come dato oggettivo invece di impressioni generiche. Warning: non applicare il check con meno di 4 corse con FC nel periodo — nemmeno come indicazione morbida. Un solo campione fuori banda produce rapporti 100%/0% fuorvianti.`,
+    primaryCitation: "Seiler 2010 (3-zone polarized model)",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/20861519/",
+      "https://pmc.ncbi.nlm.nih.gov/articles/PMC4621419/"
+    ]
+  },
+  {
     id: "sec-5-rpe-session",
     sectionNumber: 5,
     title: "RPE e Session-RPE — carico interno",

@@ -276,3 +276,34 @@ export function formatPace(sec: number): string {
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, "0")}/km`;
 }
+
+/**
+ * Helper one-shot per i prompt coach: dato il recentDaysRaw e il profile,
+ * calcola ZonesResult + TimeInZone + polarization check. Unica dipendenza,
+ * evita duplicazione di logica di estrazione morningHR / flattening workouts.
+ */
+export function computeZonesContext(
+  profile: UserProfile | null,
+  recentDaysRaw: Array<{ date: string; daily: any; workouts: any[] }>,
+): {
+  zones: ZonesResult | null;
+  timeInZone: TimeInZone[];
+  polar: { lowPct: number; highPct: number; isPolarized: boolean };
+  totalSessions: number;
+} | null {
+  if (!profile) return null;
+  const allWorkouts: any[] = [];
+  let latestMorningHR: number | null = null;
+  for (const d of [...recentDaysRaw].sort((a, b) => b.date.localeCompare(a.date))) {
+    allWorkouts.push(...(d.workouts || []));
+    if (latestMorningHR === null && typeof d.daily?.morningHR === "string" && d.daily.morningHR) {
+      const n = Number(d.daily.morningHR);
+      if (Number.isFinite(n) && n >= 35 && n <= 100) latestMorningHR = n;
+    }
+  }
+  const zones = computeZones({ profile, fcRestLatest: latestMorningHR, recentWorkouts: allWorkouts });
+  const timeInZone = timeInZones(allWorkouts, zones.zones);
+  const polar = polarizationCheck(timeInZone);
+  const totalSessions = timeInZone.reduce((a, z) => a + z.sessionCount, 0);
+  return { zones, timeInZone, polar, totalSessions };
+}
