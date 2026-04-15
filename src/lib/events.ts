@@ -7,7 +7,14 @@ export type EventMap = {
   "plan:updated": { at: string };
   "goals:updated": { at: string };
   "profile:updated": { at: string };
-  "diary:openAdd": { type?: string; date?: string };
+  "diary:openAdd": {
+    type?: string;
+    date?: string;
+    /** Campi pre-compilati nel form (es. { durata_totale: 30, subtype: "Fondo Lento" }). Subtype viene mappato case-insensitive al campo "tipo" select del workout type. */
+    prefill?: Record<string, any>;
+    /** Testo pre-compilato in "Note & Sensazioni". */
+    notes?: string;
+  };
   "nav:goto": { tab: "diary" | "trends" | "coach" | "settings" };
   "onboarding:resume": {};
   /** Emesso quando localStorage è stato modificato in un'ALTRA tab/finestra.

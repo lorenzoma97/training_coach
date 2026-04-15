@@ -236,13 +236,33 @@ export default function DiaryApp() {
 
   // Deep link dal Piano coach: apre lo schermo "Aggiungi" con tipo preselezionato
   useEffect(() => {
-    const off = events.on("diary:openAdd", ({ type, date }) => {
+    const off = events.on("diary:openAdd", ({ type, date, prefill, notes }) => {
       setAddDate(date || today());
       setAddType(type || null);
-      setAddFields({});
+      // Prefill intelligente: mappa subtype → field "tipo" del workout type,
+      // preservando case-match sulle options (es. "fondo lento" → "Fondo Lento").
+      const mapped: Record<string, any> = {};
+      if (prefill && type) {
+        const wt = WORKOUT_TYPES.find(w => w.id === type);
+        for (const [k, v] of Object.entries(prefill)) {
+          if (k === "subtype" && wt) {
+            const tipoField = wt.fields.find((f: any) => f.key === "tipo" && "options" in f);
+            if (tipoField && typeof v === "string") {
+              const opts = (tipoField as any).options as string[];
+              const match = opts.find(o => o.toLowerCase() === v.toLowerCase())
+                || opts.find(o => o.toLowerCase().includes(v.toLowerCase()))
+                || opts.find(o => v.toLowerCase().includes(o.toLowerCase()));
+              if (match) mapped.tipo = match;
+            }
+          } else {
+            mapped[k] = v;
+          }
+        }
+      }
+      setAddFields(mapped);
       setAddPainByArea({});
       setAddRpe(null);
-      setAddNotes("");
+      setAddNotes(notes || "");
       setEditingWorkoutId(null);
       setScreen("add");
     });

@@ -221,8 +221,35 @@ export default function TrainingPlanView() {
     return Math.floor(diffDays / 7) + 1; // 1-based
   })();
 
-  const registerToday = (type: string) => {
-    events.emit("diary:openAdd", { type });
+  // Apre il diario in modalità "nuovo allenamento" pre-compilato con durata,
+  // subtype (mappato al campo "tipo" del workout type) e note dal coach.
+  // La data è calcolata dal piano (startDate + weekOffset + dayIndex).
+  const registerFromPlan = (session: TrainingPlan["weeks"][number]["sessions"][number], weekNumber: number) => {
+    const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+    let targetDate: string | undefined;
+    if (plan?.startDate) {
+      const dayIdx = DAY_KEYS.indexOf(session.day);
+      if (dayIdx >= 0) {
+        const [sy, sm, sd] = plan.startDate.split("-").map(Number);
+        const d = new Date(sy, sm - 1, sd);
+        d.setDate(d.getDate() + (weekNumber - 1) * 7 + dayIdx);
+        const y = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        targetDate = `${y}-${mm}-${dd}`;
+      }
+    }
+    // corsa usa durata_totale, altri tipi usano durata
+    const durationField = session.type === "corsa" ? "durata_totale" : "durata";
+    const prefill: Record<string, any> = { [durationField]: session.duration_min };
+    if (session.subtype) prefill.subtype = session.subtype;
+    const notes = [
+      `📋 Dal piano del coach:`,
+      session.details,
+      "",
+      `Razionale: ${session.rationale}`,
+    ].join("\n");
+    events.emit("diary:openAdd", { type: session.type, date: targetDate, prefill, notes });
   };
 
   // Calcola giorni rimanenti al piano
@@ -350,15 +377,30 @@ export default function TrainingPlanView() {
                   </div>
                   <div style={{ color: "#CBD5E1", lineHeight: 1.5 }}>{s.details}</div>
                   <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", marginTop: "6px", lineHeight: 1.5 }}>{s.rationale}</div>
-                  {isToday && !isCompleted && (
-                    <button onClick={() => registerToday(s.type)} style={{
-                      marginTop: "10px", padding: "10px 14px",
-                      background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
-                      border: "none", borderRadius: "10px", color: "#FFF",
-                      fontSize: "13px", fontWeight: 700, cursor: "pointer",
-                      display: "flex", alignItems: "center", gap: "6px",
-                    }}>
-                      <span>+</span> Registra questa sessione
+                  {!isCompleted && (
+                    <button
+                      onClick={() => registerFromPlan(s, w.weekNumber)}
+                      title={isPast
+                        ? "Registra questa sessione retrodatata (campi pre-compilati dal piano, modificabili)"
+                        : isToday
+                          ? "Registra questa sessione (campi pre-compilati dal piano, modificabili)"
+                          : "Registra in anticipo questa sessione (campi pre-compilati dal piano, modificabili)"
+                      }
+                      style={{
+                        marginTop: "10px", padding: "9px 14px",
+                        background: isToday
+                          ? "linear-gradient(135deg, #E8553A 0%, #D44429 100%)"
+                          : isPast
+                            ? "#1E293B"
+                            : "transparent",
+                        border: isToday ? "none" : isPast ? "1px solid rgba(255,255,255,0.12)" : "1px solid #E8553A66",
+                        borderRadius: "10px",
+                        color: isToday ? "#FFF" : isPast ? "#CBD5E1" : "#E8553A",
+                        fontSize: "13px", fontWeight: 700, cursor: "pointer",
+                        display: "flex", alignItems: "center", gap: "6px",
+                      }}
+                    >
+                      <span>+</span> Registra allenamento
                     </button>
                   )}
                 </div>
