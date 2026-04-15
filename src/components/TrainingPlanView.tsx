@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getJSON } from "../lib/storage";
 import type { TrainingPlan, UserProfile, UserGoal } from "../lib/types";
 import { events } from "../lib/events";
+import { setJSON } from "../lib/storage";
 import { buildCoachContext, getLastNDays } from "../lib/diaryContext";
 import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach/planGenerator";
 import { translateGeminiError } from "../lib/geminiErrors";
@@ -249,7 +250,12 @@ export default function TrainingPlanView() {
       "",
       `Razionale: ${session.rationale}`,
     ].join("\n");
-    events.emit("diary:openAdd", { type: session.type, date: targetDate, prefill, notes });
+    const payload = { type: session.type, date: targetDate, prefill, notes };
+    // Persisti il payload PRIMA di emettere l'evento: se l'utente è sul tab Coach
+    // e il DiaryApp non è ancora montato, l'evento si perderebbe. DiaryApp legge
+    // pending-diary-openAdd al mount e consuma il payload.
+    void setJSON("pending-diary-openAdd", payload);
+    events.emit("diary:openAdd", payload);
   };
 
   // Calcola giorni rimanenti al piano

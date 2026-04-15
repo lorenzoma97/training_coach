@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { storage } from "../lib/storage";
+import { storage, getJSON, setJSON } from "../lib/storage";
 import { events } from "../lib/events";
 
 const WORKOUT_TYPES = [
@@ -234,38 +234,53 @@ export default function DiaryApp() {
     return off;
   }, [refresh]);
 
-  // Deep link dal Piano coach: apre lo schermo "Aggiungi" con tipo preselezionato
-  useEffect(() => {
-    const off = events.on("diary:openAdd", ({ type, date, prefill, notes }) => {
-      setAddDate(date || today());
-      setAddType(type || null);
-      // Prefill intelligente: mappa subtype → field "tipo" del workout type,
-      // preservando case-match sulle options (es. "fondo lento" → "Fondo Lento").
-      const mapped: Record<string, any> = {};
-      if (prefill && type) {
-        const wt = WORKOUT_TYPES.find(w => w.id === type);
-        for (const [k, v] of Object.entries(prefill)) {
-          if (k === "subtype" && wt) {
-            const tipoField = wt.fields.find((f: any) => f.key === "tipo" && "options" in f);
-            if (tipoField && typeof v === "string") {
-              const opts = (tipoField as any).options as string[];
-              const match = opts.find(o => o.toLowerCase() === v.toLowerCase())
-                || opts.find(o => o.toLowerCase().includes(v.toLowerCase()))
-                || opts.find(o => v.toLowerCase().includes(o.toLowerCase()));
-              if (match) mapped.tipo = match;
-            }
-          } else {
-            mapped[k] = v;
+  // Applica un payload di diary:openAdd allo stato del form. Estratto in funzione
+  // così da essere chiamato sia dal listener event-bus (quando DiaryApp è già
+  // montato) sia on-mount (quando proviene dal tab Coach e DiaryApp monta dopo
+  // l'emit — payload persistito in pending-diary-openAdd).
+  const applyOpenAddPayload = (p: { type?: string; date?: string; prefill?: Record<string, any>; notes?: string }) => {
+    setAddDate(p.date || today());
+    setAddType(p.type || null);
+    const mapped: Record<string, any> = {};
+    if (p.prefill && p.type) {
+      const wt = WORKOUT_TYPES.find(w => w.id === p.type);
+      for (const [k, v] of Object.entries(p.prefill)) {
+        if (k === "subtype" && wt) {
+          const tipoField = wt.fields.find((f: any) => f.key === "tipo" && "options" in f);
+          if (tipoField && typeof v === "string") {
+            const opts = (tipoField as any).options as string[];
+            const match = opts.find(o => o.toLowerCase() === v.toLowerCase())
+              || opts.find(o => o.toLowerCase().includes(v.toLowerCase()))
+              || opts.find(o => v.toLowerCase().includes(o.toLowerCase()));
+            if (match) mapped.tipo = match;
           }
+        } else {
+          mapped[k] = v;
         }
       }
-      setAddFields(mapped);
-      setAddPainByArea({});
-      setAddRpe(null);
-      setAddNotes(notes || "");
-      setEditingWorkoutId(null);
-      setScreen("add");
-    });
+    }
+    setAddFields(mapped);
+    setAddPainByArea({});
+    setAddRpe(null);
+    setAddNotes(p.notes || "");
+    setEditingWorkoutId(null);
+    setScreen("add");
+  };
+
+  // Deep link dal Piano coach: apre lo schermo "Aggiungi" con tipo preselezionato.
+  // Due percorsi:
+  // (a) event bus: se DiaryApp è già montato quando parte l'emit
+  // (b) storage: on-mount legge pending-diary-openAdd (caso tab Coach → Diary)
+  useEffect(() => {
+    // Consumo pending eventuale al mount
+    (async () => {
+      const pending = await getJSON<any>("pending-diary-openAdd", null);
+      if (pending) {
+        await setJSON("pending-diary-openAdd", null);
+        applyOpenAddPayload(pending);
+      }
+    })();
+    const off = events.on("diary:openAdd", applyOpenAddPayload);
     return off;
   }, []);
 
