@@ -126,11 +126,28 @@ export default function Sparkline({
     );
   }
 
+  // Asse X: max 5 date distribuite uniformemente, format "dd mmm"
+  const xLabels = useMemo(() => {
+    if (points.length < 2) return [];
+    const maxLabels = Math.min(5, Math.max(2, Math.floor(width / 70)));
+    const step = Math.max(1, Math.floor((points.length - 1) / (maxLabels - 1)));
+    const indices: number[] = [];
+    for (let i = 0; i < points.length; i += step) indices.push(i);
+    if (indices[indices.length - 1] !== points.length - 1) indices.push(points.length - 1);
+    // Riduci se troppi vicini
+    while (indices.length > maxLabels) indices.splice(1, 1);
+    return indices.map(i => {
+      const p = points[i];
+      const pct = points.length > 1 ? (i / (points.length - 1)) * 100 : 50;
+      return { pct, label: fmtDate(p.date) };
+    });
+  }, [points, width]);
+
   const hoverCoord = hoverIdx != null ? allCoords[hoverIdx] : null;
   const hoverPoint = hoverIdx != null ? points[hoverIdx] : null;
 
   return (
-    <div style={{ position: "relative", width, height }}>
+    <div style={{ position: "relative", width }}>
       <svg
         ref={svgRef}
         width={width} height={height}
@@ -188,6 +205,22 @@ export default function Sparkline({
       }}>
         {invertY ? fmt(axisMin) : fmt(axisMax)}{unit || ""}
       </div>
+      {/* Asse X: date distribuite uniformemente */}
+      {xLabels.length >= 2 && (
+        <div style={{ position: "relative", height: "14px", marginTop: "2px" }}>
+          {xLabels.map((xl, i) => (
+            <span key={i} style={{
+              position: "absolute",
+              left: `${xl.pct}%`,
+              transform: i === xLabels.length - 1 ? "translateX(-100%)" : i === 0 ? "none" : "translateX(-50%)",
+              fontSize: "9px",
+              color: "#64748B",
+              fontFamily: "'JetBrains Mono', monospace",
+              whiteSpace: "nowrap",
+            }}>{xl.label}</span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
