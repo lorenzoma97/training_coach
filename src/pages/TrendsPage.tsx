@@ -234,7 +234,7 @@ export default function TrendsPage() {
   const series = seriesResult;
   const seriesError = seriesResult.error;
 
-  const cardStyle: React.CSSProperties = {
+  const cardStyle: Record<string, any> = {
     background: "#16213E", border: "1px solid rgba(255,255,255,0.06)",
     borderRadius: "14px", padding: "14px 16px",
   };
