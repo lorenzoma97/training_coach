@@ -228,10 +228,12 @@ export default function DiaryApp() {
           const sub = w.fields?.tipo || w.fields?.sport || "";
           return (wtInfo?.label || w.type) + (sub ? ` · ${sub}` : "");
         });
-        const icons = [...new Set(workouts.map((w: any) => {
-          const wtInfo = WORKOUT_TYPES.find(t => t.id === w.type);
-          return wtInfo?.icon || "🏋️";
-        }))];
+        const iconSet = new Set<string>();
+        for (const w of workouts) {
+          const wtInfo = WORKOUT_TYPES.find(t => t.id === (w as any).type);
+          iconSet.add(wtInfo?.icon || "🏋️");
+        }
+        const icons: string[] = Array.from(iconSet);
         summaries.set(date, { labels, icons, hasDaily: !!d.daily, hasWorkouts: workouts.length > 0 });
       } catch { /* ignore */ }
     }
