@@ -23,10 +23,20 @@ const schemaHint = `
   "realistic": boolean,
   "reasoning": "spiegazione 2-3 frasi in italiano",
   "counterProposal": {
-    "description": "versione SMART dell'obiettivo",
-    "kpi": { "metric": "es. distanza settimanale", "target": "es. 15 km", "deadline": "es. 6 settimane" }
+    "description": "versione SMART dell'obiettivo in 1 frase chiara (dettagli nel reasoning, NON qui)",
+    "kpi": {
+      "metric": "BREVE, max 4-5 parole (es. 'corsa continua', 'partita calcio 11', 'perdita peso')",
+      "target": "NUMERICO e conciso (es. '45 min @ 5:30/km', '60 min senza cali', '-5 kg')",
+      "deadline": "data o periodo (es. '28 aprile 2026', '3 mesi', '8 settimane')"
+    }
   }
 }
+IMPORTANTE: il KPI deve essere IMMEDIATO e LEGGIBILE A COLPO D'OCCHIO.
+- "metric" = COSA misuri in max 4-5 parole
+- "target" = QUANTO/COME in max 6-8 parole con numeri
+- NON ripetere nella metric o nel target quello che c'è nella description
+- NON scrivere frasi lunghe tipo "Partecipazione a 60 minuti di gioco effettivo nella partita di Calcio a 11"
+  → scrivi metric: "partita calcio 11", target: "60 min senza cali"
 `.trim();
 
 export async function checkGoalFeasibility(
