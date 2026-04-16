@@ -313,14 +313,6 @@ export default function GoalsEditor() {
                     Entro {g.kpi.deadline}
                   </div>
                 )}
-                <div style={{ fontSize: "13px", color: "#CBD5E1", marginBottom: "6px", lineHeight: 1.4 }}>
-                  {g.smartDescription}
-                </div>
-                {g.coachReasoning && (
-                  <div style={{ fontSize: "11px", color: "#64748B", marginBottom: "8px", lineHeight: 1.4, fontStyle: "italic" }}>
-                    Coach: {g.coachReasoning}
-                  </div>
-                )}
                 {/* Priorità + ordine */}
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
                   <span style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 600 }}>Priorità:</span>
