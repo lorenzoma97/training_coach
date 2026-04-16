@@ -150,7 +150,7 @@ export default function DiaryApp() {
   const [screen, setScreen] = useState<"home" | "add" | "daily" | "detail">("home");
   const [index, setIndex] = useState<string[]>([]);
   const [todayData, setTodayData] = useState<any>(null);
-  const [daySummaries, setDaySummaries] = useState<Map<string, { labels: string[]; hasDaily: boolean; hasWorkouts: boolean }>>(new Map());
+  const [daySummaries, setDaySummaries] = useState<Map<string, { labels: string[]; icons: string[]; hasDaily: boolean; hasWorkouts: boolean }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [detailDate, setDetailDate] = useState<string | null>(null);
   const [detailData, setDetailData] = useState<any>(null);
@@ -222,12 +222,17 @@ export default function DiaryApp() {
       try {
         const d = await loadDay(date);
         if (!d) continue;
-        const labels = (d.workouts || []).map((w: any) => {
+        const workouts = d.workouts || [];
+        const labels = workouts.map((w: any) => {
           const wtInfo = WORKOUT_TYPES.find(t => t.id === w.type);
           const sub = w.fields?.tipo || w.fields?.sport || "";
           return (wtInfo?.label || w.type) + (sub ? ` · ${sub}` : "");
         });
-        summaries.set(date, { labels, hasDaily: !!d.daily, hasWorkouts: (d.workouts || []).length > 0 });
+        const icons = [...new Set(workouts.map((w: any) => {
+          const wtInfo = WORKOUT_TYPES.find(t => t.id === w.type);
+          return wtInfo?.icon || "🏋️";
+        }))];
+        summaries.set(date, { labels, icons, hasDaily: !!d.daily, hasWorkouts: workouts.length > 0 });
       } catch { /* ignore */ }
     }
     setDaySummaries(summaries);
@@ -613,7 +618,8 @@ export default function DiaryApp() {
                           const isToday = date === today();
                           const summary = daySummaries.get(date);
                           const badges: string[] = [];
-                          if (summary?.hasWorkouts) badges.push("🏋️");
+                          if (summary?.icons?.length) badges.push(...summary.icons);
+                          else if (summary?.hasWorkouts) badges.push("🏋️");
                           if (summary?.hasDaily) badges.push("📊");
                           return (
                             <button key={date} onClick={() => openDetail(date)} style={{
