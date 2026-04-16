@@ -217,15 +217,20 @@ export default function GoalsEditor() {
 
             {!isEditing && (
               <>
-                <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "6px", color: "#E2E8F0", lineHeight: 1.4 }}>
+                <div style={{ fontSize: "15px", fontWeight: 800, marginBottom: "4px", color: "#E2E8F0", fontFamily: "'JetBrains Mono', monospace" }}>
+                  {g.kpi.metric}: {g.kpi.target}
+                </div>
+                {g.kpi.deadline && g.kpi.deadline !== "-" && (
+                  <div style={{ fontSize: "12px", color: "#E8553A", fontWeight: 600, marginBottom: "6px" }}>
+                    Entro {g.kpi.deadline}
+                  </div>
+                )}
+                <div style={{ fontSize: "13px", color: "#CBD5E1", marginBottom: "6px", lineHeight: 1.4 }}>
                   {g.smartDescription}
                 </div>
-                <div style={{ fontSize: "12px", color: "#94A3B8", marginBottom: "8px", fontFamily: "'JetBrains Mono', monospace" }}>
-                  {g.kpi.metric}: {g.kpi.target} — {g.kpi.deadline}
-                </div>
-                {g.originalDescription && g.originalDescription !== g.smartDescription && (
-                  <div style={{ fontSize: "12px", color: "#64748B", fontStyle: "italic", marginBottom: "8px" }}>
-                    Originale: "{g.originalDescription}"
+                {g.coachReasoning && (
+                  <div style={{ fontSize: "11px", color: "#64748B", marginBottom: "8px", lineHeight: 1.4, fontStyle: "italic" }}>
+                    Coach: {g.coachReasoning}
                   </div>
                 )}
                 <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>

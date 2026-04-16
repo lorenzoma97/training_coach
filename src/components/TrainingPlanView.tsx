@@ -292,13 +292,13 @@ export default function TrainingPlanView() {
         </div>
       )}
 
+      {/* Z2 in cima per avere il range bpm sempre visibile */}
+      <ZonesCard compact highlightZone={2} />
+
       <div style={{ background: "#16213E", borderRadius: "14px", padding: "16px 18px", borderLeft: "3px solid #E8553A" }}>
         <div style={{ fontSize: "11px", color: "#94A3B8", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "6px", fontWeight: 600 }}>Razionale del piano</div>
         <div style={{ fontSize: "14px", lineHeight: 1.5 }}>{plan.rationale}</div>
       </div>
-
-      {/* Mini-badge zona Z2 di riferimento rapido durante la lettura del piano. */}
-      <ZonesCard compact highlightZone={2} />
 
       {(isExpiringSoon || isExpired) && (
         <div style={{
@@ -344,6 +344,38 @@ export default function TrainingPlanView() {
           </div>
         </div>
       )}
+
+      {/* Sezione modifica piano — in alto, prima delle sessioni */}
+      <div style={{ background: "#16213E", borderRadius: "14px", padding: "16px 18px", border: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div style={{ fontSize: "11px", color: "#94A3B8", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600 }}>
+          Modifica piano
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); }} disabled={adapting || regenerating} style={{ flex: "1 1 140px", padding: "10px 14px", background: adaptOpen ? "#E8553A22" : "#1A1A2E", border: adaptOpen ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#E8553A" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
+            ✏ Adatta con richiesta
+          </button>
+          <button onClick={handleRegenerate} disabled={regenerating || adapting} style={{ flex: "1 1 140px", padding: "10px 14px", background: regenerating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: regenerating ? "wait" : "pointer", opacity: regenerating ? 0.5 : 1 }}>
+            {regenerating ? "⏳ Rigenerazione…" : "🔁 Rigenera con dati recenti"}
+          </button>
+        </div>
+        {adaptOpen && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>Dimmi cosa vuoi cambiare. Il coach rispetterà comunque le regole di sicurezza.</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {ADAPT_QUICK_PROMPTS.map(p => (<button key={p} onClick={() => setAdaptRequest(p)} disabled={adapting} style={{ padding: "6px 12px", fontSize: "12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "999px", color: "#CBD5E1", cursor: "pointer" }}>{p}</button>))}
+            </div>
+            <textarea value={adaptRequest} onChange={e => setAdaptRequest(e.target.value)} placeholder="es. 'settimana più leggera perché ho un viaggio' o 'aumenta le ripetute'" disabled={adapting} rows={2} style={{ width: "100%", padding: "10px 12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#E2E8F0", fontSize: "14px", fontFamily: "inherit", resize: "vertical", minHeight: "60px", outline: "none", boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={() => handleAdapt()} disabled={adapting || !adaptRequest.trim()} style={{ flex: 1, padding: "10px", background: adapting ? "#1E293B" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: adapting ? "wait" : "pointer", opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1 }}>
+                {adapting ? "⏳ Adatto il piano…" : "Applica modifica"}
+              </button>
+              <button onClick={() => { setAdaptOpen(false); setAdaptRequest(""); setAdaptError(null); }} disabled={adapting} style={{ padding: "10px 14px", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#94A3B8", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>Annulla</button>
+            </div>
+            {adaptError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{adaptError}</div>}
+          </div>
+        )}
+        {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
+      </div>
 
       {!isExpired && plan.weeks.map((w: TrainingPlan["weeks"][number]) => (
         <div key={w.weekNumber} style={{ background: "#16213E", borderRadius: "14px", padding: "18px 20px", border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -424,107 +456,6 @@ export default function TrainingPlanView() {
         </div>
       ))}
 
-      {/* Sezione modifica piano */}
-      <div style={{ background: "#16213E", borderRadius: "14px", padding: "16px 18px", border: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", gap: "10px" }}>
-        <div style={{ fontSize: "11px", color: "#94A3B8", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600 }}>
-          Modifica piano
-        </div>
-
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <button
-            onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); }}
-            disabled={adapting || regenerating}
-            style={{
-              flex: "1 1 140px", padding: "10px 14px",
-              background: adaptOpen ? "#E8553A22" : "#1A1A2E",
-              border: adaptOpen ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.12)",
-              borderRadius: "10px", color: adaptOpen ? "#E8553A" : "#E2E8F0",
-              fontSize: "13px", fontWeight: 700, cursor: "pointer",
-            }}
-          >
-            ✏ Adatta con richiesta
-          </button>
-          <button
-            onClick={handleRegenerate}
-            disabled={regenerating || adapting}
-            style={{
-              flex: "1 1 140px", padding: "10px 14px",
-              background: regenerating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
-              border: "none", borderRadius: "10px", color: "#FFF",
-              fontSize: "13px", fontWeight: 700,
-              cursor: regenerating ? "wait" : "pointer",
-              opacity: regenerating ? 0.5 : 1,
-            }}
-          >
-            {regenerating ? "⏳ Rigenerazione…" : "🔁 Rigenera con dati recenti"}
-          </button>
-        </div>
-
-        {adaptOpen && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-            <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>
-              Dimmi cosa vuoi cambiare. Il coach rispetterà comunque le regole di sicurezza.
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {ADAPT_QUICK_PROMPTS.map(p => (
-                <button
-                  key={p}
-                  onClick={() => setAdaptRequest(p)}
-                  disabled={adapting}
-                  style={{
-                    padding: "6px 12px", fontSize: "12px",
-                    background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: "999px", color: "#CBD5E1", cursor: "pointer",
-                  }}
-                >{p}</button>
-              ))}
-            </div>
-            <textarea
-              value={adaptRequest}
-              onChange={e => setAdaptRequest(e.target.value)}
-              placeholder="es. 'settimana più leggera perché ho un viaggio' o 'aumenta le ripetute'"
-              disabled={adapting}
-              rows={2}
-              style={{
-                width: "100%", padding: "10px 12px",
-                background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: "10px", color: "#E2E8F0", fontSize: "14px",
-                fontFamily: "inherit", resize: "vertical", minHeight: "60px",
-                outline: "none", boxSizing: "border-box",
-              }}
-            />
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button
-                onClick={() => handleAdapt()}
-                disabled={adapting || !adaptRequest.trim()}
-                style={{
-                  flex: 1, padding: "10px",
-                  background: adapting ? "#1E293B" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
-                  border: "none", borderRadius: "10px", color: "#FFF",
-                  fontSize: "13px", fontWeight: 700,
-                  cursor: adapting ? "wait" : "pointer",
-                  opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1,
-                }}
-              >
-                {adapting ? "⏳ Adatto il piano…" : "Applica modifica"}
-              </button>
-              <button
-                onClick={() => { setAdaptOpen(false); setAdaptRequest(""); setAdaptError(null); }}
-                disabled={adapting}
-                style={{
-                  padding: "10px 14px",
-                  background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: "10px", color: "#94A3B8",
-                  fontSize: "13px", fontWeight: 600, cursor: "pointer",
-                }}
-              >Annulla</button>
-            </div>
-            {adaptError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{adaptError}</div>}
-          </div>
-        )}
-
-        {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
-      </div>
 
       {!isExpired && (
         <div style={{

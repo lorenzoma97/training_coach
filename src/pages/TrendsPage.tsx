@@ -224,11 +224,6 @@ export default function TrendsPage() {
         <h1 style={{ fontSize: "26px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.03em" }}>Andamento nel tempo</h1>
       </div>
 
-      {/* Zone FC: card in cima per riferimento rapido durante lettura dei trend */}
-      <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "16px", marginBottom: "16px" }}>
-        <ZonesCard />
-      </div>
-
       {/* Period selector */}
       <div style={{ display: "flex", gap: "6px", background: "#1A1A2E", padding: "4px", borderRadius: "12px", marginBottom: "16px" }}>
         {(Object.keys(PERIOD_LABELS) as unknown as Period[]).map(p => (
@@ -256,7 +251,7 @@ export default function TrendsPage() {
           <div style={{ ...cardStyle, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
             <Stat label="Sessioni" value={series.stats.sessions} />
             <Stat label="Minuti totali" value={series.stats.totalMin} />
-            <Stat label="Check-in" value={`${series.stats.checkins}/${series.stats.days}`} />
+            <Stat label="Dati biometrici" value={`${series.stats.checkins}/${series.stats.days}`} />
           </div>
 
           {/* Volume allenamento */}
@@ -402,6 +397,11 @@ export default function TrendsPage() {
 
           <div style={{ fontSize: "11px", color: "#64748B", textAlign: "center", padding: "8px 0 20px" }}>
             Trend calcolati localmente dal diario. Periodo: ultimi {period} giorni.
+          </div>
+
+          {/* Zone FC in fondo: riferimento mentre si consultano i trend */}
+          <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "16px" }}>
+            <ZonesCard />
           </div>
         </div>
       )}

@@ -6,7 +6,7 @@ import OnboardingWizard from "./pages/OnboardingWizard";
 import TrendsPage from "./pages/TrendsPage";
 import ProactiveFeedback from "./components/ProactiveFeedback";
 import { getJSON, setJSON } from "./lib/storage";
-import { maybeRunWeeklyReport, maybeRunMotivationCheckIn } from "./lib/scheduler";
+import { maybeRunWeeklyReport } from "./lib/scheduler";
 import type { CoachFeedItem } from "./lib/types";
 import { useOnline } from "./lib/useOnline";
 import { events } from "./lib/events";
@@ -51,12 +51,7 @@ export default function App() {
 
   useEffect(() => {
     if (onboarded) {
-      // Ai mount/refresh controlla entrambi gli auto-trigger (weekly lun + motivation se idle).
-      // Lanciare sequenzialmente per non bloccarsi a vicenda se uno fallisce 503.
-      (async () => {
-        try { await maybeRunWeeklyReport(); } catch (e) { console.error("[scheduler] weekly", e); }
-        try { await maybeRunMotivationCheckIn(); } catch (e) { console.error("[scheduler] motivation", e); }
-      })();
+      maybeRunWeeklyReport().catch(e => console.error("[scheduler] weekly", e));
     }
   }, [onboarded]);
 

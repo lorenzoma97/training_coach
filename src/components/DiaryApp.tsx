@@ -150,6 +150,7 @@ export default function DiaryApp() {
   const [screen, setScreen] = useState<"home" | "add" | "daily" | "detail">("home");
   const [index, setIndex] = useState<string[]>([]);
   const [todayData, setTodayData] = useState<any>(null);
+  const [daySummaries, setDaySummaries] = useState<Map<string, { labels: string[]; hasDaily: boolean; hasWorkouts: boolean }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [detailDate, setDetailDate] = useState<string | null>(null);
   const [detailData, setDetailData] = useState<any>(null);
@@ -212,8 +213,24 @@ export default function DiaryApp() {
   const refresh = useCallback(async () => {
     setLoading(true);
     const idx = await loadIndex();
-    setIndex(idx.sort((a, b) => b.localeCompare(a)));
+    const sorted = idx.sort((a, b) => b.localeCompare(a));
+    setIndex(sorted);
     setTodayData(await loadDay(today()));
+    // Riassunti per storico: macro categoria + badge workout/daily (max 60 giorni)
+    const summaries = new Map<string, { labels: string[]; hasDaily: boolean; hasWorkouts: boolean }>();
+    for (const date of sorted.slice(0, 60)) {
+      try {
+        const d = await loadDay(date);
+        if (!d) continue;
+        const labels = (d.workouts || []).map((w: any) => {
+          const wtInfo = WORKOUT_TYPES.find(t => t.id === w.type);
+          const sub = w.fields?.tipo || w.fields?.sport || "";
+          return (wtInfo?.label || w.type) + (sub ? ` · ${sub}` : "");
+        });
+        summaries.set(date, { labels, hasDaily: !!d.daily, hasWorkouts: (d.workouts || []).length > 0 });
+      } catch { /* ignore */ }
+    }
+    setDaySummaries(summaries);
     setLoading(false);
   }, []);
 
@@ -526,15 +543,15 @@ export default function DiaryApp() {
           </div>
 
           <div style={{ padding: "16px 24px 8px", display: "flex", gap: "10px" }}>
-            <button onClick={() => { setAddDate(today()); setAddType(null); setScreen("add"); }} style={{
+            <button onClick={() => { setAddDate(today()); setAddType(null); setEditingWorkoutId(null); setScreen("add"); }} style={{
               flex: 1, padding: "16px", background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
               border: "none", borderRadius: "14px", color: "#FFF", fontSize: "15px", fontWeight: 700, cursor: "pointer",
-            }}>+ Allenamento</button>
+            }}>🏋️ Registra allenamento</button>
             <button onClick={() => { setDailyDate(today()); setDailyFields({ weight: "", sleep: "", sleepQ: "", fatigue: null, meds: "", bodyFat: "", muscleMass: "", bodyWater: "", morningHR: "", morningFreshness: null, cyclePhase: "" }); setScreen("daily"); }} style={{
               flex: 1, padding: "16px", background: "#16213E",
               border: "1px solid rgba(255,255,255,0.08)", borderRadius: "14px", color: "#E2E8F0",
               fontSize: "15px", fontWeight: 700, cursor: "pointer",
-            }}>📋 Check</button>
+            }}>📊 Registra dati biometrici</button>
           </div>
 
           {index.length > 0 && (
@@ -564,23 +581,33 @@ export default function DiaryApp() {
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {index.map(date => {
                   const isToday = date === today();
+                  const summary = daySummaries.get(date);
+                  const badges: string[] = [];
+                  if (summary?.hasWorkouts) badges.push("🏋️");
+                  if (summary?.hasDaily) badges.push("📊");
                   return (
                     <button key={date} onClick={() => openDetail(date)} style={{
-                      width: "100%", textAlign: "left", padding: "16px 18px",
+                      width: "100%", textAlign: "left", padding: "14px 16px",
                       background: isToday ? "#16213E" : "#111827",
                       border: isToday ? "1px solid #E8553A33" : "1px solid rgba(255,255,255,0.04)",
                       borderRadius: "14px", cursor: "pointer", color: "#E2E8F0",
-                      display: "flex", alignItems: "center", gap: "14px",
+                      display: "flex", alignItems: "center", gap: "12px",
                     }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: "15px", fontWeight: 700, textTransform: "capitalize" }}>
+                      <div style={{ fontSize: "14px", minWidth: "28px" }}>{badges.join("") || "📓"}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: "14px", fontWeight: 700, textTransform: "capitalize" }}>
                           {isToday ? "Oggi" : fmtDate(date)}
                         </div>
-                        <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "3px" }}>
-                          Tocca per dettagli
-                        </div>
+                        {summary?.labels && summary.labels.length > 0 && (
+                          <div style={{ fontSize: "12px", color: "#CBD5E1", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {summary.labels.join(" + ")}
+                          </div>
+                        )}
+                        {summary?.hasDaily && !summary?.hasWorkouts && (
+                          <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "2px" }}>Solo dati biometrici</div>
+                        )}
                       </div>
-                      <div style={{ fontSize: "12px", color: "#94A3B8" }}>›</div>
+                      <div style={{ fontSize: "14px", color: "#64748B" }}>›</div>
                     </button>
                   );
                 })}

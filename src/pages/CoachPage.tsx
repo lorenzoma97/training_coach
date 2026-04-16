@@ -161,10 +161,10 @@ export default function CoachPage() {
       <div role="tablist" style={{ display: "flex", gap: "6px", background: "#1A1A2E", padding: "4px", borderRadius: "12px", marginBottom: "16px" }}>
         {([
           { id: "plan" as const, label: "Piano" },
-          { id: "goals" as const, label: "Obiettivi" },
-          { id: "zones" as const, label: "Zone" },
-          { id: "feed" as const, label: "Feed" },
           { id: "chat" as const, label: "Chat" },
+          { id: "feed" as const, label: "Feed" },
+          { id: "zones" as const, label: "Zone FC" },
+          { id: "goals" as const, label: "Obiettivi" },
         ]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             role="tab" aria-selected={tab === t.id}

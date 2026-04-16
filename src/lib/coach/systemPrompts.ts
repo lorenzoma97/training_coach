@@ -116,7 +116,7 @@ Regole:
 - Ogni sessione deve avere un "rationale" che spiega perché è lì.
 - La proprietà "day" è una stringa tra: "lun","mar","mer","gio","ven","sab","dom". Non assegnare date assolute.
 - "type" deve essere uno tra: corsa, forza_gambe, forza_upper, sport, mobilita.
-Fornisci anche un "rationale" generale del piano (2-3 frasi).
+Fornisci anche un "rationale" generale del piano come lista di 3 bullet points concisi (usa il formato "- punto"). Ogni punto deve spiegare una scelta chiave del piano in modo comprensibile.
 
 ${COT_INSTRUCTIONS}
 
