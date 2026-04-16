@@ -217,7 +217,7 @@ export default function DiaryApp() {
     setIndex(sorted);
     setTodayData(await loadDay(today()));
     // Riassunti per storico: macro categoria + badge workout/daily (max 60 giorni)
-    const summaries = new Map<string, { labels: string[]; hasDaily: boolean; hasWorkouts: boolean }>();
+    const summaries = new Map<string, { labels: string[]; icons: string[]; hasDaily: boolean; hasWorkouts: boolean }>();
     for (const date of sorted.slice(0, 60)) {
       try {
         const d = await loadDay(date);
