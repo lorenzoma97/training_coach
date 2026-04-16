@@ -1,8 +1,37 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { getAllDays } from "../lib/diaryContext";
 import { events } from "../lib/events";
 import Sparkline, { type SparklinePoint } from "../components/Sparkline";
 import ZonesCard from "../components/ZonesCard";
+
+// ErrorBoundary: cattura crash durante render e mostra fallback
+// invece di uccidere l'intera app (schermo nero).
+class TrendErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: string }
+> {
+  state = { hasError: false, error: "" };
+  static getDerivedStateFromError(e: Error) {
+    return { hasError: true, error: e?.message || "Errore sconosciuto" };
+  }
+  componentDidCatch(e: Error) { console.error("[TrendsPage crash]", e); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: "40px 20px", textAlign: "center", color: "#EF4444" }}>
+          <div style={{ fontSize: "36px", marginBottom: "10px" }}>⚠</div>
+          <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "8px" }}>Errore nel caricamento dei trend</div>
+          <div style={{ fontSize: "12px", color: "#94A3B8", marginBottom: "16px" }}>{this.state.error}</div>
+          <button onClick={() => this.setState({ hasError: false, error: "" })} style={{
+            padding: "10px 20px", background: "#E8553A", border: "none", borderRadius: "10px",
+            color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
+          }}>Riprova</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type Period = 7 | 14 | 30 | 90;
 
@@ -19,7 +48,7 @@ interface DayData {
   workouts?: any[];
 }
 
-export default function TrendsPage() {
+function TrendsPageInner() {
   const [period, setPeriod] = useState<Period>(30);
   const [allDays, setAllDays] = useState<DayData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,20 +84,20 @@ export default function TrendsPage() {
 
   // Series calcolate in base al periodo
   const series = useMemo(() => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    const startTs = now.getTime() - (period - 1) * 24 * 3600 * 1000;
+    // Aritmetica sulle date LOCALI: setDate(-N) è immune al DST
+    // (il vecchio startTs + i*86400000 saltava il 29 marzo per il cambio CET→CEST)
+    const today = new Date();
+    today.setHours(12, 0, 0, 0); // mezzogiorno per evitare edge DST
 
-    // Costruisci un array continuo di N giorni (anche senza dati)
-    // Usa date LOCALI (non UTC) per coerenza con DiaryApp.today()
     const days: Array<{ date: string; data?: DayData }> = [];
-    for (let i = 0; i < period; i++) {
-      const d = new Date(startTs + i * 24 * 3600 * 1000);
+    for (let i = period - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, "0");
       const dd = String(d.getDate()).padStart(2, "0");
       const key = `${y}-${m}-${dd}`;
-      const found = allDays.find(x => x.date === key);
+      const found = allDays.find((x: DayData) => x.date === key);
       days.push({ date: key, data: found });
     }
 
@@ -432,5 +461,14 @@ function SectionHeader({ title, hint, color }: { title: string; hint: string; co
       <div style={{ fontSize: "13px", fontWeight: 700, color }}>{title}</div>
       <div style={{ fontSize: "11px", color: "#64748B" }}>{hint}</div>
     </div>
+  );
+}
+
+// Wrapper con ErrorBoundary: previene schermo nero se un grafico crasha
+export default function TrendsPage() {
+  return (
+    <TrendErrorBoundary>
+      <TrendsPageInner />
+    </TrendErrorBoundary>
   );
 }
