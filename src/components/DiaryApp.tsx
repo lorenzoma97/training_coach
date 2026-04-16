@@ -575,44 +575,78 @@ export default function DiaryApp() {
               <div style={{ textAlign: "center", padding: "50px 20px", color: "#475569" }}>
                 <div style={{ fontSize: "40px", marginBottom: "12px" }}>📓</div>
                 <div style={{ fontSize: "15px", fontWeight: 600 }}>Nessun allenamento registrato</div>
-                <div style={{ fontSize: "13px", marginTop: "6px" }}>Tocca "+ Allenamento" per iniziare</div>
+                <div style={{ fontSize: "13px", marginTop: "6px" }}>Tocca "Registra allenamento" per iniziare</div>
               </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {index.map(date => {
-                  const isToday = date === today();
-                  const summary = daySummaries.get(date);
-                  const badges: string[] = [];
-                  if (summary?.hasWorkouts) badges.push("🏋️");
-                  if (summary?.hasDaily) badges.push("📊");
-                  return (
-                    <button key={date} onClick={() => openDetail(date)} style={{
-                      width: "100%", textAlign: "left", padding: "14px 16px",
-                      background: isToday ? "#16213E" : "#111827",
-                      border: isToday ? "1px solid #E8553A33" : "1px solid rgba(255,255,255,0.04)",
-                      borderRadius: "14px", cursor: "pointer", color: "#E2E8F0",
-                      display: "flex", alignItems: "center", gap: "12px",
-                    }}>
-                      <div style={{ fontSize: "14px", minWidth: "28px" }}>{badges.join("") || "📓"}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: "14px", fontWeight: 700, textTransform: "capitalize" }}>
-                          {isToday ? "Oggi" : fmtDate(date)}
-                        </div>
-                        {summary?.labels && summary.labels.length > 0 && (
-                          <div style={{ fontSize: "12px", color: "#CBD5E1", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {summary.labels.join(" + ")}
-                          </div>
-                        )}
-                        {summary?.hasDaily && !summary?.hasWorkouts && (
-                          <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "2px" }}>Solo dati biometrici</div>
-                        )}
+            ) : (() => {
+              // Raggruppa date per settimana (lun-dom)
+              const weekGroups: Array<{ label: string; dates: string[] }> = [];
+              let currentWeekLabel = "";
+              let currentDates: string[] = [];
+              for (const date of index) {
+                const [y, m, d] = date.split("-").map(Number);
+                const dt = new Date(y, m - 1, d);
+                // Lunedì della settimana di questa data
+                const dow = dt.getDay();
+                const mondayOffset = (dow + 6) % 7;
+                const monday = new Date(dt); monday.setDate(dt.getDate() - mondayOffset);
+                const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+                const fmtShort = (x: Date) => x.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+                const wLabel = `${fmtShort(monday)} - ${fmtShort(sunday)}`;
+                if (wLabel !== currentWeekLabel) {
+                  if (currentDates.length) weekGroups.push({ label: currentWeekLabel, dates: currentDates });
+                  currentWeekLabel = wLabel;
+                  currentDates = [];
+                }
+                currentDates.push(date);
+              }
+              if (currentDates.length) weekGroups.push({ label: currentWeekLabel, dates: currentDates });
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  {weekGroups.map((wg) => (
+                    <div key={wg.label}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "8px", paddingLeft: "4px" }}>
+                        📅 {wg.label}
                       </div>
-                      <div style={{ fontSize: "14px", color: "#64748B" }}>›</div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {wg.dates.map(date => {
+                          const isToday = date === today();
+                          const summary = daySummaries.get(date);
+                          const badges: string[] = [];
+                          if (summary?.hasWorkouts) badges.push("🏋️");
+                          if (summary?.hasDaily) badges.push("📊");
+                          return (
+                            <button key={date} onClick={() => openDetail(date)} style={{
+                              width: "100%", textAlign: "left", padding: "12px 14px",
+                              background: isToday ? "#16213E" : "#111827",
+                              border: isToday ? "1px solid #E8553A33" : "1px solid rgba(255,255,255,0.04)",
+                              borderRadius: "12px", cursor: "pointer", color: "#E2E8F0",
+                              display: "flex", alignItems: "center", gap: "10px",
+                            }}>
+                              <div style={{ fontSize: "13px", minWidth: "26px" }}>{badges.join("") || "📓"}</div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: "13px", fontWeight: 700, textTransform: "capitalize" }}>
+                                  {isToday ? "Oggi" : fmtDate(date)}
+                                </div>
+                                {summary?.labels && summary.labels.length > 0 && (
+                                  <div style={{ fontSize: "11px", color: "#CBD5E1", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {summary.labels.join(" + ")}
+                                  </div>
+                                )}
+                                {summary?.hasDaily && !summary?.hasWorkouts && (
+                                  <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "2px" }}>Solo dati biometrici</div>
+                                )}
+                              </div>
+                              <div style={{ fontSize: "13px", color: "#64748B" }}>›</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

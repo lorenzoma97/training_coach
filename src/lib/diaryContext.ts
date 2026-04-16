@@ -166,10 +166,16 @@ export function profileAsPrompt(p: UserProfile | null): string {
 
 export function goalsAsPrompt(goals: UserGoal[]): string {
   if (!goals.length) return "(nessun obiettivo definito)";
-  return goals
+  const active = goals
     .filter(g => g.status === "active")
-    .map((g, i) => `${i + 1}. ${g.smartDescription} — KPI: ${g.kpi.metric} ${g.kpi.target} entro ${g.kpi.deadline}.`)
-    .join("\n") || "(nessun obiettivo attivo)";
+    .sort((a, b) => (a.sortOrder ?? 99) - (b.sortOrder ?? 99));
+  if (!active.length) return "(nessun obiettivo attivo)";
+  return active
+    .map((g, i) => {
+      const prio = g.priority ? ` [priorità: ${g.priority}]` : "";
+      return `${i + 1}. ${g.smartDescription} — KPI: ${g.kpi.metric} ${g.kpi.target} entro ${g.kpi.deadline}.${prio}`;
+    })
+    .join("\n");
 }
 
 export function planAsPrompt(plan: TrainingPlan | null): string {

@@ -25,6 +25,20 @@ export default function CoachPage() {
   const [planError, setPlanError] = useState<string | null>(null);
   const [runningReport, setRunningReport] = useState(false);
   const [reportMsg, setReportMsg] = useState<string | null>(null);
+  const [feedUnread, setFeedUnread] = useState(0);
+
+  const refreshFeedBadge = async () => {
+    const feed = await getJSON<any[]>("coach-feed", []);
+    const lastSeen = (await getJSON<string>("coach-feed-last-seen", "")) || "";
+    setFeedUnread(feed.filter((i: any) => !i.dismissed && i.date > lastSeen).length);
+  };
+
+  // Marca feed come letti quando l'utente apre il sub-tab Feed
+  useEffect(() => {
+    if (tab === "feed") {
+      setJSON("coach-feed-last-seen", new Date().toISOString()).then(refreshFeedBadge);
+    }
+  }, [tab]);
 
   const refreshSetup = async () => {
     const profile = await getJSON<UserProfile | null>("user-profile", null);
@@ -38,7 +52,7 @@ export default function CoachPage() {
     });
   };
 
-  useEffect(() => { refreshSetup(); }, [tab]);
+  useEffect(() => { refreshSetup(); refreshFeedBadge(); }, [tab]);
 
   // Cross-tab sync: ricarica setup status se cambia in altra tab
   useEffect(() => {
@@ -162,7 +176,7 @@ export default function CoachPage() {
         {([
           { id: "plan" as const, label: "Piano" },
           { id: "chat" as const, label: "Chat" },
-          { id: "feed" as const, label: "Feed" },
+          { id: "feed" as const, label: feedUnread > 0 ? `Feed (${feedUnread})` : "Feed" },
           { id: "zones" as const, label: "Zone FC" },
           { id: "goals" as const, label: "Obiettivi" },
         ]).map(t => (

@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { getJSON, setJSON } from "../lib/storage";
-import type { UserProfile, UserGoal, FeasibilityCheck } from "../lib/types";
+import type { UserProfile, UserGoal, FeasibilityCheck, GoalPriority } from "../lib/types";
 import { checkGoalFeasibility } from "../lib/coach/feasibility";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { events } from "../lib/events";
@@ -132,6 +132,22 @@ export default function GoalsEditor() {
     await persistGoals(goals.map(g => g.id === id ? { ...g, status: newStatus } : g));
   };
 
+  const setPriority = async (id: string, priority: GoalPriority) => {
+    await persistGoals(goals.map(g => g.id === id ? { ...g, priority } : g));
+  };
+
+  const moveGoal = async (id: string, direction: "up" | "down") => {
+    const idx = goals.findIndex(g => g.id === id);
+    if (idx < 0) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= goals.length) return;
+    const next = [...goals];
+    [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+    // Aggiorna sortOrder per riflettere il nuovo ordine
+    const withOrder = next.map((g, i) => ({ ...g, sortOrder: i }));
+    await persistGoals(withOrder);
+  };
+
   const startAdd = () => {
     setAdding(true);
     setNewText("");
@@ -233,6 +249,28 @@ export default function GoalsEditor() {
                     Coach: {g.coachReasoning}
                   </div>
                 )}
+                {/* Priorità + ordine */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 600 }}>Priorità:</span>
+                  {(["alta", "media", "bassa"] as GoalPriority[]).map(p => {
+                    const active = (g.priority || "media") === p;
+                    const color = p === "alta" ? "#EF4444" : p === "media" ? "#F59E0B" : "#94A3B8";
+                    return (
+                      <button key={p} onClick={() => setPriority(g.id, p)} style={{
+                        padding: "4px 10px", fontSize: "11px", fontWeight: 700,
+                        borderRadius: "6px", cursor: "pointer",
+                        background: active ? color + "25" : "transparent",
+                        border: active ? `1px solid ${color}` : "1px solid rgba(255,255,255,0.08)",
+                        color: active ? color : "#94A3B8",
+                        textTransform: "capitalize",
+                      }}>{p}</button>
+                    );
+                  })}
+                  <div style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
+                    <button onClick={() => moveGoal(g.id, "up")} disabled={goals.indexOf(g) === 0} title="Sposta su" style={{ ...ghostBtn, padding: "4px 8px", fontSize: "12px", opacity: goals.indexOf(g) === 0 ? 0.3 : 1 }}>▲</button>
+                    <button onClick={() => moveGoal(g.id, "down")} disabled={goals.indexOf(g) === goals.length - 1} title="Sposta giù" style={{ ...ghostBtn, padding: "4px 8px", fontSize: "12px", opacity: goals.indexOf(g) === goals.length - 1 ? 0.3 : 1 }}>▼</button>
+                  </div>
+                </div>
                 <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                   <button onClick={() => startEdit(g)} style={{ ...ghostBtn, padding: "6px 12px", fontSize: "12px" }}>Modifica</button>
                   {g.status === "active" && (

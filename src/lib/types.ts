@@ -45,6 +45,8 @@ export interface UserProfile {
 
 export type GoalStatus = "pending" | "active" | "achieved" | "archived";
 
+export type GoalPriority = "alta" | "media" | "bassa";
+
 export interface UserGoal {
   id: string;
   originalDescription: string;
@@ -53,6 +55,10 @@ export interface UserGoal {
   realistic: boolean;
   coachReasoning: string;
   status: GoalStatus;
+  /** Priorità selezionata dall'utente. Default "media". Iniettata nel prompt del coach. */
+  priority?: GoalPriority;
+  /** Ordine di visualizzazione (0-based). Più basso = più in alto nella lista. */
+  sortOrder?: number;
   createdAt: string;
 }
 

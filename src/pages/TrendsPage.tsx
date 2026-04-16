@@ -60,10 +60,14 @@ export default function TrendsPage() {
     const startTs = now.getTime() - (period - 1) * 24 * 3600 * 1000;
 
     // Costruisci un array continuo di N giorni (anche senza dati)
+    // Usa date LOCALI (non UTC) per coerenza con DiaryApp.today()
     const days: Array<{ date: string; data?: DayData }> = [];
     for (let i = 0; i < period; i++) {
       const d = new Date(startTs + i * 24 * 3600 * 1000);
-      const key = d.toISOString().split("T")[0];
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const key = `${y}-${m}-${dd}`;
       const found = allDays.find(x => x.date === key);
       days.push({ date: key, data: found });
     }
@@ -254,34 +258,19 @@ export default function TrendsPage() {
             <Stat label="Dati biometrici" value={`${series.stats.checkins}/${series.stats.days}`} />
           </div>
 
-          {/* Volume allenamento */}
+          {/* ═══ SEZIONE ALLENAMENTI ═══ */}
+          <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", color: "#E8553A", textTransform: "uppercase", marginTop: "8px", paddingLeft: "4px" }}>
+            🏋️ Dati Allenamenti
+          </div>
+
           <div style={cardStyle}>
             <SectionHeader title="Volume allenamento" hint="minuti/die" color="#E8553A" />
             <Sparkline points={series.dailyVolume} width={width - 32} color="#E8553A" unit="′" />
           </div>
 
-          {/* RPE medio */}
           <div style={cardStyle}>
             <SectionHeader title="RPE medio sessioni" hint="sforzo percepito 1-10" color="#F59E0B" />
             <Sparkline points={series.dailyRpeAvg} width={width - 32} color="#F59E0B" yMin={0} yMax={10} />
-          </div>
-
-          {/* Peso */}
-          <div style={cardStyle}>
-            <SectionHeader title="Peso corporeo" hint="mattino a digiuno" color="#0891B2" />
-            <Sparkline points={series.weight} width={width - 32} color="#0891B2" unit=" kg" />
-          </div>
-
-          {/* Sonno */}
-          <div style={cardStyle}>
-            <SectionHeader title="Ore di sonno" hint="più alto = meglio" color="#7C3AED" />
-            <Sparkline points={series.sleep} width={width - 32} color="#7C3AED" yMin={0} yMax={12} unit="h" />
-          </div>
-
-          {/* Stanchezza */}
-          <div style={cardStyle}>
-            <SectionHeader title="Stanchezza generale" hint="1-10, più basso = meglio" color="#EF4444" />
-            <Sparkline points={series.fatigue} width={width - 32} color="#EF4444" yMin={0} yMax={10} />
           </div>
 
           {/* Corsa — metriche di progressione (solo se almeno una corsa nel periodo) */}
@@ -340,26 +329,6 @@ export default function TrendsPage() {
             </>
           )}
 
-          {/* Body comp (solo se dati) */}
-          {series.bodyFat.some(p => p.value != null) && (
-            <div style={cardStyle}>
-              <SectionHeader title="Massa grassa" hint="da bilancia BIA" color="#059669" />
-              <Sparkline points={series.bodyFat} width={width - 32} color="#059669" unit="%" />
-            </div>
-          )}
-          {series.muscleMass.some(p => p.value != null) && (
-            <div style={cardStyle}>
-              <SectionHeader title="Massa muscolare" hint="da bilancia BIA" color="#10B981" />
-              <Sparkline points={series.muscleMass} width={width - 32} color="#10B981" />
-            </div>
-          )}
-          {series.bodyWater.some(p => p.value != null) && (
-            <div style={cardStyle}>
-              <SectionHeader title="Acqua corporea (TBW)" hint="% idratazione cronica" color="#06B6D4" />
-              <Sparkline points={series.bodyWater} width={width - 32} color="#06B6D4" unit="%" />
-            </div>
-          )}
-
           {/* Pain per zona */}
           {series.painByArea.length > 0 && series.painByArea.map(p => (
             <div key={p.area} style={cardStyle}>
@@ -368,7 +337,7 @@ export default function TrendsPage() {
             </div>
           ))}
 
-          {/* Distribuzione tipi workout */}
+          {/* Distribuzione tipi workout — ancora in sezione allenamenti */}
           {Object.keys(series.typeCount).length > 0 && (
             <div style={cardStyle}>
               <SectionHeader title="Distribuzione sessioni" hint="per tipo" color="#94A3B8" />
@@ -392,6 +361,46 @@ export default function TrendsPage() {
                     );
                   })}
               </div>
+            </div>
+          )}
+
+          {/* ═══ SEZIONE BIOMETRICI ═══ */}
+          <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", color: "#0891B2", textTransform: "uppercase", marginTop: "8px", paddingLeft: "4px" }}>
+            📊 Dati Biometrici
+          </div>
+
+          <div style={cardStyle}>
+            <SectionHeader title="Peso corporeo" hint="mattino a digiuno" color="#0891B2" />
+            <Sparkline points={series.weight} width={width - 32} color="#0891B2" unit=" kg" />
+          </div>
+
+          <div style={cardStyle}>
+            <SectionHeader title="Ore di sonno" hint="più alto = meglio" color="#7C3AED" />
+            <Sparkline points={series.sleep} width={width - 32} color="#7C3AED" yMin={0} yMax={12} unit="h" />
+          </div>
+
+          <div style={cardStyle}>
+            <SectionHeader title="Stanchezza generale" hint="1-10, più basso = meglio" color="#EF4444" />
+            <Sparkline points={series.fatigue} width={width - 32} color="#EF4444" yMin={0} yMax={10} />
+          </div>
+
+          {/* Body comp (solo se dati) */}
+          {series.bodyFat.some((p: any) => p.value != null) && (
+            <div style={cardStyle}>
+              <SectionHeader title="Massa grassa" hint="da bilancia BIA" color="#059669" />
+              <Sparkline points={series.bodyFat} width={width - 32} color="#059669" unit="%" />
+            </div>
+          )}
+          {series.muscleMass.some((p: any) => p.value != null) && (
+            <div style={cardStyle}>
+              <SectionHeader title="Massa muscolare" hint="da bilancia BIA" color="#10B981" />
+              <Sparkline points={series.muscleMass} width={width - 32} color="#10B981" />
+            </div>
+          )}
+          {series.bodyWater.some((p: any) => p.value != null) && (
+            <div style={cardStyle}>
+              <SectionHeader title="Acqua corporea (TBW)" hint="% idratazione cronica" color="#06B6D4" />
+              <Sparkline points={series.bodyWater} width={width - 32} color="#06B6D4" unit="%" />
             </div>
           )}
 

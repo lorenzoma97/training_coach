@@ -493,16 +493,12 @@ export default function TrainingPlanView() {
             <div style={{ padding: "0 18px 18px", display: "flex", flexDirection: "column", gap: "12px" }}>
               {history.map((h: TrainingPlan, hi: number) => {
                 // La history è newest-first. Numeriamo dal più vecchio: oldest = Settimana 1.
-                const weekLabel = history.length - hi;
                 const dateRange = formatWeekRange(h.startDate) || new Date(h.generatedAt).toLocaleDateString("it-IT");
                 return (
                 <div key={h.generatedAt + hi} style={{ background: "#1A1A2E", borderRadius: "10px", padding: "12px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "6px", flexWrap: "wrap" }}>
-                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                      Settimana {weekLabel}
-                    </div>
-                    <div style={{ fontSize: "11px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>
-                      {dateRange}
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.08em" }}>
+                      📅 {dateRange}
                     </div>
                   </div>
                   {h.rationale && (

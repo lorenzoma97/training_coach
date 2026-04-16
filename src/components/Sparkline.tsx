@@ -60,20 +60,22 @@ export default function Sparkline({
     let areaStr = "";
     const ds: { x: number; y: number }[] = [];
     const coords: Array<{ x: number; y: number; idx: number } | null> = [];
-    let inSegment = false;
     let firstX = 0, lastX = 0;
 
+    // Connette tutti i punti validi con una linea continua, saltando i null
+    // (dati sparsi tipici: 1 corsa ogni 3-5 giorni). Prima versione spezzava
+    // il segmento su ogni null, creando frammenti invisibili con pochi dati.
+    let isFirst = true;
     points.forEach((p, i) => {
       if (p.value == null || !Number.isFinite(p.value)) {
         coords.push(null);
-        inSegment = false;
         return;
       }
       const { x, y } = toXY(i, p.value);
-      if (!inSegment) {
+      if (isFirst) {
         pathStr += ` M ${x} ${y}`;
-        if (areaStr === "") firstX = x;
-        inSegment = true;
+        firstX = x;
+        isFirst = false;
       } else {
         pathStr += ` L ${x} ${y}`;
       }
