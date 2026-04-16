@@ -286,12 +286,11 @@ export default function TrendsPage() {
               </div>
 
               <div style={cardStyle}>
-                <SectionHeader title="Passo medio" hint="min:sec/km — più basso = più veloce" color="#E8553A" />
+                <SectionHeader title="Passo medio" hint="min:sec/km — basso = veloce, alto = lento" color="#E8553A" />
                 <Sparkline
                   points={series.runPaceSeries}
                   width={width - 32}
                   color="#E8553A"
-                  invertY
                   formatValue={v => {
                     if (!Number.isFinite(v) || v <= 0) return "—";
                     const m = Math.floor(v / 60);

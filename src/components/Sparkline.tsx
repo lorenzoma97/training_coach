@@ -45,7 +45,7 @@ export default function Sparkline({
     const min = yMin ?? Math.min(...nums);
     const max = yMax ?? Math.max(...nums);
     const range = max - min || 1;
-    const pad = 4;
+    const pad = 6;
     const w = width - pad * 2;
     const h = height - pad * 2;
 
@@ -84,7 +84,8 @@ export default function Sparkline({
       coords.push({ x, y, idx: i });
     });
 
-    if (ds.length > 0) {
+    // Area fill solo se abbastanza punti (>= 3), altrimenti crea triangoli brutti con dati sparsi
+    if (ds.length >= 3) {
       areaStr = `M ${firstX} ${pad + h} ${pathStr} L ${lastX} ${pad + h} Z`;
     }
 
@@ -143,6 +144,11 @@ export default function Sparkline({
     });
   }, [points, width]);
 
+  // Auto-dots: se pochi punti validi (≤ 8), mostra sempre i dot per non avere linee
+  // invisibili con 2-3 punti su un grafico largo.
+  const validCount = allCoords.filter(c => c !== null).length;
+  const autoShowDots = showDots || validCount <= 8;
+
   const hoverCoord = hoverIdx != null ? allCoords[hoverIdx] : null;
   const hoverPoint = hoverIdx != null ? points[hoverIdx] : null;
 
@@ -161,8 +167,8 @@ export default function Sparkline({
       >
         <path d={area} fill={color} opacity={0.12} />
         <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-        {showDots && dots.map((d, i) => (
-          <circle key={i} cx={d.x} cy={d.y} r={2.5} fill={color} />
+        {autoShowDots && dots.map((d, i) => (
+          <circle key={i} cx={d.x} cy={d.y} r={validCount <= 3 ? 4 : 2.5} fill={color} />
         ))}
         {hoverCoord && (
           <>
@@ -194,14 +200,16 @@ export default function Sparkline({
         </div>
       )}
       <div style={{
-        position: "absolute", bottom: 2, left: 6,
-        fontSize: "10px", color: "#64748B", fontFamily: "'JetBrains Mono', monospace",
+        position: "absolute", bottom: 18, left: 6,
+        fontSize: "9px", color: "#64748B", fontFamily: "'JetBrains Mono', monospace",
+        background: "#0B0F1A99", padding: "1px 4px", borderRadius: "3px",
       }}>
         {invertY ? fmt(axisMax) : fmt(axisMin)}{unit || ""}
       </div>
       <div style={{
-        position: "absolute", top: 2, left: 6,
-        fontSize: "10px", color: "#64748B", fontFamily: "'JetBrains Mono', monospace",
+        position: "absolute", top: 4, left: 6,
+        fontSize: "9px", color: "#64748B", fontFamily: "'JetBrains Mono', monospace",
+        background: "#0B0F1A99", padding: "1px 4px", borderRadius: "3px",
       }}>
         {invertY ? fmt(axisMin) : fmt(axisMax)}{unit || ""}
       </div>
