@@ -1,37 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getAllDays } from "../lib/diaryContext";
 import { events } from "../lib/events";
 import Sparkline, { type SparklinePoint } from "../components/Sparkline";
 import ZonesCard from "../components/ZonesCard";
-
-// ErrorBoundary: cattura crash durante render e mostra fallback
-// invece di uccidere l'intera app (schermo nero).
-class TrendErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean; error: string }
-> {
-  state = { hasError: false, error: "" };
-  static getDerivedStateFromError(e: Error) {
-    return { hasError: true, error: e?.message || "Errore sconosciuto" };
-  }
-  componentDidCatch(e: Error) { console.error("[TrendsPage crash]", e); }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ padding: "40px 20px", textAlign: "center", color: "#EF4444" }}>
-          <div style={{ fontSize: "36px", marginBottom: "10px" }}>⚠</div>
-          <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "8px" }}>Errore nel caricamento dei trend</div>
-          <div style={{ fontSize: "12px", color: "#94A3B8", marginBottom: "16px" }}>{this.state.error}</div>
-          <button onClick={() => this.setState({ hasError: false, error: "" })} style={{
-            padding: "10px 20px", background: "#E8553A", border: "none", borderRadius: "10px",
-            color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
-          }}>Riprova</button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 
 type Period = 7 | 14 | 30 | 90;
 
@@ -48,7 +19,7 @@ interface DayData {
   workouts?: any[];
 }
 
-function TrendsPageInner() {
+export default function TrendsPage() {
   const [period, setPeriod] = useState<Period>(30);
   const [allDays, setAllDays] = useState<DayData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,8 +53,11 @@ function TrendsPageInner() {
     };
   }, []);
 
+  const [seriesError, setSeriesError] = useState<string | null>(null);
+
   // Series calcolate in base al periodo
-  const series = useMemo(() => {
+  const series = useMemo(() => { try {
+    setSeriesError(null);
     // Aritmetica sulle date LOCALI: setDate(-N) è immune al DST
     // (il vecchio startTs + i*86400000 saltava il 29 marzo per il cambio CET→CEST)
     const today = new Date();
@@ -241,6 +215,22 @@ function TrendsPageInner() {
       stats: { sessions, totalMin, checkins, periodDays: period, days: days.length },
       typeCount,
     };
+  } catch (e: any) {
+    console.error("[TrendsPage] Errore calcolo series:", e);
+    setSeriesError(String(e?.message || e));
+    const empty: SparklinePoint[] = [];
+    return {
+      weight: empty, sleep: empty, fatigue: empty,
+      bodyFat: empty, muscleMass: empty, bodyWater: empty,
+      dailyVolume: empty, dailyRpeAvg: empty,
+      painByArea: [] as Array<{ area: string; series: SparklinePoint[] }>,
+      runPaceSeries: empty, runHRSeries: empty, runCadenceSeries: empty,
+      runEfSeries: empty, runDurationSeries: empty,
+      hasRunningData: false,
+      stats: { sessions: 0, totalMin: 0, checkins: 0, periodDays: period, days: 0 },
+      typeCount: {} as Record<string, number>,
+    };
+  }
   }, [allDays, period]);
 
   const cardStyle: React.CSSProperties = {
@@ -269,6 +259,13 @@ function TrendsPageInner() {
           }}>{PERIOD_LABELS[Number(p) as Period]}</button>
         ))}
       </div>
+
+      {seriesError && (
+        <div style={{ padding: "16px", background: "#7F1D1D30", border: "1px solid #7F1D1D", borderRadius: "12px", marginBottom: "12px" }}>
+          <div style={{ fontSize: "13px", color: "#EF4444", fontWeight: 700, marginBottom: "4px" }}>Errore nel calcolo dei trend</div>
+          <div style={{ fontSize: "12px", color: "#FCA5A5" }}>{seriesError}</div>
+        </div>
+      )}
 
       {loading ? (
         <div style={{ textAlign: "center", padding: "40px", color: "#94A3B8" }}>Caricamento…</div>
@@ -464,11 +461,3 @@ function SectionHeader({ title, hint, color }: { title: string; hint: string; co
   );
 }
 
-// Wrapper con ErrorBoundary: previene schermo nero se un grafico crasha
-export default function TrendsPage() {
-  return (
-    <TrendErrorBoundary>
-      <TrendsPageInner />
-    </TrendErrorBoundary>
-  );
-}
