@@ -7,9 +7,13 @@
 
 import { useEffect, useState } from "react";
 import { getJSON, setJSON } from "../lib/storage";
-import type { UserProfile, UserGoal, FeasibilityCheck, GoalPriority } from "../lib/types";
+import type { UserProfile, UserGoal, TrainingPlan, FeasibilityCheck, GoalPriority } from "../lib/types";
 import { checkGoalFeasibility } from "../lib/coach/feasibility";
+import { regenerateNextWeek, generateInitialPlan } from "../lib/coach/planGenerator";
+import { savePlanWithHistory } from "../lib/coach/planHistory";
+import { buildCoachContext } from "../lib/diaryContext";
 import { translateGeminiError } from "../lib/geminiErrors";
+import { hasApiKey } from "../lib/gemini";
 import { events } from "../lib/events";
 
 const MAX_GOALS = 3;
@@ -57,6 +61,11 @@ export default function GoalsEditor() {
   const [newChecking, setNewChecking] = useState(false);
   const [newError, setNewError] = useState("");
 
+  // Stato per rigenerazione piano da dentro GoalsEditor
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenMsg, setRegenMsg] = useState<string | null>(null);
+  const [goalsChanged, setGoalsChanged] = useState(false);
+
   const load = async () => {
     const [p, g] = await Promise.all([
       getJSON<UserProfile | null>("user-profile", null),
@@ -68,9 +77,34 @@ export default function GoalsEditor() {
 
   useEffect(() => { load(); }, []);
 
+  const handleRegenPlan = async () => {
+    if (regenerating || !profile) return;
+    setRegenerating(true);
+    setRegenMsg(null);
+    try {
+      const currentPlan = await getJSON<TrainingPlan | null>("training-plan", null);
+      let next: TrainingPlan;
+      if (currentPlan) {
+        const ctx = await buildCoachContext({ daysBack: 14 });
+        next = await regenerateNextWeek(profile, goals, currentPlan, ctx.recentDaysText);
+      } else {
+        next = await generateInitialPlan(profile, goals);
+      }
+      await savePlanWithHistory(next);
+      events.emit("plan:updated", { at: new Date().toISOString() });
+      setGoalsChanged(false);
+      setRegenMsg("✓ Piano rigenerato con i nuovi obiettivi");
+      setTimeout(() => setRegenMsg(null), 5000);
+    } catch (e) {
+      setRegenMsg("✗ " + translateGeminiError(e));
+    }
+    setRegenerating(false);
+  };
+
   const persistGoals = async (next: UserGoal[]) => {
     await setJSON("user-goals", next);
     setGoals(next);
+    setGoalsChanged(true);
     events.emit("goals:updated", { at: new Date().toISOString() });
   };
 
@@ -208,6 +242,44 @@ export default function GoalsEditor() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      {/* CTA rigenerazione piano dopo modifica obiettivi/priorità */}
+      {goalsChanged && hasApiKey() && goals.length > 0 && (
+        <div style={{
+          background: "#E8553A15", border: "1px solid #E8553A66",
+          borderRadius: "12px", padding: "12px 14px",
+          display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+        }}>
+          <div style={{ flex: 1, minWidth: "160px" }}>
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#E8553A", marginBottom: "2px" }}>
+              Obiettivi modificati
+            </div>
+            <div style={{ fontSize: "11px", color: "#CBD5E1", lineHeight: 1.4 }}>
+              Rigenera il piano per applicare le nuove priorità e modifiche.
+            </div>
+          </div>
+          <button
+            onClick={handleRegenPlan}
+            disabled={regenerating}
+            style={{
+              padding: "10px 16px",
+              background: regenerating ? "#1E293B" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+              border: "none", borderRadius: "10px", color: "#FFF",
+              fontSize: "13px", fontWeight: 700,
+              cursor: regenerating ? "wait" : "pointer",
+              opacity: regenerating ? 0.5 : 1,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {regenerating ? "⏳ Rigenerazione…" : "🔁 Rigenera piano"}
+          </button>
+        </div>
+      )}
+      {regenMsg && (
+        <div style={{ fontSize: "12px", color: regenMsg.startsWith("✓") ? "#22C55E" : "#EF4444", padding: "6px 0" }}>
+          {regenMsg}
+        </div>
+      )}
+
       {goals.length === 0 && !adding && (
         <div style={{ ...cardStyle, textAlign: "center", color: "#94A3B8", fontSize: "13px" }}>
           Nessun obiettivo impostato. Aggiungine uno per orientare il coach.
@@ -404,7 +476,7 @@ export default function GoalsEditor() {
       )}
 
       <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.5, marginTop: "6px" }}>
-        Modificare un obiettivo non rigenera automaticamente il piano — vai sul tab Coach e usa "Rigenera con dati recenti" o "Adatta con richiesta".
+        Dopo aver modificato obiettivi o priorità, rigenera il piano per applicare le modifiche.
       </div>
     </div>
   );
