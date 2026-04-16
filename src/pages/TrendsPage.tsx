@@ -53,11 +53,8 @@ export default function TrendsPage() {
     };
   }, []);
 
-  const [seriesError, setSeriesError] = useState<string | null>(null);
-
   // Series calcolate in base al periodo
-  const series = useMemo(() => { try {
-    setSeriesError(null);
+  const seriesResult = useMemo(() => { try {
     // Aritmetica sulle date LOCALI: setDate(-N) è immune al DST
     // (il vecchio startTs + i*86400000 saltava il 29 marzo per il cambio CET→CEST)
     const today = new Date();
@@ -214,10 +211,10 @@ export default function TrendsPage() {
       hasRunningData,
       stats: { sessions, totalMin, checkins, periodDays: period, days: days.length },
       typeCount,
+      error: null as string | null,
     };
   } catch (e: any) {
     console.error("[TrendsPage] Errore calcolo series:", e);
-    setSeriesError(String(e?.message || e));
     const empty: SparklinePoint[] = [];
     return {
       weight: empty, sleep: empty, fatigue: empty,
@@ -229,9 +226,13 @@ export default function TrendsPage() {
       hasRunningData: false,
       stats: { sessions: 0, totalMin: 0, checkins: 0, periodDays: period, days: 0 },
       typeCount: {} as Record<string, number>,
+      error: String(e?.message || e),
     };
   }
   }, [allDays, period]);
+
+  const series = seriesResult;
+  const seriesError = seriesResult.error;
 
   const cardStyle: React.CSSProperties = {
     background: "#16213E", border: "1px solid rgba(255,255,255,0.06)",
