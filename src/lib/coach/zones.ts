@@ -134,9 +134,22 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
     .sort((a, b) => a - b);
   const hasEnoughHistory = easyFcValues.length >= 5;
   const empiricalSampleSize = easyFcValues.length;
-  const empiricalZ2Range = hasEnoughHistory
-    ? { low: percentile(easyFcValues, 0.25), high: percentile(easyFcValues, 0.75) }
-    : undefined;
+  // Calcola 25°-75° percentile e assicura larghezza minima 10 bpm (altrimenti
+  // con pochi dati molto tight si hanno range come 152-154 che creano sovrapposizioni
+  // con le altre zone). Se più stretto di 10, allarghiamo centrando sulla mediana.
+  let empiricalZ2Range: { low: number; high: number } | undefined = undefined;
+  if (hasEnoughHistory) {
+    const p25 = percentile(easyFcValues, 0.25);
+    const p75 = percentile(easyFcValues, 0.75);
+    const MIN_WIDTH = 10;
+    if (p75 - p25 < MIN_WIDTH) {
+      const center = Math.round((p25 + p75) / 2);
+      const half = Math.round(MIN_WIDTH / 2);
+      empiricalZ2Range = { low: center - half, high: center + half };
+    } else {
+      empiricalZ2Range = { low: p25, high: p75 };
+    }
+  }
 
   // Passo medio tipico dalle corse easy (per mostrarlo nella card Z2)
   const easyPacesSec: number[] = [];
@@ -166,6 +179,7 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
   // Questo evita di perdere la personalizzazione Karvonen quando salta in empirical.
   const useKarvonen = (method === "karvonen" || method === "empirical") && typeof fcRestLatest === "number" && fcRestLatest >= 35 && fcRestLatest <= 100;
 
+  // Step 1: calcola zone base (Karvonen o Tanaka) — contigue per costruzione
   const zones: Zone[] = ZONE_META.map((meta, i) => {
     const { lo, hi } = ZONE_BOUNDS_PCT[i];
     let hrLow: number, hrHigh: number;
@@ -179,19 +193,37 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
       hrHigh = Math.round(hi * fcMax);
     }
 
-    // Override empirica SOLO per Z2: estende/restringe al range osservato nel diario.
-    // Le altre zone restano Karvonen o Tanaka (non abbiamo abbastanza sessioni per ogni zona).
-    if (method === "empirical" && meta.index === 2 && empiricalZ2Range) {
-      hrLow = empiricalZ2Range.low;
-      hrHigh = empiricalZ2Range.high;
-    }
-
     return {
       ...meta,
       hrLow, hrHigh,
       paceTypicalSec: meta.index === 2 ? paceMedianZ2 : undefined,
     };
   });
+
+  // Step 2: override Z2 empirica + RICOMPATTA zone vicine per mantenere contiguità
+  // (evita sovrapposizioni Z2↔Z3 e gap Z1→Z2 quando Z2 empirica cade nel range
+  // teorico di Z3).
+  if (method === "empirical" && empiricalZ2Range) {
+    const empLow = empiricalZ2Range.low;
+    const empHigh = empiricalZ2Range.high;
+    // Imposta Z2 empirica
+    zones[1].hrLow = empLow;
+    zones[1].hrHigh = empHigh;
+    // Z1: chiudi a empLow - 1 (se Z1 teorica sarebbe oltre, la accorcia)
+    if (zones[0].hrHigh >= empLow) zones[0].hrHigh = empLow - 1;
+    // Z3: apri da empHigh + 1 (se Z3 teorica partiva prima, la sposta)
+    if (zones[2].hrLow <= empHigh) zones[2].hrLow = empHigh + 1;
+    // Se Z3 ora è invertita (low > high) significa che Z2 empirica ha mangiato
+    // tutta la Z3 teorica → estendi Z3 fino a Z4 low - 1 usando il % FCmax
+    if (zones[2].hrHigh < zones[2].hrLow) {
+      zones[2].hrHigh = Math.max(zones[2].hrLow, zones[3].hrLow - 1);
+    }
+    // Se anche Z4 è intaccata, stessa logica a cascata
+    if (zones[3].hrLow <= zones[2].hrHigh) zones[3].hrLow = zones[2].hrHigh + 1;
+    if (zones[3].hrHigh < zones[3].hrLow) zones[3].hrHigh = Math.max(zones[3].hrLow, zones[4].hrLow - 1);
+    if (zones[4].hrLow <= zones[3].hrHigh) zones[4].hrLow = zones[3].hrHigh + 1;
+    if (zones[4].hrHigh < zones[4].hrLow) zones[4].hrHigh = zones[4].hrLow;
+  }
 
   // Spiegazione user-facing del metodo
   let methodExplanation: string;
