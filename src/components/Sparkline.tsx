@@ -36,14 +36,23 @@ export default function Sparkline({
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const { path, area, lastValue, dots, axisMin, axisMax, allCoords } = useMemo(() => {
-    const nums = points.map(p => p.value).filter((v): v is number => v != null && Number.isFinite(v));
-    if (nums.length === 0) return {
+    // Difensivo: se points non è array (shouldn't happen ma protegge contro edge case)
+    if (!Array.isArray(points) || points.length === 0) return {
       path: "", area: "", lastValue: null,
       dots: [] as { x: number; y: number }[], axisMin: 0, axisMax: 1,
       allCoords: [] as Array<{ x: number; y: number; idx: number } | null>,
     };
-    const min = yMin ?? Math.min(...nums);
-    const max = yMax ?? Math.max(...nums);
+    const nums = points.map(p => p?.value).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+    if (nums.length === 0) return {
+      path: "", area: "", lastValue: null,
+      dots: [] as { x: number; y: number }[], axisMin: 0, axisMax: 1,
+      allCoords: points.map(() => null) as Array<{ x: number; y: number; idx: number } | null>,
+    };
+    // Calcola min/max con un loop (evita spread su array grandi)
+    let mn = nums[0], mx = nums[0];
+    for (const n of nums) { if (n < mn) mn = n; if (n > mx) mx = n; }
+    const min: number = yMin !== undefined ? yMin : mn;
+    const max: number = yMax !== undefined ? yMax : mx;
     const range = max - min || 1;
     const pad = 6;
     const w = width - pad * 2;
