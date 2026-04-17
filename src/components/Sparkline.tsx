@@ -66,14 +66,12 @@ export default function Sparkline({
     };
 
     let pathStr = "";
-    let areaStr = "";
     const ds: { x: number; y: number }[] = [];
     const coords: Array<{ x: number; y: number; idx: number } | null> = [];
-    let firstX = 0, lastX = 0;
 
     // Connette tutti i punti validi con una linea continua, saltando i null
-    // (dati sparsi tipici: 1 corsa ogni 3-5 giorni). Prima versione spezzava
-    // il segmento su ogni null, creando frammenti invisibili con pochi dati.
+    // (dati sparsi tipici: 1 corsa ogni 3-5 giorni). Area fill rimosso:
+    // con dati sparsi creava forme poligonali confuse senza valore informativo.
     let isFirst = true;
     points.forEach((p, i) => {
       if (p.value == null || !Number.isFinite(p.value)) {
@@ -81,25 +79,14 @@ export default function Sparkline({
         return;
       }
       const { x, y } = toXY(i, p.value);
-      if (isFirst) {
-        pathStr += ` M ${x} ${y}`;
-        firstX = x;
-        isFirst = false;
-      } else {
-        pathStr += ` L ${x} ${y}`;
-      }
-      lastX = x;
+      pathStr += isFirst ? ` M ${x} ${y}` : ` L ${x} ${y}`;
+      isFirst = false;
       ds.push({ x, y });
       coords.push({ x, y, idx: i });
     });
 
-    // Area fill solo se abbastanza punti (>= 3), altrimenti crea triangoli brutti con dati sparsi
-    if (ds.length >= 3) {
-      areaStr = `M ${firstX} ${pad + h} ${pathStr} L ${lastX} ${pad + h} Z`;
-    }
-
     const last = nums[nums.length - 1];
-    return { path: pathStr, area: areaStr, lastValue: last, dots: ds, axisMin: min, axisMax: max, allCoords: coords };
+    return { path: pathStr, area: "", lastValue: last, dots: ds, axisMin: min, axisMax: max, allCoords: coords };
   }, [points, width, height, yMin, yMax, invertY]);
 
   const fmt = (v: number) => formatValue ? formatValue(v) : (Number.isInteger(v) ? String(v) : v.toFixed(1));
