@@ -11,9 +11,9 @@ export function zonesBlock(
   totalSessions?: number,
 ): string {
   const methodLabel = {
-    empirical: "derivate dallo storico corse (empirica)",
-    karvonen: "metodo Karvonen (FC riserva)",
-    tanaka: "stima generica Tanaka (età, errore ±10bpm)",
+    tested: "FCmax testata sul campo dall'utente (gold standard)",
+    karvonen: "metodo Karvonen (FC riserva) + FCmax Tanaka",
+    tanaka: "stima generica Tanaka (età, errore ±10-15 bpm)",
   }[zones.method];
 
   const zonesLines = zones.zones.map(z =>
@@ -35,16 +35,21 @@ Distribuzione bassa/alta intensità: ${polar.lowPct}% / ${polar.highPct}% ${pola
     }
   }
 
+  const empiricalHint = zones.empiricalZ2Hint && zones.empiricalHintMessage
+    ? `\nHINT DAI FONDI LENTI REALI: FC media osservata ${zones.empiricalZ2Hint.low}-${zones.empiricalZ2Hint.high} bpm (${zones.empiricalSampleSize} corse). ${zones.empiricalHintMessage}`
+    : "";
+
   return `
 ZONE DI FREQUENZA CARDIACA PERSONALIZZATE DELL'UTENTE (${methodLabel}):
-FCmax usata: ${zones.fcMax} bpm${zones.fcMaxObserved ? ` (osservata dai workout, > Tanaka teorica)` : ""}${zones.fcRest ? `, FC a riposo mattutina: ${zones.fcRest} bpm` : ""}
-${zonesLines}
+FCmax usata: ${zones.fcMax} bpm${zones.fcMaxObserved ? ` (max osservata nei workout: ${zones.fcMaxObserved} bpm)` : ""}${zones.fcRest ? `, FC a riposo mattutina: ${zones.fcRest} bpm` : ""}
+${zonesLines}${empiricalHint}
 ${analyticsSection}
 
 REGOLE PER IL COACH:
-- Quando commenti la FC media di una corsa, confrontala con la zona personalizzata dell'utente, NON con la soglia Tanaka generica. Se l'utente ha Z2 empirica più alta della teorica, non rimproverarlo per "FC troppo alta" se resta nel suo range.
+- Quando commenti la FC media di una corsa, confrontala con la zona personalizzata dell'utente. Le zone sono calcolate sulla FCmax più affidabile disponibile (test sul campo > Tanaka).
 - Se suggerisci una sessione Z2/Z3/Z4/Z5, cita il range bpm personalizzato (es. "Z4 per te: 155-170 bpm") così l'utente sa cosa targetare.
-- Se la distribuzione polarizzata è sbilanciata (<75% in Z1+Z2), segnala al coach ma senza allarmi: suggerisci di rallentare i fondi lenti, non di evitare i lavori di qualità.
-- Se il metodo è "tanaka" (stima generica), informa l'utente che aggiungendo la FC a riposo mattutina nel check le zone diventano più accurate.
+- Se la distribuzione polarizzata è sbilanciata (<75% in Z1+Z2), segnala all'utente ma senza allarmi: suggerisci di rallentare i fondi lenti, non di evitare i lavori di qualità.
+- Se l'HINT DAI FONDI LENTI REALI mostra FC media sopra Z2 teorica, segnalalo chiaramente: è l'errore amatoriale classico (Stöggl/Sperlich 2014) — fondi lenti corsi troppo veloci compromettono l'adattamento aerobico.
+- Se il metodo è "tanaka" o "karvonen" (stima), suggerisci all'utente di fare il test FCmax sul campo per massima precisione (5km warmup + 3min hard + 2min recupero + 3min all-out).
 `.trim();
 }

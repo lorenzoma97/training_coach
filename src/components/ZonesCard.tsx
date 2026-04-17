@@ -62,9 +62,9 @@ export default function ZonesCard({ compact = false, highlightZone }: Props) {
   );
 
   const methodBadge = {
-    empirical: { label: "DAL TUO STORICO", color: "#22C55E" },
-    karvonen:  { label: "KARVONEN (FC RIP)", color: "#0891B2" },
-    tanaka:    { label: "STIMA TANAKA (ETÀ)", color: "#94A3B8" },
+    tested:   { label: "FCMAX TESTATA", color: "#22C55E" },
+    karvonen: { label: "KARVONEN (FC RIP)", color: "#0891B2" },
+    tanaka:   { label: "STIMA TANAKA (ETÀ)", color: "#94A3B8" },
   }[result.method];
 
   // ------- COMPACT mode (piano) -------
@@ -147,6 +147,23 @@ export default function ZonesCard({ compact = false, highlightZone }: Props) {
           );
         })}
       </div>
+
+      {result.empiricalHintMessage && (
+        <div style={{
+          background: "#F9731615",
+          border: "1px solid #F9731666",
+          borderRadius: "10px",
+          padding: "10px 12px",
+          fontSize: "12px",
+          color: "#FDBA74",
+          lineHeight: 1.5,
+        }}>
+          <div style={{ fontWeight: 700, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "4px", color: "#F97316" }}>
+            ⚠ Osservazione dai tuoi fondi lenti
+          </div>
+          {result.empiricalHintMessage}
+        </div>
+      )}
 
       <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5, padding: "8px 0" }}>
         {result.methodExplanation}

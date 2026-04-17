@@ -5,6 +5,7 @@ import CoachChat from "../components/CoachChat";
 import GoalsEditor from "../components/GoalsEditor";
 import ZonesCard from "../components/ZonesCard";
 import ZonesAnalytics from "../components/ZonesAnalytics";
+import FCMaxTestSection from "../components/FCMaxTestSection";
 import { hasApiKey } from "../lib/gemini";
 import { getJSON, setJSON } from "../lib/storage";
 import { savePlanWithHistory } from "../lib/coach/planHistory";
@@ -208,6 +209,15 @@ export default function CoachPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
           <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "18px 20px" }}>
             <ZonesCard />
+          </div>
+          <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "18px 20px" }}>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "10px" }}>
+              Calibrazione FCmax
+            </div>
+            <div style={{ fontSize: "12px", color: "#94A3B8", marginBottom: "12px", lineHeight: 1.5 }}>
+              Un test sul campo sostituisce la stima Tanaka (errore ±10-15 bpm) e rende più accurate tutte le 5 zone.
+            </div>
+            <FCMaxTestSection />
           </div>
           <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "18px 20px" }}>
             <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "12px" }}>

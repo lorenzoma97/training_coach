@@ -39,6 +39,15 @@ export interface UserProfile {
   painTrackingAreas?: string[];
   /** Mostrato solo se sex === "f". */
   menstrualCycle?: MenstrualCycle;
+  /**
+   * FCmax misurata da test sul campo (in bpm). Se presente, sostituisce la stima
+   * Tanaka per il calcolo zone. Più affidabile di qualsiasi formula.
+   * Test consigliato: 5km warmup + 3min hard + 2min recovery + 3min all-out finale.
+   * La FC max raggiunta nell'ultima fase = FCmax.
+   */
+  fcMaxTested?: number;
+  /** ISO date del test FCmax (per scadenza/refresh dopo 6+ mesi). */
+  fcMaxTestedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

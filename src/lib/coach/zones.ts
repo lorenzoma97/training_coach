@@ -12,7 +12,7 @@
 import type { UserProfile } from "../types";
 
 export type ZoneIndex = 1 | 2 | 3 | 4 | 5;
-export type ZoneMethod = "tanaka" | "karvonen" | "empirical";
+export type ZoneMethod = "tanaka" | "karvonen" | "tested";
 
 export interface Zone {
   index: ZoneIndex;
@@ -41,8 +41,20 @@ export interface ZonesResult {
   fcRest?: number;
   /** Numero di workout "easy" usati per derivazione empirica (0 se non usata). */
   empiricalSampleSize: number;
-  /** Se empirica, range osservato 25°-75° pct di fc_media. */
-  empiricalZ2Range?: { low: number; high: number };
+  /**
+   * HINT INFORMATIVO: range FC media osservato nei tuoi fondi lenti reali
+   * (25°-75° percentile). NON usato per le zone — solo per pedagogia.
+   * Se è significativamente sopra il top della Z2 teorica, l'utente sta
+   * probabilmente correndo i fondi lenti troppo veloci (errore amatoriale
+   * documentato Stöggl/Sperlich 2014).
+   */
+  empiricalZ2Hint?: { low: number; high: number };
+  /**
+   * Suggerimento pedagogico se le corse easy sono in zona più alta di Z2.
+   * Es. "Le tue corse easy hanno FC 148-158 — sei nella Z3 teorica.
+   * Considera di rallentare per stare in vera Z2 (113-141 bpm)."
+   */
+  empiricalHintMessage?: string;
   zones: Zone[];
   /** Messaggio user-facing che spiega il metodo + come migliorarlo. */
   methodExplanation: string;
@@ -103,19 +115,26 @@ export interface ComputeZonesInput {
 export function computeZones(input: ComputeZonesInput): ZonesResult {
   const { profile, fcRestLatest, recentWorkouts = [] } = input;
 
-  // FCmax: Tanaka teorica, sovrascritta da FCmax osservata solo se più osservazioni
-  // la confermano (protegge da spike cinturino isolati). Richiediamo ≥2 workout
-  // con fc_max > Tanaka + 3 bpm per adottare la nuova stima, e usiamo come riferimento
-  // il MASSIMO tra quelle osservazioni (non il percentile, per non perdere un PR legittimo).
+  // PRIORITÀ FCmax (in ordine di affidabilità scientifica):
+  // 1. Test sul campo dichiarato dall'utente (profile.fcMaxTested) — gold standard
+  // 2. FCmax osservata nei workout: ma SOLO come informazione visiva, non
+  //    sovrascrive la teorica (un singolo battito alto da spike cinturino non
+  //    può ridefinire le zone — Mühlen INTERLIVE 2021)
+  // 3. Tanaka 208 - 0.7×età — fallback, errore individuale ±10-15 bpm
   const fcMaxTanaka = tanakaFCmax(profile.age);
   const fcMaxCandidates = recentWorkouts
     .map(w => Number(w.fields?.fc_max))
     .filter(n => Number.isFinite(n) && n > 100 && n < 230) as number[];
   const aboveTanakaThreshold = fcMaxCandidates.filter(n => n > fcMaxTanaka + 3);
-  const confirmedObserved = aboveTanakaThreshold.length >= 2 ? Math.max(...aboveTanakaThreshold) : undefined;
-  // Separiamo per trasparenza UI: mostriamo "osservata" solo se confermata (>1 volta sopra Tanaka+3)
-  const fcMaxObserved = confirmedObserved;
-  let fcMax = fcMaxObserved ?? fcMaxTanaka;
+  const fcMaxObserved = aboveTanakaThreshold.length >= 2 ? Math.max(...aboveTanakaThreshold) : undefined;
+
+  // FCmax usata per le zone:
+  // - se l'utente ha fatto un test → usa quella (più affidabile)
+  // - altrimenti Tanaka teorica
+  const fcMaxFromTest = typeof profile.fcMaxTested === "number" && profile.fcMaxTested >= 100 && profile.fcMaxTested <= 230
+    ? profile.fcMaxTested
+    : undefined;
+  const fcMax = fcMaxFromTest ?? fcMaxTanaka;
 
   // Estrai corse "easy" dal diario per range empirico (Fondo Lento + RPE ≤ 5 + no dolore alto)
   const easyRuns = recentWorkouts.filter(w => {
@@ -134,21 +153,14 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
     .sort((a, b) => a - b);
   const hasEnoughHistory = easyFcValues.length >= 5;
   const empiricalSampleSize = easyFcValues.length;
-  // Calcola 25°-75° percentile e assicura larghezza minima 10 bpm (altrimenti
-  // con pochi dati molto tight si hanno range come 152-154 che creano sovrapposizioni
-  // con le altre zone). Se più stretto di 10, allarghiamo centrando sulla mediana.
-  let empiricalZ2Range: { low: number; high: number } | undefined = undefined;
+  // HINT (non usato per le zone): 25°-75° percentile delle FC medie dei fondi lenti reali.
+  // Serve SOLO per pedagogia — se significativamente sopra Z2 teorica, l'utente corre
+  // i fondi lenti troppo veloci (errore amatoriale documentato Stöggl/Sperlich 2014).
+  let empiricalZ2Hint: { low: number; high: number } | undefined = undefined;
   if (hasEnoughHistory) {
     const p25 = percentile(easyFcValues, 0.25);
     const p75 = percentile(easyFcValues, 0.75);
-    const MIN_WIDTH = 10;
-    if (p75 - p25 < MIN_WIDTH) {
-      const center = Math.round((p25 + p75) / 2);
-      const half = Math.round(MIN_WIDTH / 2);
-      empiricalZ2Range = { low: center - half, high: center + half };
-    } else {
-      empiricalZ2Range = { low: p25, high: p75 };
-    }
+    empiricalZ2Hint = { low: p25, high: p75 };
   }
 
   // Passo medio tipico dalle corse easy (per mostrarlo nella card Z2)
@@ -167,48 +179,33 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
     ? easyPacesSec[Math.floor(easyPacesSec.length / 2)]
     : undefined;
 
-  // Decide metodo principale
+  // Decide metodo principale (in ordine di affidabilità):
+  // - "tested": FCmax da test sul campo (gold standard)
+  // - "karvonen": HRR con FC riposo + FCmax Tanaka
+  // - "tanaka": solo % FCmax Tanaka (fallback)
   let method: ZoneMethod;
-  if (hasEnoughHistory) method = "empirical";
+  if (fcMaxFromTest) method = "tested";
   else if (fcRestLatest != null && fcRestLatest >= 35 && fcRestLatest <= 100) method = "karvonen";
   else method = "tanaka";
 
-  // Costruisci le 5 zone secondo il metodo scelto.
-  // Se FCrest è disponibile, usiamo Karvonen (HRR) per TUTTE le zone, anche in
-  // modalità empirical — empirica sovrascrive solo Z2 con il range osservato.
-  // Questo evita di perdere la personalizzazione Karvonen quando salta in empirical.
-  const useKarvonen = (method === "karvonen" || method === "empirical") && typeof fcRestLatest === "number" && fcRestLatest >= 35 && fcRestLatest <= 100;
+  // Karvonen è applicabile anche con FCmax di test, se abbiamo fcRest valida
+  const useKarvonen = typeof fcRestLatest === "number" && fcRestLatest >= 35 && fcRestLatest <= 100;
 
-  // Quando è attivo il metodo EMPIRICAL, usiamo il top della Z2 empirica
-  // come proxy di LT1 (soglia aerobica). Nel modello Coggan/Friel standard,
-  // Z2 top ≈ 75% FCmax. Quindi FCmax_effettiva ≈ Z2_empirica.top / 0.75.
-  // Questo respecta la scienza: se i tuoi fondi lenti reali hanno FC alta,
-  // la tua FCmax è probabilmente > Tanaka (errore individuale ±10-15 bpm).
-  // Tutte le zone vengono poi ricalcolate come % di questa FCmax effettiva,
-  // rendendo il ladder contiguo per costruzione con larghezze realistiche.
-  let effectiveFCmax = fcMax;
-  if (method === "empirical" && empiricalZ2Range) {
-    const impliedFCmax = Math.round(empiricalZ2Range.high / 0.75);
-    // Usa l'implicita solo se > Tanaka (user più fit del predetto)
-    // Safety cap: 220 bpm (limite fisiologico realistico per maggior parte adulti)
-    const SAFETY_CAP = 220;
-    if (impliedFCmax > fcMax && impliedFCmax <= SAFETY_CAP) {
-      effectiveFCmax = impliedFCmax;
-    }
-  }
-
-  // Calcola zone come contigue (% di effectiveFCmax per Tanaka, oppure Karvonen)
+  // Calcola zone sempre come % FCmax (oppure HRR se Karvonen disponibile).
+  // NIENTE "inflation" basata sul range empirico: un range osservato di FC nei
+  // fondi lenti troppo veloci NON è evidenza di FCmax più alta, ma di allenamento
+  // fuori zona. Gonfiare la FCmax sarebbe un fit matematico, non scientifico.
   const zones: Zone[] = ZONE_META.map((meta, i) => {
     const { lo, hi } = ZONE_BOUNDS_PCT[i];
     let hrLow: number, hrHigh: number;
 
     if (useKarvonen && fcRestLatest) {
-      const band = karvonenBand(effectiveFCmax, fcRestLatest, lo, hi);
+      const band = karvonenBand(fcMax, fcRestLatest, lo, hi);
       hrLow = band.low;
       hrHigh = band.high;
     } else {
-      hrLow = Math.round(lo * effectiveFCmax);
-      hrHigh = Math.round(hi * effectiveFCmax);
+      hrLow = Math.round(lo * fcMax);
+      hrHigh = Math.round(hi * fcMax);
     }
 
     return {
@@ -218,7 +215,7 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
     };
   });
 
-  // Rendi le zone adjacente contigue (low di Z(n+1) = high di Z(n) + 1)
+  // Rendi le zone adiacenti contigue (low di Z(n+1) = high di Z(n) + 1)
   // per eliminare micro-gap dovuti all'arrotondamento tra % FCmax.
   for (let i = 1; i < zones.length; i++) {
     if (zones[i].hrLow > zones[i - 1].hrHigh + 1) {
@@ -228,30 +225,35 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
     }
   }
 
-  // Aggiorna fcMax visualizzato se è stata usata l'implicita
-  if (effectiveFCmax !== fcMax) {
-    // Persiste la scelta nella UI tramite il campo fcMax
-    fcMax = effectiveFCmax;
+  // Hint pedagogico: se il range empirico delle corse "easy" cade sopra il top
+  // della Z2 teorica, suggerisci di rallentare. Questo è l'errore amatoriale
+  // classico documentato (Stöggl/Sperlich 2014): fondi lenti corsi in Z3.
+  let empiricalHintMessage: string | undefined = undefined;
+  if (empiricalZ2Hint) {
+    const z2 = zones[1];
+    const median = Math.round((empiricalZ2Hint.low + empiricalZ2Hint.high) / 2);
+    if (empiricalZ2Hint.low > z2.hrHigh) {
+      empiricalHintMessage = `Le tue corse easy hanno FC media ${empiricalZ2Hint.low}-${empiricalZ2Hint.high} bpm — tutte sopra il top Z2 teorica (${z2.hrHigh} bpm). Probabilmente corri i fondi lenti troppo veloci: rallenta per stare nella vera Z2 e beneficiare dell'adattamento aerobico (Stöggl/Sperlich 2014).`;
+    } else if (median > z2.hrHigh) {
+      empiricalHintMessage = `Le tue corse easy hanno FC media ~${median} bpm, spesso sopra Z2 teorica (${z2.hrLow}-${z2.hrHigh} bpm). Considera di rallentare alcuni fondi per un vero allenamento aerobico di base.`;
+    } else if (empiricalZ2Hint.high < z2.hrLow) {
+      empiricalHintMessage = `Le tue corse easy hanno FC media ${empiricalZ2Hint.low}-${empiricalZ2Hint.high} bpm — sotto Z2 teorica (${z2.hrLow}-${z2.hrHigh} bpm). Se possibile, considera un test FCmax: la formula Tanaka potrebbe sovrastimare il tuo valore reale.`;
+    }
   }
 
   // Spiegazione user-facing del metodo
   let methodExplanation: string;
-  if (method === "empirical") {
-    const wasAdjusted = effectiveFCmax !== (fcMaxObserved ?? fcMaxTanaka);
-    if (wasAdjusted) {
-      methodExplanation = `Z2 empirica da ${empiricalSampleSize} fondi lenti reali (${empiricalZ2Range?.low}-${empiricalZ2Range?.high} bpm). Il top Z2 suggerisce FCmax effettiva ~${effectiveFCmax} bpm (più alta della stima Tanaka ${fcMaxTanaka}) — coerente con errore individuale ±10-15 bpm documentato (Tanaka 2001). Tutte le zone sono ricalcolate come % della FCmax effettiva per un ladder contiguo scientificamente coerente (modello Coggan/Friel 5-zone).`;
-    } else {
-      methodExplanation = `Z2 empirica da ${empiricalSampleSize} fondi lenti reali. Altre zone calcolate come % FCmax (${effectiveFCmax} bpm).`;
-    }
+  if (method === "tested") {
+    methodExplanation = `Zone calcolate dalla tua FCmax testata sul campo (${fcMax} bpm${profile.fcMaxTestedAt ? `, test del ${profile.fcMaxTestedAt}` : ""})${useKarvonen ? ` + Karvonen con FC riposo ${fcRestLatest} bpm` : ""}. Metodo più affidabile: nessuna formula, solo il tuo dato reale. Ripeti il test ogni 6 mesi o dopo cambi significativi di forma.`;
   } else if (method === "karvonen") {
-    methodExplanation = `Metodo Karvonen con la tua FC a riposo mattutina (${fcRestLatest} bpm) + FCmax ${fcMaxObserved ? `osservata ${fcMaxObserved}` : `Tanaka ${fcMaxTanaka}`}. Registra 5+ fondi lenti e scatterà il calcolo empirico dalle tue corse reali.`;
+    methodExplanation = `Metodo Karvonen con FC a riposo mattutina (${fcRestLatest} bpm) + FCmax Tanaka (${fcMaxTanaka} bpm, errore individuale ±10-15 bpm — Tanaka 2001). Per precisione massima, fai il test FCmax sul campo e inseriscilo nel profilo.`;
   } else {
-    methodExplanation = `Stima generica (formula Tanaka 208 - 0.7×età = ${fcMaxTanaka} bpm, errore ±10 bpm). Aggiungi la FC a riposo al check mattutino per migliorare con Karvonen, e registra 5+ fondi lenti per il calcolo empirico.`;
+    methodExplanation = `Stima generica con formula Tanaka (208 - 0.7×età = ${fcMaxTanaka} bpm, errore ±10-15 bpm). Per migliorare: (1) registra la FC a riposo al check mattutino → abilita Karvonen; (2) fai il test FCmax sul campo e salvalo nel profilo.`;
   }
 
   return {
     method, fcMax, fcMaxObserved, fcRest: fcRestLatest ?? undefined,
-    empiricalSampleSize, empiricalZ2Range,
+    empiricalSampleSize, empiricalZ2Hint, empiricalHintMessage,
     zones, methodExplanation,
   };
 }
