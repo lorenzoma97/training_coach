@@ -141,46 +141,39 @@ export default function TrainingPlanView() {
         // né saltata, il render mostra OGGI/futuro normalmente).
         if (plannedDate > todayEnd) continue;
 
-        // Cerca workout dello stesso tipo + subtipo nella settimana, non ancora matchato.
-        // Matching a 2 livelli:
-        // 1° tentativo: tipo + subtipo (sub di s = s.subtype, sub del workout = fields.tipo/sport)
-        // 2° tentativo: solo tipo (meno stretto)
-        // Preferisce sempre lo stesso giorno, poi altri giorni della settimana.
+        // Cerca workout dello stesso GIORNO + tipo (+ subtipo se specificato).
+        // Match stretto = stesso giorno + stesso tipo + stesso subtype.
+        // Match parziale = stesso giorno + stesso tipo ma subtype diverso.
+        // NO fallback cross-day: se il mar fondo non è stato fatto e mer ne ho
+        // fatto uno, il piano segna mar come SALTATA e il mer come AUTONOMO.
+        // L'utente può poi cliccare "Adatta alle deviazioni" per riallineare.
         const plannedSub = (s.subtype || "").toLowerCase().trim();
         const matchWorkoutSub = (w: any) => {
           const sub = (w.fields?.tipo || w.fields?.sport || "").toLowerCase().trim();
           return sub;
         };
-        const daysInOrder = [...weekDays].sort((a: any, b: any) => {
-          const da = a.date === plannedKey ? 0 : 1;
-          const db = b.date === plannedKey ? 0 : 1;
-          return da - db;
-        });
+        const plannedDayEntry = weekDays.find((d: any) => d.date === plannedKey);
         let match: { dateKey: string; workout: any; strictMatch: boolean } | null = null;
-        // 1° tentativo: match stretto (tipo + subtipo)
-        if (plannedSub) {
-          for (const d of daysInOrder) {
-            for (const w of (d.workouts || [])) {
+        if (plannedDayEntry) {
+          // 1° tentativo stesso-giorno: tipo + subtipo identici
+          if (plannedSub) {
+            for (const w of (plannedDayEntry.workouts || [])) {
               if (usedWorkoutIds.has(w.id)) continue;
               if (w.type === s.type && matchWorkoutSub(w) === plannedSub) {
-                match = { dateKey: d.date, workout: w, strictMatch: true };
+                match = { dateKey: plannedDayEntry.date, workout: w, strictMatch: true };
                 break;
               }
             }
-            if (match) break;
           }
-        }
-        // 2° tentativo: match allentato (solo tipo)
-        if (!match) {
-          for (const d of daysInOrder) {
-            for (const w of (d.workouts || [])) {
+          // 2° tentativo stesso-giorno: solo tipo (subtype diverso)
+          if (!match) {
+            for (const w of (plannedDayEntry.workouts || [])) {
               if (usedWorkoutIds.has(w.id)) continue;
               if (w.type === s.type) {
-                match = { dateKey: d.date, workout: w, strictMatch: false };
+                match = { dateKey: plannedDayEntry.date, workout: w, strictMatch: !plannedSub };
                 break;
               }
             }
-            if (match) break;
           }
         }
 
