@@ -1,14 +1,63 @@
 import { useEffect, useRef, useState } from "react";
 import { buildBackup, downloadBackup, validateBackup, restoreBackup, type BackupPayload } from "../lib/backup";
+import { getJSON, storage } from "../lib/storage";
 
 const cardStyle: React.CSSProperties = {
   background: "#16213E", border: "1px solid rgba(255,255,255,0.06)",
   borderRadius: "14px", padding: "18px 20px",
 };
 
+interface CurrentStateSummary {
+  diaryDays: number;
+  hasPlan: boolean;
+  goalsCount: number;
+  chatMessages: number;
+}
+
+interface BackupSummary {
+  diaryDays: number;
+  hasPlan: boolean;
+  goalsCount: number;
+  chatMessages: number;
+  exportedAt: string;
+}
+
+async function summarizeCurrentState(): Promise<CurrentStateSummary> {
+  const dayKeys = await storage.keys("day:");
+  const plan = await getJSON<unknown>("training-plan", null);
+  const goals = await getJSON<unknown[]>("user-goals", []);
+  const chat = await getJSON<unknown[]>("coach-chat-history", []);
+  return {
+    diaryDays: dayKeys.length,
+    hasPlan: plan !== null && plan !== undefined,
+    goalsCount: Array.isArray(goals) ? goals.length : 0,
+    chatMessages: Array.isArray(chat) ? chat.length : 0,
+  };
+}
+
+function summarizeBackup(payload: BackupPayload): BackupSummary {
+  const goals = (payload.data as any)["user-goals"];
+  const chat = (payload.data as any)["coach-chat-history"];
+  return {
+    diaryDays: Object.keys(payload.data.days || {}).length,
+    hasPlan: (payload.data as any)["training-plan"] != null,
+    goalsCount: Array.isArray(goals) ? goals.length : 0,
+    chatMessages: Array.isArray(chat) ? chat.length : 0,
+    exportedAt: payload.exportedAt,
+  };
+}
+
 export default function BackupSection() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ type: "info" | "error" | "success"; text: string } | null>(null);
+  const [confirmState, setConfirmState] = useState<
+    | null
+    | {
+        payload: BackupPayload;
+        before: CurrentStateSummary;
+        after: BackupSummary;
+      }
+  >(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const msgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -21,7 +70,7 @@ export default function BackupSection() {
   const show = (type: "info" | "error" | "success", text: string) => {
     setMessage({ type, text });
     if (msgTimerRef.current) clearTimeout(msgTimerRef.current);
-    if (type === "success") msgTimerRef.current = setTimeout(() => setMessage(null), 5000);
+    if (type === "success") msgTimerRef.current = setTimeout(() => setMessage(null), 8000);
   };
 
   const handleExport = async () => {
@@ -58,24 +107,44 @@ export default function BackupSection() {
         return;
       }
       const payload = v.payload;
-      const dayCount = Object.keys(payload.data.days || {}).length;
-      const ok = confirm(
-        `Ripristino backup del ${new Date(payload.exportedAt).toLocaleDateString("it-IT")}:\n` +
-        `- ${dayCount} giorni di diario\n` +
-        `- profilo/obiettivi/piano/feed coach\n\n` +
-        `Tutti i dati attuali verranno SOSTITUITI.\n(La chiave API e la knowledge base RAG non sono toccate.)\n\nContinuare?`
-      );
-      if (!ok) { setBusy(false); return; }
-
-      const report = await restoreBackup(payload, { wipeBefore: true, overwrite: true });
-      show("success",
-        `✓ Ripristinato: ${report.restoredDays} giorni + ${report.restoredKeys.length} chiavi. Ricarico l'app tra 2s.`);
-      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
-      reloadTimerRef.current = setTimeout(() => window.location.reload(), 2000);
+      const [before, after] = await Promise.all([
+        summarizeCurrentState(),
+        Promise.resolve(summarizeBackup(payload)),
+      ]);
+      // Apre dialog inline con summary esplicito before/after
+      setConfirmState({ payload, before, after });
     } catch (e) {
       show("error", (e as Error)?.message || "Errore durante il ripristino");
     }
     setBusy(false);
+  };
+
+  const performRestore = async () => {
+    if (!confirmState) return;
+    const { payload } = confirmState;
+    setConfirmState(null);
+    setBusy(true);
+    try {
+      const report = await restoreBackup(payload, { wipeBefore: true, overwrite: true });
+      show(
+        "success",
+        `✓ Ripristinato: ${report.restoredDays} giorni + ${report.restoredKeys.length} chiavi. ` +
+        `Ricarico l'app tra 2s. Ricordati di reinserire la chiave API.`,
+      );
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+      reloadTimerRef.current = setTimeout(() => window.location.reload(), 2000);
+    } catch (e) {
+      show(
+        "error",
+        `Ripristino fallito: ${(e as Error)?.message || "errore sconosciuto"}. ` +
+        `Lo stato potrebbe essere parzialmente corrotto: esporta un nuovo backup e controlla i dati.`,
+      );
+    }
+    setBusy(false);
+  };
+
+  const cancelRestore = () => {
+    setConfirmState(null);
   };
 
   return (
@@ -87,8 +156,12 @@ export default function BackupSection() {
         Esporta un file JSON con <b>tutti</b> i tuoi dati (diario, profilo, obiettivi, piano, feed e chat coach).
         Puoi re-importarlo per ripristinare tutto — utile per cambiare dispositivo o prima di pulire il browser.
         <br />
+        <span style={{ color: "#FCA5A5", fontSize: "11px" }}>
+          ⚠ La chiave API <b>NON</b> è nel backup (è un segreto: reinseriscila dopo il restore).
+        </span>
+        <br />
         <span style={{ color: "#64748B", fontSize: "11px" }}>
-          Nota: la chiave API e gli embeddings RAG non sono inclusi per sicurezza e ricreabilità.
+          Gli embeddings RAG saranno ricreati automaticamente al primo uso.
         </span>
       </div>
 
@@ -134,6 +207,82 @@ export default function BackupSection() {
           }}
         />
       </div>
+
+      {confirmState && (
+        <div
+          style={{
+            marginTop: "14px",
+            padding: "14px",
+            background: "#0F172A",
+            border: "1px solid #7F1D1D",
+            borderRadius: "10px",
+            color: "#E2E8F0",
+            fontSize: "13px",
+            lineHeight: 1.55,
+          }}
+          role="dialog"
+          aria-label="Conferma ripristino backup"
+        >
+          <div style={{ fontWeight: 700, marginBottom: "8px", color: "#FCA5A5" }}>
+            ⚠ Confermare il ripristino?
+          </div>
+          <div style={{ marginBottom: "10px", color: "#CBD5E1" }}>
+            Backup del{" "}
+            <b>{new Date(confirmState.after.exportedAt).toLocaleString("it-IT")}</b>.
+            <br />
+            Tutti i dati attuali verranno <b>sostituiti</b> in modo atomico.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+            <div style={{ padding: "8px 10px", background: "#1E293B", borderRadius: "8px" }}>
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Stato attuale (verrà cancellato)</div>
+              <div>• {confirmState.before.diaryDays} giorni diario</div>
+              <div>• Piano: {confirmState.before.hasPlan ? "presente" : "assente"}</div>
+              <div>• {confirmState.before.goalsCount} obiettivi</div>
+              <div>• {confirmState.before.chatMessages} messaggi chat</div>
+            </div>
+            <div style={{ padding: "8px 10px", background: "#14532D22", borderRadius: "8px", border: "1px solid #14532D" }}>
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Dal backup (verrà ripristinato)</div>
+              <div>• {confirmState.after.diaryDays} giorni diario</div>
+              <div>• Piano: {confirmState.after.hasPlan ? "presente" : "assente"}</div>
+              <div>• {confirmState.after.goalsCount} obiettivi</div>
+              <div>• {confirmState.after.chatMessages} messaggi chat</div>
+            </div>
+          </div>
+          <div style={{ fontSize: "11px", color: "#FCA5A5", marginBottom: "10px" }}>
+            La chiave API <b>NON</b> è nel backup (è un segreto, reinseriscila dopo il restore).
+            Gli embeddings RAG saranno ricreati automaticamente al primo uso.
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              onClick={performRestore}
+              disabled={busy}
+              style={{
+                padding: "8px 14px",
+                background: "linear-gradient(135deg, #B91C1C 0%, #7F1D1D 100%)",
+                border: "none", borderRadius: "8px",
+                color: "#FFF", fontWeight: 700, fontSize: "12px",
+                cursor: busy ? "wait" : "pointer",
+              }}
+            >
+              Sì, ripristina
+            </button>
+            <button
+              onClick={cancelRestore}
+              disabled={busy}
+              style={{
+                padding: "8px 14px",
+                background: "#1A1A2E",
+                border: "1px solid rgba(255,255,255,0.15)",
+                borderRadius: "8px",
+                color: "#E2E8F0", fontWeight: 700, fontSize: "12px",
+                cursor: busy ? "wait" : "pointer",
+              }}
+            >
+              Annulla
+            </button>
+          </div>
+        </div>
+      )}
 
       {message && (
         <div style={{

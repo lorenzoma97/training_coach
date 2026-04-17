@@ -2,14 +2,31 @@
 // L'LLM è istruito via prompt ma può sbagliare/ignorare regole. Qui controlliamo
 // le invarianti di sicurezza e correggiamo/avvisiamo se violate.
 
-import type { TrainingPlan, UserProfile, PlanWeek, UserGoal } from "../types";
+import type { TrainingPlan, UserProfile, PlanWeek, PlannedSession, UserGoal } from "../types";
 import { restDaysMinForAge, SAFETY } from "./safetyRules";
 
 export interface PlanValidationIssue {
   weekNumber: number;
-  type: "insufficient_rest_days" | "exceeds_beginner_cap" | "too_many_consecutive_days";
+  type:
+    | "insufficient_rest_days"
+    | "exceeds_beginner_cap"
+    | "too_many_consecutive_days"
+    | "invalid_zone_config"
+    | "volume_spike_johansen"
+    | "strength_excessive_for_master"
+    | "strength_unsafe_elder";
   message: string;
   severity: "warn" | "error";
+  /** Categoria usata per metriche/raggruppamento (coincide con `type`). */
+  category?: string;
+}
+
+/** Shape minima storico per lo spike check Johansen. */
+interface RecentWorkoutForValidator {
+  type?: string;
+  fields?: { tipo?: string; durata_totale?: number | string; durata?: number | string };
+  /** Data ISO (YYYY-MM-DD) opzionale per filtro 14gg. */
+  date?: string;
 }
 
 export interface PlanValidationResult {
@@ -49,11 +66,81 @@ function runningMinutes(week: PlanWeek): number {
     .reduce((a, s) => a + (s.duration_min || 0), 0);
 }
 
-export function validatePlan(plan: TrainingPlan, profile: UserProfile): PlanValidationResult {
+/** Tipi considerati "cardio" — per questi il campo zone deve essere presente in {1..5}. */
+const CARDIO_TYPES = new Set(["corsa", "sport"]);
+/** Tipi NON cardio — per questi il campo zone deve essere undefined. */
+const NON_CARDIO_TYPES = new Set(["forza_gambe", "forza_upper", "mobilita"]);
+
+/**
+ * Mediana (numerica) di un array. Ritorna null se vuoto.
+ * Usata per lo spike check Johansen 20% (fix #2).
+ */
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+/** Estrae la durata in minuti da un workout storico (compat legacy). */
+function durationOfHistory(w: RecentWorkoutForValidator): number | null {
+  const raw = w.fields?.durata_totale ?? w.fields?.durata;
+  if (raw === undefined || raw === null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Filtra lo storico agli ultimi 14 giorni (se `date` disponibile) e allo stesso
+ * `type`. Il filtro per data è best-effort: se un record non ha `date`, viene
+ * incluso (il caller ha già pre-filtrato la finestra).
+ */
+function historyMediansByType(
+  recent: RecentWorkoutForValidator[],
+): Record<string, number | null> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 14);
+  const cutoffISO = cutoff.toISOString().slice(0, 10);
+
+  const byType = new Map<string, number[]>();
+  for (const w of recent) {
+    const t = (w.type || "").toLowerCase();
+    if (!t) continue;
+    if (w.date && w.date < cutoffISO) continue;
+    const d = durationOfHistory(w);
+    if (d === null) continue;
+    if (!byType.has(t)) byType.set(t, []);
+    byType.get(t)!.push(d);
+  }
+
+  const out: Record<string, number | null> = {};
+  for (const [t, arr] of byType.entries()) out[t] = median(arr);
+  return out;
+}
+
+/**
+ * Validator principale del piano.
+ * @param plan piano da validare
+ * @param profile profilo utente
+ * @param recentWorkouts storico sessioni ultimi ~14gg (opzionale, default [])
+ *   per lo spike check Johansen (fix #2). Se vuoto il check viene saltato.
+ *   Firma retrocompatibile: i call-site esistenti continuano a funzionare.
+ */
+export function validatePlan(
+  plan: TrainingPlan,
+  profile: UserProfile,
+  recentWorkouts: RecentWorkoutForValidator[] = [],
+): PlanValidationResult {
   const issues: PlanValidationIssue[] = [];
   const minRest = restDaysMinForAge(profile.age);
   const isSenior = profile.age >= 65;
   const isBeginner = profile.experience === "sedentary";
+
+  // Mediana storica per tipo — riferimento per spike Johansen (fix #2).
+  const mediansByType = historyMediansByType(recentWorkouts);
+  const hasHistory = Object.keys(mediansByType).length > 0;
 
   for (const week of plan.weeks) {
     const rest = restDaysInWeek(week);
@@ -61,6 +148,7 @@ export function validatePlan(plan: TrainingPlan, profile: UserProfile): PlanVali
       issues.push({
         weekNumber: week.weekNumber,
         type: "insufficient_rest_days",
+        category: "insufficient_rest_days",
         message: `Settimana ${week.weekNumber}: ${rest} giorni di riposo (min richiesto ${minRest} per età ${profile.age}).`,
         severity: "error",
       });
@@ -71,6 +159,7 @@ export function validatePlan(plan: TrainingPlan, profile: UserProfile): PlanVali
         issues.push({
           weekNumber: week.weekNumber,
           type: "too_many_consecutive_days",
+          category: "too_many_consecutive_days",
           message: `Settimana ${week.weekNumber}: ${streak} giorni consecutivi di allenamento (max 2 per utenti ≥65).`,
           severity: "error",
         });
@@ -82,15 +171,126 @@ export function validatePlan(plan: TrainingPlan, profile: UserProfile): PlanVali
         issues.push({
           weekNumber: week.weekNumber,
           type: "exceeds_beginner_cap",
+          category: "exceeds_beginner_cap",
           message: `Settimana ${week.weekNumber}: ${runMin} min di corsa (cap neofita ${SAFETY.beginnerRunCapMinutesPerWeek} min/sett).`,
           severity: "warn",
         });
       }
     }
+
+    // Per-session checks: zone config (fix #1), spike Johansen (fix #2), strength age-tiered (fix #3).
+    for (const s of week.sessions) {
+      validateSessionZoneConfig(s, week.weekNumber, issues);
+      if (hasHistory) validateSessionSpike(s, week.weekNumber, mediansByType, issues);
+      validateStrengthAgeTiered(s, week.weekNumber, profile.age, issues);
+    }
   }
 
   const ok = issues.filter(i => i.severity === "error").length === 0;
   return { ok, issues, correctedPlan: plan };
+}
+
+/**
+ * Fix #1 — Zone config check.
+ * Per tipi cardio (corsa/sport) `zone` DEVE essere ∈ {1,2,3,4,5}.
+ * Per tipi non-cardio (forza_gambe/forza_upper/mobilita) `zone` DEVE essere undefined.
+ * Violazioni → issue "invalid_zone_config" (severity warn: non rompe il piano ma segnala drift dell'LLM).
+ */
+function validateSessionZoneConfig(
+  s: PlannedSession,
+  weekNumber: number,
+  issues: PlanValidationIssue[],
+): void {
+  const type = (s.type || "").toLowerCase();
+  if (CARDIO_TYPES.has(type)) {
+    const z = s.zone;
+    const valid = typeof z === "number" && z >= 1 && z <= 5 && Number.isInteger(z);
+    if (!valid) {
+      issues.push({
+        weekNumber,
+        type: "invalid_zone_config",
+        category: "invalid_zone_config",
+        message: `Settimana ${weekNumber} / ${s.day} ${type}: campo zone mancante o fuori range (atteso 1-5, trovato ${JSON.stringify(z)}).`,
+        severity: "warn",
+      });
+    }
+  } else if (NON_CARDIO_TYPES.has(type)) {
+    if (s.zone !== undefined) {
+      issues.push({
+        weekNumber,
+        type: "invalid_zone_config",
+        category: "invalid_zone_config",
+        message: `Settimana ${weekNumber} / ${s.day} ${type}: zone=${s.zone} non applicabile a tipo non-cardio (atteso undefined).`,
+        severity: "warn",
+      });
+    }
+  }
+}
+
+/**
+ * Fix #2 — Spike Johansen 20% sulle sessioni del piano.
+ * Riferimento: safetyRules.SAFETY.sessionSpikeMaxPct (Johansen 2025 BJSM).
+ * Una sessione pianificata con `duration_min > 1.2 × mediana(storico 14gg stesso tipo)`
+ * è oltre la banda di rischio 10-30% → issue "volume_spike_johansen".
+ */
+function validateSessionSpike(
+  s: PlannedSession,
+  weekNumber: number,
+  mediansByType: Record<string, number | null>,
+  issues: PlanValidationIssue[],
+): void {
+  const type = (s.type || "").toLowerCase();
+  const med = mediansByType[type];
+  if (med === null || med === undefined || med <= 0) return;
+  const threshold = med * 1.2;
+  if (s.duration_min > threshold) {
+    const pct = Math.round(((s.duration_min - med) / med) * 100);
+    issues.push({
+      weekNumber,
+      type: "volume_spike_johansen",
+      category: "volume_spike_johansen",
+      message: `Settimana ${weekNumber} / ${s.day} ${type}: ${s.duration_min}min è +${pct}% vs mediana 14gg (${Math.round(med)}min). Spike >20% associato a rischio overuse (Johansen 2025).`,
+      severity: "warn",
+    });
+  }
+}
+
+/**
+ * Fix #3 — Forza age-tiered.
+ * Bibliografia: ACSM Chodzko-Zajko 2009 "Exercise and Physical Activity for
+ * Older Adults" (position stand), Landi et al. 2019 review resistance training
+ * elderly. Rønnestad 2014 è sui benefici della forza per endurance in master,
+ * non sui LIMITI di durata — quindi è stato rimosso dalla citazione.
+ * Check semplice sulla DURATA di sessioni forza per utenti master/elder.
+ * NON codifichiamo regole sui carichi (non sono dato affidabile nel diario).
+ *   - età ≥65: duration_min > 60 → "strength_excessive_for_master" (warn)
+ *   - età ≥80: duration_min > 45 → "strength_unsafe_elder" (error)
+ */
+function validateStrengthAgeTiered(
+  s: PlannedSession,
+  weekNumber: number,
+  age: number,
+  issues: PlanValidationIssue[],
+): void {
+  const type = (s.type || "").toLowerCase();
+  if (type !== "forza_gambe" && type !== "forza_upper") return;
+  if (age >= 80 && s.duration_min > 45) {
+    issues.push({
+      weekNumber,
+      type: "strength_unsafe_elder",
+      category: "strength_unsafe_elder",
+      message: `Settimana ${weekNumber} / ${s.day} ${type}: ${s.duration_min}min > 45min — sconsigliato per età ≥80 (ACSM strength guidelines per elder).`,
+      severity: "error",
+    });
+  } else if (age >= 65 && s.duration_min > 60) {
+    issues.push({
+      weekNumber,
+      type: "strength_excessive_for_master",
+      category: "strength_excessive_for_master",
+      message: `Settimana ${weekNumber} / ${s.day} ${type}: ${s.duration_min}min > 60min — eccessivo per età ≥65 (ACSM Chodzko-Zajko 2009: qualità > durata per master athlete).`,
+      severity: "warn",
+    });
+  }
 }
 
 /**

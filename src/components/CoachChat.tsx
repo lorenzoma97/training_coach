@@ -78,6 +78,13 @@ export default function CoachChat() {
   const send = async (text: string) => {
     if (!text.trim() || loading) return;
     if (!hasApiKey()) { setError("Chiave Gemini non configurata. Vai in Impostazioni."); return; }
+    // Hard limit sul singolo messaggio: 100 KB. Previene paste accidentali
+    // di testi enormi che saturerebbero quota storage e token LLM.
+    const MAX_MESSAGE_CHARS = 100_000;
+    if (text.length > MAX_MESSAGE_CHARS) {
+      setError(`Messaggio troppo lungo (${Math.round(text.length / 1000)}KB). Massimo ${MAX_MESSAGE_CHARS / 1000}KB — accorcia e riprova.`);
+      return;
+    }
     setError("");
     setFallbackNotice(null);
 
@@ -95,13 +102,17 @@ export default function CoachChat() {
 
     const modelMsgId = genId();
     let acc = "";
-    // Setter snapshot-based per persist (anche su abort/unmount)
+    // Setter snapshot-based per persist (anche su abort/unmount).
+    // Errori storage: ignoriamo silenziosamente (la chat è best-effort, non critical).
+    // Quota/size errors: storage.ts già logga warning + tenta pruning automatico.
     persistRef.current = () => {
       if (!acc && !newMessages.length) return;
       const snapshot: Msg[] = acc
         ? [...newMessages, { id: modelMsgId, role: "model" as const, content: acc }]
         : newMessages;
-      void setJSON(HISTORY_KEY, snapshot.slice(-50)).catch(() => { /* ignore */ });
+      void setJSON(HISTORY_KEY, snapshot.slice(-50)).catch(err => {
+        console.warn("[CoachChat] persist failed (chat storage non critico):", err?.name || err?.message);
+      });
     };
 
     try {

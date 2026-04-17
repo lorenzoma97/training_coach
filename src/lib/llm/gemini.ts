@@ -5,6 +5,7 @@ import type {
 } from "./types";
 import { LLMKeyMissingError } from "./types";
 import { withRetry, isTransientError } from "./retry";
+import { parseRobustJSON } from "./_jsonParser";
 import { events } from "../events";
 
 // Default: gemini-3.1-flash-lite-preview (stesso modello usato in nutribot v3).
@@ -16,43 +17,39 @@ const FALLBACK_CHAT_MODEL = "gemini-2.5-flash-lite";
 // Il successore stabile è gemini-embedding-001 (768-3072 dim configurabili; default 3072).
 const DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001";
 
+// Parser JSON robusto: delega all'helper condiviso `./_jsonParser.ts` (stage
+// multipli: direct → markdown fence → balanced brace extraction → truncation
+// detection con LLMTruncatedJSONError). Condiviso con gli adapter OpenAI/Anthropic.
 function parseJSONResponse<T>(text: string): T {
-  // 1) Parse diretto
-  try { return JSON.parse(text) as T; } catch { /* fallthrough */ }
+  return parseRobustJSON<T>(text);
+}
 
-  // 2) Rimuovi wrapper markdown ```json ... ```
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced && fenced[1]) {
-    try { return JSON.parse(fenced[1].trim()) as T; } catch { /* fallthrough */ }
+// ---------- Request-key dedupe (anti double-charge) ----------
+// Map in-memory: se l'utente clicca rapidamente lo stesso generateJSON
+// (stesso prompt + schemaHint + modelId), coalesciamo le chiamate sulla stessa
+// Promise — evita doppio hit di rete/token. TTL breve (solo in-flight, non cache).
+const inflightJSON = new Map<string, Promise<unknown>>();
+
+function jsonRequestKey(modelId: string, params: GenerateJSONParams): string {
+  // Hash leggero non-crittografico: sufficiente come request-key in memoria.
+  const raw = `${modelId}\0${params.systemInstruction}\0${params.userPrompt}\0${params.schemaHint || ""}\0${params.maxTokens || ""}`;
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i++) {
+    h ^= raw.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
+  return `${modelId}:${(h >>> 0).toString(36)}:${raw.length}`;
+}
 
-  // 3) Trova il PRIMO oggetto JSON bilanciando le graffe (non il regex greedy che
-  //    fallisce se il modello ritorna due JSON separati — es. quando l'utente
-  //    inserisce più obiettivi in un solo campo).
-  const start = text.indexOf("{");
-  if (start >= 0) {
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-    for (let i = start; i < text.length; i++) {
-      const c = text[i];
-      if (escape) { escape = false; continue; }
-      if (c === "\\") { escape = true; continue; }
-      if (c === '"') { inString = !inString; continue; }
-      if (inString) continue;
-      if (c === "{") depth++;
-      else if (c === "}") {
-        depth--;
-        if (depth === 0) {
-          const candidate = text.slice(start, i + 1);
-          try { return JSON.parse(candidate) as T; } catch { /* fallthrough */ }
-          break;
-        }
-      }
-    }
-  }
-
-  throw new Error(`Risposta JSON non valida dal coach. Riprova.\n(raw: ${text.slice(0, 200)}...)`);
+async function dedupedJSON<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const existing = inflightJSON.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const p = (async () => {
+    try { return await run(); }
+    finally { inflightJSON.delete(key); }
+  })();
+  inflightJSON.set(key, p as Promise<unknown>);
+  return p;
 }
 
 function createGeminiClient(config: LLMConfig): LLMClient {
@@ -62,6 +59,11 @@ function createGeminiClient(config: LLMConfig): LLMClient {
 
   // Fallback automatico: se il primario fallisce con errore transitorio (503/429)
   // anche dopo retry, prova con FALLBACK_CHAT_MODEL (solo se è un modello diverso).
+  // IMPORTANTE (anti double-charge): il fallback/retry si attiva SOLO se l'errore
+  // è transitorio a livello di RETE (isTransientError). Se la rete è andata a buon
+  // fine ma poi la validazione JSON fallisce (parseJSONResponse) il retry NON
+  // deve scattare — quel caso viene gestito più su, fuori da withFallback(), così
+  // un errore di parsing non consuma altri token.
   async function withFallback<T>(primary: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
     try {
       return await withRetry(primary, { maxRetries: 2 });
@@ -84,19 +86,28 @@ function createGeminiClient(config: LLMConfig): LLMClient {
     modelId,
 
     async generateJSON<T>(params: GenerateJSONParams): Promise<T> {
-      const generationConfig: GenerationConfig = {
-        temperature: 0.6,
-        maxOutputTokens: params.maxTokens ?? 2048,
-        responseMimeType: "application/json",
-      };
-      const fullPrompt = params.schemaHint
-        ? `${params.userPrompt}\n\nRispondi SOLO con JSON valido secondo questo schema:\n${params.schemaHint}`
-        : params.userPrompt;
-      const gen = (id: string) => genAI
-        .getGenerativeModel({ model: id, systemInstruction: params.systemInstruction, generationConfig })
-        .generateContent(fullPrompt);
-      const result = await withFallback(() => gen(modelId), () => gen(FALLBACK_CHAT_MODEL));
-      return parseJSONResponse<T>(result.response.text());
+      // Dedupe: se una richiesta identica è già in-flight (utente clicca 2 volte
+      // rapidamente sullo stesso bottone), ritorna la stessa Promise anziché
+      // duplicare la chiamata di rete (evita double-charge di token).
+      const key = jsonRequestKey(modelId, params);
+      return dedupedJSON<T>(key, async () => {
+        const generationConfig: GenerationConfig = {
+          temperature: 0.6,
+          maxOutputTokens: params.maxTokens ?? 2048,
+          responseMimeType: "application/json",
+        };
+        const fullPrompt = params.schemaHint
+          ? `${params.userPrompt}\n\nRispondi SOLO con JSON valido secondo questo schema:\n${params.schemaHint}`
+          : params.userPrompt;
+        const gen = (id: string) => genAI
+          .getGenerativeModel({ model: id, systemInstruction: params.systemInstruction, generationConfig })
+          .generateContent(fullPrompt);
+        // withFallback gestisce SOLO retry di rete (503/429). parseJSONResponse
+        // è fuori dal withFallback: se il parsing fallisce NON ritentiamo la
+        // chiamata (il modello ha già risposto, ritentare sarebbe token-waste).
+        const result = await withFallback(() => gen(modelId), () => gen(FALLBACK_CHAT_MODEL));
+        return parseJSONResponse<T>(result.response.text());
+      });
     },
 
     async generateText(params: GenerateTextParams): Promise<string> {

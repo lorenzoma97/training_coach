@@ -8,11 +8,35 @@ import { checkLocalRedFlags } from "../lib/coach/safetyRules";
 import { getLastNDays } from "../lib/diaryContext";
 import { computeZones } from "../lib/coach/zones";
 
-// Append atomico al feed (re-legge prima di scrivere per minimizzare race)
-async function appendFeed(item: CoachFeedItem): Promise<void> {
+// Mutex semplice via Promise-chain: chiamate concorrenti si accodano e vengono
+// serializzate. Per chiamate sequenziali (già serializzate dal caller) il
+// comportamento è identico alla versione precedente. La queue è SELF-HEALING:
+// un errore (es. quota) viene loggato ma non blocca gli append successivi —
+// appendQueue viene sempre riportata a uno stato "resolved" dopo ogni giro.
+let appendQueue: Promise<void> = Promise.resolve();
+
+async function doAppend(item: CoachFeedItem): Promise<void> {
   const feed = await getJSON<CoachFeedItem[]>("coach-feed", []);
   feed.unshift(item);
   await setJSON("coach-feed", feed.slice(0, 200));
+}
+
+// Append atomico al feed, serializzato per evitare race read-modify-write
+// quando più eventi concorrenti scrivono su `coach-feed` nello stesso tick.
+async function appendFeed(item: CoachFeedItem): Promise<void> {
+  const prev = appendQueue;
+  // Aspetta che l'operazione precedente sia finita (anche se errorata), poi esegui.
+  const next = prev
+    .catch(() => { /* prev già loggato — qui solo unlocking della catena */ })
+    .then(() => doAppend(item));
+  // Self-heal: la nuova testa della queue non rigetta mai. Logga visibilmente
+  // quando un errore ci sarebbe stato così in prod è diagnosticabile.
+  appendQueue = next.catch(err => {
+    console.warn("[appendFeed] save failed (queue continues):", err?.name || err?.message);
+  });
+  // Il caller riceve comunque l'errore originale (può decidere di loggarlo o
+  // mostrarlo — in ProactiveFeedback è già dentro try/catch).
+  return next;
 }
 
 export default function ProactiveFeedback() {

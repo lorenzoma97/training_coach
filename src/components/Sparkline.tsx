@@ -136,7 +136,7 @@ export default function Sparkline({
 
   if (!path) {
     return (
-      <div style={{ width, height, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", color: "#64748B" }}>
+      <div style={{ width, height, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", color: "#94A3B8" }}>
         Nessun dato nel periodo
       </div>
     );
@@ -198,29 +198,29 @@ export default function Sparkline({
         </div>
       )}
       <div style={{
-        position: "absolute", bottom: 18, left: 6,
-        fontSize: "9px", color: "#64748B", fontFamily: "'JetBrains Mono', monospace",
-        background: "#0B0F1A99", padding: "1px 4px", borderRadius: "3px",
+        position: "absolute", bottom: 20, left: 6,
+        fontSize: "11px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace",
+        background: "#0B0F1ACC", padding: "2px 5px", borderRadius: "4px",
       }}>
         {invertY ? fmt(axisMax) : fmt(axisMin)}{unit || ""}
       </div>
       <div style={{
         position: "absolute", top: 4, left: 6,
-        fontSize: "9px", color: "#64748B", fontFamily: "'JetBrains Mono', monospace",
-        background: "#0B0F1A99", padding: "1px 4px", borderRadius: "3px",
+        fontSize: "11px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace",
+        background: "#0B0F1ACC", padding: "2px 5px", borderRadius: "4px",
       }}>
         {invertY ? fmt(axisMin) : fmt(axisMax)}{unit || ""}
       </div>
-      {/* Asse X: date distribuite uniformemente */}
+      {/* Asse X: date distribuite uniformemente. 11px/#94A3B8 per WCAG AA. */}
       {xLabels.length >= 2 && (
-        <div style={{ position: "relative", height: "14px", marginTop: "2px" }}>
+        <div style={{ position: "relative", height: "16px", marginTop: "4px" }}>
           {xLabels.map((xl, i) => (
             <span key={i} style={{
               position: "absolute",
               left: `${xl.pct}%`,
               transform: i === xLabels.length - 1 ? "translateX(-100%)" : i === 0 ? "none" : "translateX(-50%)",
-              fontSize: "9px",
-              color: "#64748B",
+              fontSize: "11px",
+              color: "#94A3B8",
               fontFamily: "'JetBrains Mono', monospace",
               whiteSpace: "nowrap",
             }}>{xl.label}</span>

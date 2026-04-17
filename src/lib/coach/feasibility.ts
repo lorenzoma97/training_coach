@@ -58,8 +58,23 @@ Se è già realistico e SMART, "realistic" = true e "counterProposal" confermer�
     profile,
     hasRunningGoal: RUNNING_GOAL_RE.test(goalDescription),
     detectedConditions: extractConditionsFromProfile(profile),
+    // Goal description è testo utente: usalo per euristica keyword-match nel prompt builder
+    // (nutrition guardrail condizionale, fix #7).
+    freeTextHints: goalDescription,
   };
-  const systemInstruction = PROMPTS.feasibility({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
+  // Fix #9 — override esplicito del tono "non eccessivamente conservativo" di PROMPTS.feasibility:
+  // chiarire che le regole di safety NON sono negoziabili. Questa nota viene appesa DOPO
+  // il system prompt base + moduli condizionali così ha l'ultima parola nel contesto del modello.
+  const SAFETY_OVERRIDE_NOTE = `
+PRIORITÀ ASSOLUTA — SAFETY VS. TONO:
+Le istruzioni generali chiedono di "non essere eccessivamente conservativo" per rispettare l'intento utente.
+PERÒ: le regole di sicurezza (es. cap carichi iniziali per neofiti, tapering minimo pre-gara, recupero post-infortunio, progressione entro banda Johansen, cardio guidelines condizioni croniche) NON sono negoziabili.
+NON marcare "realistic: true" su un obiettivo che viola le safety rules, anche se l'utente insiste o ribadisce.
+In caso di conflitto: "realistic: false" + counterProposal che preserva lo spirito dell'obiettivo ma rispetta le safety rules (tipicamente allungando la timeline anziché abbassare il target).
+`.trim();
+  const systemInstruction = PROMPTS.feasibility({ age: profile.age })
+    + "\n\n" + buildConditionalPrompt(bCtx)
+    + "\n\n" + SAFETY_OVERRIDE_NOTE;
 
   let raw: unknown;
   try {

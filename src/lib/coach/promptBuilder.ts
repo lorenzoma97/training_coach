@@ -36,6 +36,33 @@ export interface BuildContext {
   zonesTimeInZone?: TimeInZone[];
   zonesPolar?: { lowPct: number; highPct: number; isPolarized: boolean };
   zonesTotalSessions?: number;
+  /**
+   * Testo libero (goals, note workout, query utente) su cui fare keyword-match
+   * per decidere l'inclusione di moduli opzionali (fix #7: nutritionGuardrail).
+   * Se vuoto/undefined, l'inclusione cade su euristiche di fallback (workout con kcal/fc_media).
+   */
+  freeTextHints?: string;
+  /** Se true forza l'inclusione del nutrition guardrail (override del keyword-match). */
+  includeNutritionGuardrail?: boolean;
+  /** Se il workout corrente ha fc_media + kcal tracciati (segnale indiretto di interesse nutrition). */
+  workoutHasEnergyMetrics?: boolean;
+}
+
+/**
+ * Keyword-match euristico per decidere se includere il blocco nutrition guardrail (fix #7).
+ * Match case-insensitive su: nutrition, nutrizione, kcal, calorie, peso, dimagri, ingrassa, dieta, macro, proteine, carb(oidrati), grassi.
+ */
+const NUTRITION_KEYWORDS_RE = /\b(nutrition|nutrizion\w*|kcal|calori\w*|peso|dimagri\w*|ingrass\w*|diet\w*|macro\w*|proteine|carboidrat\w*|grassi|deficit)\b/i;
+
+function shouldIncludeNutritionGuardrail(ctx: BuildContext): boolean {
+  if (ctx.includeNutritionGuardrail) return true;
+  if (ctx.workoutHasEnergyMetrics) return true;
+  const haystack = [
+    ctx.freeTextHints || "",
+    ctx.profile?.notes || "",
+  ].join(" ");
+  if (haystack && NUTRITION_KEYWORDS_RE.test(haystack)) return true;
+  return false;
 }
 
 export function extractConditionsFromProfile(profile: UserProfile | null): string[] {
@@ -55,7 +82,12 @@ export function extractConditionsFromProfile(profile: UserProfile | null): strin
 
 export function buildConditionalPrompt(ctx: BuildContext): string {
   const blocks: string[] = [];
-  blocks.push(nutritionGuardrailBlock()); // sempre
+  // Fix #7 — nutrition guardrail è ora condizionale: incluso solo se il contesto
+  // suggerisce rilevanza (keyword in goals/note, workout con metriche energetiche,
+  // override esplicito). Evita rumore nei prompt che non parlano di nutrizione.
+  if (shouldIncludeNutritionGuardrail(ctx)) {
+    blocks.push(nutritionGuardrailBlock());
+  }
 
   if (ctx.workoutType === "forza_gambe" || ctx.workoutType === "forza_upper") {
     blocks.push(resistancePrescriptionBlock(ctx.profile?.experience || "occasional"));

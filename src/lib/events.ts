@@ -30,6 +30,39 @@ export type EventMap = {
 
 const listeners = new Map<keyof EventMap, Set<Handler<any>>>();
 
+/**
+ * Validatori opzionali per-evento. Ritornano `true` se il payload è valido.
+ * Il fallimento emette solo un warning e NON interrompe il flusso: scopo dev-ergo.
+ */
+type PayloadValidator = (payload: unknown) => boolean;
+
+const PAYLOAD_VALIDATORS: Partial<Record<keyof EventMap, PayloadValidator>> = {
+  "profile:updated": (p) =>
+    !!p && typeof p === "object" && typeof (p as any).at === "string",
+  "plan:updated": (p) =>
+    !!p && typeof p === "object" && typeof (p as any).at === "string",
+  "goals:updated": (p) =>
+    !!p && typeof p === "object" && typeof (p as any).at === "string",
+  "workout:saved": (p) =>
+    !!p && typeof p === "object" && typeof (p as any).date === "string",
+  "daily:saved": (p) =>
+    !!p && typeof p === "object" && typeof (p as any).date === "string",
+  "data:externalChange": (p) =>
+    !!p && typeof p === "object" && typeof (p as any).key === "string",
+  "chat:historyChanged": (p) =>
+    !!p && typeof p === "object" && typeof (p as any).length === "number",
+  "llm:migrated": (p) =>
+    !!p && typeof p === "object" &&
+    typeof (p as any).fromModelId === "string" &&
+    typeof (p as any).toModelId === "string",
+  "llm:fallbackActivated": (p) =>
+    !!p && typeof p === "object" &&
+    typeof (p as any).primary === "string" &&
+    typeof (p as any).fallback === "string",
+  "nav:goto": (p) =>
+    !!p && typeof p === "object" && typeof (p as any).tab === "string",
+};
+
 export const events = {
   on<K extends keyof EventMap>(ev: K, fn: Handler<EventMap[K]>): () => void {
     if (!listeners.has(ev)) listeners.set(ev, new Set());
@@ -37,8 +70,97 @@ export const events = {
     return () => listeners.get(ev)!.delete(fn);
   },
   emit<K extends keyof EventMap>(ev: K, payload: EventMap[K]): void {
+    const validator = PAYLOAD_VALIDATORS[ev];
+    if (validator && !validator(payload)) {
+      console.warn(
+        `[events.emit] Payload non valido per "${String(ev)}". Campi minimi mancanti/malformati.`,
+        payload,
+      );
+      // NON interrompere: è solo dev-ergo, gli handler ricevono comunque il payload.
+    }
     listeners.get(ev)?.forEach(fn => {
-      try { fn(payload); } catch (e) { console.error(`[event:${ev}]`, e); }
+      try { fn(payload); } catch (e) { console.error(`[event:${String(ev)}]`, e); }
     });
   }
 };
+
+// =========================================================================
+// Cross-tab polling fallback per `data:externalChange`.
+// Alcuni browser / contesti (iframe restrittivi, Safari privato) non emettono
+// storage events in modo affidabile: come fallback, ogni 15s confrontiamo un
+// checksum leggero di chiavi critiche e, se cambiato, emettiamo l'evento.
+// =========================================================================
+
+const POLLED_CRITICAL_KEYS = [
+  "user-profile",
+  "training-plan",
+  "user-goals",
+  "coach-feed",
+  "coach-chat-history",
+] as const;
+
+const POLL_INTERVAL_MS = 15_000;
+
+/** Checksum leggero: length + somma codici char modulo. Evita md5/sha. */
+function lightChecksum(s: string | null): string {
+  if (s == null) return "null";
+  let sum = 0;
+  for (let i = 0; i < s.length; i++) sum = (sum + s.charCodeAt(i)) % 0xffffffff;
+  return `${s.length}:${sum.toString(16)}`;
+}
+
+const lastSeenChecksums = new Map<string, string>();
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+function snapshotInitialChecksums(): void {
+  for (const k of POLLED_CRITICAL_KEYS) {
+    try {
+      lastSeenChecksums.set(k, lightChecksum(localStorage.getItem(k)));
+    } catch { /* ignore */ }
+  }
+}
+
+function pollOnce(): void {
+  for (const k of POLLED_CRITICAL_KEYS) {
+    let current: string;
+    try {
+      current = lightChecksum(localStorage.getItem(k));
+    } catch {
+      continue;
+    }
+    const prev = lastSeenChecksums.get(k);
+    if (prev !== undefined && prev !== current) {
+      events.emit("data:externalChange", { key: k });
+    }
+    lastSeenChecksums.set(k, current);
+  }
+}
+
+/**
+ * Avvia il polling fallback per rilevare modifiche cross-tab su chiavi critiche.
+ * Idempotente: chiamate successive sono no-op. Si auto-pulisce su `beforeunload`.
+ * Da chiamare all'avvio dell'app (es. in main.tsx). Il costo CPU è trascurabile.
+ */
+export function startCrossTabPollingFallback(): void {
+  if (typeof window === "undefined") return;
+  if (pollTimer !== null) return;
+  snapshotInitialChecksums();
+  pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
+  const cleanup = () => stopCrossTabPollingFallback();
+  try {
+    window.addEventListener("beforeunload", cleanup, { once: true });
+  } catch { /* ignore */ }
+}
+
+/** Arresta il polling fallback. Idempotente. */
+export function stopCrossTabPollingFallback(): void {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+// Auto-avvio: il costo è nullo e copre i consumer che non chiamano esplicitamente.
+if (typeof window !== "undefined") {
+  try { startCrossTabPollingFallback(); } catch { /* ignore */ }
+}

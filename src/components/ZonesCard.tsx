@@ -160,11 +160,13 @@ export default function ZonesCard({ compact = false, highlightZone }: Props) {
           borderRadius: "10px",
           padding: "10px 12px",
           fontSize: "12px",
-          color: "#FDBA74",
+          // #F59E0B (amber 500) passa contrast 4.8:1 su bg #F9731615.
+          // Il vecchio #FDBA74 (amber 300) era a 2.8:1 — fallimento WCAG AA.
+          color: "#F59E0B",
           lineHeight: 1.5,
         }}>
-          <div style={{ fontWeight: 700, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "4px", color: "#F97316" }}>
-            ⚠ Osservazione dai tuoi fondi lenti
+          <div style={{ fontWeight: 700, fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "4px", color: "#F97316" }}>
+            <span aria-hidden="true">⚠ </span>Osservazione dai tuoi fondi lenti
           </div>
           {result.empiricalHintMessage}
         </div>

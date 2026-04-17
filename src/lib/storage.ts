@@ -12,6 +12,24 @@ export class StorageQuotaError extends Error {
   }
 }
 
+/** Errore lanciato quando un singolo payload supera il limite hard (1MB). */
+export class StorageValueTooLargeError extends Error {
+  sizeBytes: number;
+  key: string;
+  constructor(key: string, sizeBytes: number) {
+    super(
+      `Payload troppo grande per la chiave "${key}" (~${Math.round(sizeBytes / 1024)} KB, limite 1MB). ` +
+      `Riduci il contenuto o suddividi in più chiavi.`,
+    );
+    this.name = "StorageValueTooLargeError";
+    this.sizeBytes = sizeBytes;
+    this.key = key;
+  }
+}
+
+/** Limite hard per singolo valore serializzato (1MB in bytes UTF-16 approssimati). */
+export const MAX_VALUE_BYTES = 1024 * 1024;
+
 function isQuotaError(e: unknown): boolean {
   if (!e || typeof e !== "object") return false;
   const err = e as { name?: string; code?: number };
@@ -71,8 +89,92 @@ export async function getJSON<T>(key: string, fallback: T): Promise<T> {
   try { return JSON.parse(r.value) as T; } catch { return fallback; }
 }
 
+/**
+ * Serializza e salva un valore. In caso di quota exceeded, prova pruning automatico
+ * su chiavi note (coach-chat-history, coach-feed, plan-history) e ritenta 1 volta.
+ * In caso di payload > 1MB, rifiuta subito con StorageValueTooLargeError.
+ * Può lanciare: StorageValueTooLargeError, StorageQuotaError, o Error generico.
+ */
 export async function setJSON<T>(key: string, value: T): Promise<void> {
-  await storage.set(key, JSON.stringify(value));
+  const serialized = JSON.stringify(value);
+  // Stima bytes UTF-16 (2 bytes/char)
+  const sizeBytes = serialized.length * 2;
+
+  if (sizeBytes > MAX_VALUE_BYTES) {
+    console.warn(
+      `[storage.setJSON] Payload rifiutato per chiave "${key}": ` +
+      `~${Math.round(sizeBytes / 1024)} KB supera il limite hard di ${Math.round(MAX_VALUE_BYTES / 1024)} KB.`,
+    );
+    throw new StorageValueTooLargeError(key, sizeBytes);
+  }
+
+  try {
+    await storage.set(key, serialized);
+  } catch (e) {
+    const isQuota = e instanceof StorageQuotaError || isQuotaError(e);
+    if (!isQuota) {
+      throw e;
+    }
+
+    console.warn(
+      `[storage.setJSON] Quota exceeded scrivendo "${key}". Tento pruning automatico...`,
+    );
+    try {
+      const freed = await pruneOldData();
+      console.info(`[storage.setJSON] Pruning liberato ~${freed} bytes. Ritento la scrittura.`);
+    } catch (pruneErr) {
+      console.error("[storage.setJSON] Pruning fallito:", pruneErr);
+    }
+
+    // Ritenta una sola volta
+    try {
+      await storage.set(key, serialized);
+    } catch (retryErr) {
+      console.error(
+        `[storage.setJSON] Scrittura "${key}" fallita anche dopo pruning. ` +
+        `Size payload: ~${Math.round(sizeBytes / 1024)} KB. ` +
+        `Usage stimato: ~${Math.round(approximateStorageSize() / 1024)} KB.`,
+        retryErr,
+      );
+      throw retryErr;
+    }
+  }
+}
+
+/**
+ * Effettua pruning automatico su chiavi note per liberare spazio.
+ * - coach-chat-history: tieni ultimi 50 messaggi
+ * - coach-feed: tieni primi 200 elementi
+ * - plan-history: tieni primi 20 elementi
+ * Ritorna la stima dei bytes liberati.
+ */
+export async function pruneOldData(): Promise<number> {
+  let freedChars = 0;
+
+  async function prune(key: string, mode: "last" | "first", n: number): Promise<void> {
+    const r = await storage.get(key);
+    if (!r) return;
+    let arr: unknown;
+    try { arr = JSON.parse(r.value); } catch { return; }
+    if (!Array.isArray(arr)) return;
+    if (arr.length <= n) return;
+
+    const beforeLen = r.value.length;
+    const trimmed = mode === "last" ? arr.slice(-n) : arr.slice(0, n);
+    const newSerialized = JSON.stringify(trimmed);
+    try {
+      await storage.set(key, newSerialized);
+      freedChars += beforeLen - newSerialized.length;
+    } catch (e) {
+      console.warn(`[storage.pruneOldData] Fallita riscrittura "${key}" post-prune:`, e);
+    }
+  }
+
+  await prune("coach-chat-history", "last", 50);
+  await prune("coach-feed", "first", 200);
+  await prune("plan-history", "first", 20);
+
+  return freedChars * 2; // bytes UTF-16 approssimati
 }
 
 /** Dimensione approssimativa usata da localStorage in bytes. Utile per warning preventivi. */

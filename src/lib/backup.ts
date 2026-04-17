@@ -43,6 +43,14 @@ const SIMPLE_KEYS = [
   "coach-feed-last-seen",
 ] as const;
 
+/** Chiave sentinel per rilevare restore interrotti a metà. */
+export const RESTORE_IN_PROGRESS_KEY = "restore-in-progress";
+
+export interface RestoreInProgressInfo {
+  startedAt: string; // ISO
+  keysToWipe: string[];
+}
+
 export async function buildBackup(): Promise<BackupPayload> {
   const data: BackupPayload["data"] = { days: {} };
 
@@ -110,47 +118,143 @@ export interface RestoreReport {
   skippedKeys: string[];
 }
 
+/**
+ * Ripristina un backup in modo atomico rispetto alla rilevazione di interruzioni.
+ *
+ * Protocollo anti-data-loss:
+ * 1. PRIMA del wipe, scrive `restore-in-progress` con { startedAt, keysToWipe }.
+ * 2. Esegue wipe + restore.
+ * 3. SE tutto va a buon fine, cancella `restore-in-progress`.
+ * 4. SE una scrittura fallisce (quota, payload-too-large, ecc.), la sentinel resta
+ *    in localStorage e verrà rilevata al prossimo avvio via `checkPendingRestore`.
+ *
+ * @throws Qualsiasi errore di storage (quota, value-too-large). In tal caso la
+ * sentinel `restore-in-progress` NON viene rimossa.
+ */
 export async function restoreBackup(payload: BackupPayload, opts: RestoreOptions = {}): Promise<RestoreReport> {
   const { wipeBefore = true, overwrite = true } = opts;
   const report: RestoreReport = { restoredDays: 0, restoredKeys: [], skippedKeys: [] };
 
-  if (wipeBefore) {
-    // Pulisci giorni, index, namespace app (NON tocca chiave API né embeddings)
-    const dayKeys = await storage.keys("day:");
-    for (const k of dayKeys) await storage.delete(k);
-    for (const k of SIMPLE_KEYS) await storage.delete(k);
-    await storage.delete("diary-index");
+  // --- 1) Scrivi sentinel PRIMA di qualunque modifica distruttiva ---
+  const existingDayKeys = await storage.keys("day:");
+  const keysToWipe: string[] = wipeBefore
+    ? [...existingDayKeys, ...SIMPLE_KEYS, "diary-index"]
+    : [];
+  const sentinel: RestoreInProgressInfo = {
+    startedAt: new Date().toISOString(),
+    keysToWipe,
+  };
+  try {
+    await storage.set(RESTORE_IN_PROGRESS_KEY, JSON.stringify(sentinel));
+  } catch (e) {
+    // Se non possiamo nemmeno scrivere la sentinel, meglio NON iniziare il wipe.
+    console.error("[restoreBackup] Impossibile scrivere sentinel restore-in-progress:", e);
+    throw e;
   }
 
-  const d = payload.data;
-  for (const k of SIMPLE_KEYS) {
-    const val = (d as any)[k];
-    if (val === undefined || val === null) continue;
-    if (!overwrite && (await getJSON<unknown>(k, undefined as unknown)) !== undefined) {
-      report.skippedKeys.push(k);
-      continue;
+  try {
+    // --- 2) Wipe ---
+    if (wipeBefore) {
+      for (const k of existingDayKeys) await storage.delete(k);
+      for (const k of SIMPLE_KEYS) await storage.delete(k);
+      await storage.delete("diary-index");
     }
-    await setJSON(k, val);
-    report.restoredKeys.push(k);
-  }
 
-  if (Array.isArray(d["diary-index"])) {
-    await setJSON("diary-index", d["diary-index"]);
-    report.restoredKeys.push("diary-index");
-  }
-
-  for (const [date, dayData] of Object.entries(d.days)) {
-    // sanity check: date come YYYY-MM-DD
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-    if (!isValidDayShape(dayData)) {
-      report.skippedKeys.push(`day:${date} (shape non valida)`);
-      continue;
+    // --- 3) Restore ---
+    const d = payload.data;
+    for (const k of SIMPLE_KEYS) {
+      const val = (d as any)[k];
+      if (val === undefined || val === null) continue;
+      if (!overwrite && (await getJSON<unknown>(k, undefined as unknown)) !== undefined) {
+        report.skippedKeys.push(k);
+        continue;
+      }
+      try {
+        await setJSON(k, val);
+        report.restoredKeys.push(k);
+      } catch (e) {
+        console.error(`[restoreBackup] setJSON fallito per chiave "${k}":`, e);
+        throw e;
+      }
     }
-    await setJSON(`day:${date}`, dayData);
-    report.restoredDays++;
-  }
 
-  return report;
+    if (Array.isArray(d["diary-index"])) {
+      try {
+        await setJSON("diary-index", d["diary-index"]);
+        report.restoredKeys.push("diary-index");
+      } catch (e) {
+        console.error(`[restoreBackup] setJSON fallito per "diary-index":`, e);
+        throw e;
+      }
+    }
+
+    for (const [date, dayData] of Object.entries(d.days)) {
+      // sanity check: date come YYYY-MM-DD
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      if (!isValidDayShape(dayData)) {
+        report.skippedKeys.push(`day:${date} (shape non valida)`);
+        continue;
+      }
+      try {
+        await setJSON(`day:${date}`, dayData);
+        report.restoredDays++;
+      } catch (e) {
+        console.error(`[restoreBackup] setJSON fallito per "day:${date}":`, e);
+        throw e;
+      }
+    }
+
+    // --- 4) Tutto ok: rimuovi sentinel ---
+    await storage.delete(RESTORE_IN_PROGRESS_KEY);
+    return report;
+  } catch (e) {
+    // Lascia DELIBERATAMENTE la sentinel in localStorage come segnale di corruzione.
+    console.error(
+      "[restoreBackup] Restore interrotto a metà. Sentinel restore-in-progress lasciata in localStorage " +
+      "così il prossimo avvio potrà avvisare l'utente. Errore originale:",
+      e,
+    );
+    throw e;
+  }
+}
+
+/**
+ * Da chiamare all'avvio dell'app per rilevare un restore interrotto.
+ *
+ * ATTENZIONE (per il consumer, tipicamente App.tsx):
+ * - Se ritorna `{ status: "interrupted", info }`, lo stato di localStorage potrebbe
+ *   essere parzialmente corrotto (wipe avvenuto ma restore non concluso).
+ * - Il consumer DOVREBBE mostrare un avviso all'utente e proporre di ri-importare
+ *   il backup originale oppure di cancellare la sentinel (`clearPendingRestoreFlag`)
+ *   se conferma di aver gestito manualmente la situazione.
+ * - Questa funzione NON modifica lo stato: è di sola lettura.
+ *
+ * @returns `{ status: "clean" }` se nessun restore è pendente, altrimenti
+ * `{ status: "interrupted", info }` con i dati della sentinel.
+ */
+export async function checkPendingRestore(): Promise<
+  { status: "clean" } | { status: "interrupted"; info: RestoreInProgressInfo }
+> {
+  const r = await storage.get(RESTORE_IN_PROGRESS_KEY);
+  if (!r) return { status: "clean" };
+  try {
+    const info = JSON.parse(r.value) as RestoreInProgressInfo;
+    if (!info || typeof info.startedAt !== "string") {
+      // Sentinel malformata: trattala come interrotto ma con info vuote
+      return { status: "interrupted", info: { startedAt: "", keysToWipe: [] } };
+    }
+    return { status: "interrupted", info };
+  } catch {
+    return { status: "interrupted", info: { startedAt: "", keysToWipe: [] } };
+  }
+}
+
+/**
+ * Cancella la sentinel `restore-in-progress` senza modificare altro.
+ * Da chiamare SOLO se l'utente ha confermato di aver risolto manualmente.
+ */
+export async function clearPendingRestoreFlag(): Promise<void> {
+  await storage.delete(RESTORE_IN_PROGRESS_KEY);
 }
 
 /** Trigger download file JSON nel browser. */

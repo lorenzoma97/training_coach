@@ -97,14 +97,19 @@ async function loadDay(date: string): Promise<any> {
   return r ? JSON.parse(r.value) : null;
 }
 async function saveDay(date: string, data: any) {
-  await storage.set(`day:${date}`, JSON.stringify(data));
+  // Usa setJSON (non storage.set raw) per ereditare il quota/size handling:
+  // - reject preventivo se payload > 1MB (StorageValueTooLargeError)
+  // - retry automatico con pruneOldData() su QuotaExceededError
+  // Errori propagati ai chiamanti (handleSaveWorkout/handleSaveDaily) che
+  // mostrano un toast invece di fallire silenziosamente.
+  await setJSON(`day:${date}`, data);
 }
 async function loadIndex(): Promise<string[]> {
   const r = await storage.get("diary-index");
   return r ? JSON.parse(r.value) : [];
 }
 async function saveIndex(dates: string[]) {
-  await storage.set("diary-index", JSON.stringify(dates));
+  await setJSON("diary-index", dates);
 }
 
 function FieldRow({ field, value, onChange }: { field: Field; value: any; onChange: (v: any) => void }) {
@@ -164,6 +169,10 @@ export default function DiaryApp() {
   const [addNotes, setAddNotes] = useState("");
   // Se editingWorkoutId è settato, handleSaveWorkout sostituirà invece di creare.
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
+  // Flag edit per il check giornaliero: cambia header del form + forza reset
+  // dei campi quando si torna a screen="home" (così un "nuovo daily" non
+  // eredita valori dalla sessione precedente di editing).
+  const [editingDaily, setEditingDaily] = useState<boolean>(false);
 
   // Zone di dolore da tracciare, lette dal profilo utente. Se vuote → pain picker nascosto.
   const [painAreas, setPainAreas] = useState<string[]>([]);
@@ -398,6 +407,38 @@ export default function DiaryApp() {
     setScreen("add");
   };
 
+  // Helper: reset dailyFields a valori vuoti. Usato dopo save o quando si apre
+  // il form per un NUOVO check (così non si ereditano valori da un precedente edit).
+  const resetDailyFields = () => {
+    setDailyFields({
+      weight: "", sleep: "", sleepQ: "", fatigue: null, meds: "",
+      bodyFat: "", muscleMass: "", bodyWater: "",
+      morningHR: "", morningFreshness: null, cyclePhase: "",
+    });
+  };
+
+  // Apre il form check giornaliero in modalità modifica: pre-compila i campi
+  // dal daily esistente di una specifica data. Garantisce che il save
+  // sovrascriva il record esistente (stessa data, stessa chiave day:YYYY-MM-DD).
+  const openEditDaily = (date: string, daily: any) => {
+    setDailyDate(date);
+    setDailyFields({
+      weight: daily?.weight ?? "",
+      sleep: daily?.sleep ?? "",
+      sleepQ: daily?.sleepQ ?? "",
+      fatigue: (typeof daily?.fatigue === "number" ? daily.fatigue : null) as number | null,
+      meds: daily?.meds ?? "",
+      bodyFat: daily?.bodyFat ?? "",
+      muscleMass: daily?.muscleMass ?? "",
+      bodyWater: daily?.bodyWater ?? "",
+      morningHR: daily?.morningHR ?? "",
+      morningFreshness: (typeof daily?.morningFreshness === "number" ? daily.morningFreshness : null) as number | null,
+      cyclePhase: (daily?.cyclePhase ?? "") as ("" | "mestruazione" | "follicolare" | "ovulatoria" | "luteinica" | "amenorrea" | "menopausa" | "contraccettivo"),
+    });
+    setEditingDaily(true);
+    setScreen("daily");
+  };
+
   const handleSaveDaily = async () => {
     if (saving) return;
     setSaving(true);
@@ -414,8 +455,12 @@ export default function DiaryApp() {
       let idx = await loadIndex();
       if (!idx.includes(date)) { idx.push(date); await saveIndex(idx); }
       events.emit("daily:saved", { date, daily: dayData.daily });
-      flash("Check giornaliero salvato ✓");
+      flash(editingDaily ? "Check giornaliero aggiornato ✓" : "Check giornaliero salvato ✓");
       await refresh();
+      // Reset dei campi + flag di edit così un nuovo daily riparte pulito
+      // (evita che un'apertura successiva veda valori stale dal precedente edit).
+      resetDailyFields();
+      setEditingDaily(false);
       setScreen("home");
     } catch (e) {
       console.error("[handleSaveDaily]", e);
@@ -426,6 +471,9 @@ export default function DiaryApp() {
   };
 
   const handleDeleteWorkout = async (date: string, wid: string) => {
+    // Conferma esplicita: eliminazione è irreversibile (nessun undo/trash).
+    // I dati del workout non sono recuperabili senza un backup preesistente.
+    if (!confirm("Eliminare questo allenamento? L'operazione è irreversibile e non include un ripristino.")) return;
     try {
       let dayData = await loadDay(date);
       if (!dayData) return;
@@ -530,7 +578,7 @@ export default function DiaryApp() {
             <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>
               Diario Allenamento
             </div>
-            <h1 style={{ fontSize: "24px", fontWeight: 900, margin: "6px 0 0", letterSpacing: "-0.04em", background: "linear-gradient(135deg, #FFF 0%, #94A3B8 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            <h1 style={{ fontSize: "24px", fontWeight: 900, margin: "6px 0 0", letterSpacing: "-0.04em", background: "linear-gradient(135deg, #E2E8F0 0%, #94A3B8 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
               Oggi
             </h1>
             {todayData && (
@@ -554,7 +602,7 @@ export default function DiaryApp() {
               flex: 1, padding: "16px", background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
               border: "none", borderRadius: "14px", color: "#FFF", fontSize: "15px", fontWeight: 700, cursor: "pointer",
             }}>🏋️ Registra allenamento</button>
-            <button onClick={() => { setDailyDate(today()); setDailyFields({ weight: "", sleep: "", sleepQ: "", fatigue: null, meds: "", bodyFat: "", muscleMass: "", bodyWater: "", morningHR: "", morningFreshness: null, cyclePhase: "" }); setScreen("daily"); }} style={{
+            <button onClick={() => { setDailyDate(today()); resetDailyFields(); setEditingDaily(false); setScreen("daily"); }} style={{
               flex: 1, padding: "16px", background: "#16213E",
               border: "1px solid rgba(255,255,255,0.08)", borderRadius: "14px", color: "#E2E8F0",
               fontSize: "15px", fontWeight: 700, cursor: "pointer",
@@ -771,8 +819,17 @@ export default function DiaryApp() {
       {screen === "daily" && (
         <div style={{ maxWidth: "560px", margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", padding: "20px 24px", gap: "12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-            <button onClick={() => setScreen("home")} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "15px", cursor: "pointer", padding: "8px" }}>← Indietro</button>
-            <div style={{ flex: 1, fontWeight: 700, fontSize: "17px" }}>📋 Check Giornaliero</div>
+            <button onClick={() => { setEditingDaily(false); resetDailyFields(); setScreen("home"); }} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "15px", cursor: "pointer", padding: "8px" }}>← Indietro</button>
+            <div style={{ flex: 1, fontWeight: 700, fontSize: "17px" }}>
+              📋 Check Giornaliero
+              {editingDaily && (
+                <span style={{
+                  marginLeft: "10px", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em",
+                  color: "#F59E0B", background: "#F59E0B20",
+                  padding: "3px 8px", borderRadius: "999px", verticalAlign: "middle",
+                }}>MODIFICA</span>
+              )}
+            </div>
           </div>
           <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
             <div>
@@ -927,7 +984,13 @@ export default function DiaryApp() {
           <div style={{ padding: "20px 24px" }}>
             {detailData.daily && (
               <div style={{ background: "#16213E", borderRadius: "14px", padding: "18px 20px", marginBottom: "16px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <div style={{ fontSize: "11px", fontWeight: 700, color: "#0891B2", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "12px" }}>Check Giornaliero</div>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#0891B2", letterSpacing: "0.1em", textTransform: "uppercase", flex: 1 }}>Check Giornaliero</div>
+                  <button onClick={() => openEditDaily(detailDate, detailData.daily)} style={{
+                    background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+                    color: "#CBD5E1", fontSize: "12px", padding: "6px 12px", cursor: "pointer", fontWeight: 600, minHeight: "32px",
+                  }}>Modifica</button>
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "14px" }}>
                   {detailData.daily.weight && <div><span style={{ color: "#64748B" }}>Peso </span><span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{detailData.daily.weight} kg</span></div>}
                   {detailData.daily.sleep && <div><span style={{ color: "#64748B" }}>Sonno </span><span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{detailData.daily.sleep}h</span></div>}
@@ -956,13 +1019,15 @@ export default function DiaryApp() {
                       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
                         <span style={{ fontSize: "20px" }}>{wt?.icon}</span>
                         <span style={{ fontWeight: 700, fontSize: "15px", flex: 1 }}>{wt?.label}{w.fields?.tipo ? ` — ${w.fields.tipo}` : ""}</span>
-                        <button onClick={() => openEditWorkout(detailDate, w)} style={{
+                        <button onClick={() => openEditWorkout(detailDate, w)} aria-label="Modifica allenamento" style={{
                           background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
-                          color: "#CBD5E1", fontSize: "12px", padding: "5px 10px", cursor: "pointer", fontWeight: 600,
+                          color: "#CBD5E1", fontSize: "13px", padding: "10px 14px", cursor: "pointer", fontWeight: 600,
+                          minHeight: "44px", minWidth: "44px",
                         }}>Modifica</button>
-                        <button onClick={() => handleDeleteWorkout(detailDate, w.id)} style={{
+                        <button onClick={() => handleDeleteWorkout(detailDate, w.id)} aria-label="Elimina allenamento" style={{
                           background: "#7F1D1D30", border: "1px solid #7F1D1D50", borderRadius: "8px",
-                          color: "#EF4444", fontSize: "12px", padding: "5px 10px", cursor: "pointer", fontWeight: 600,
+                          color: "#EF4444", fontSize: "13px", padding: "10px 14px", cursor: "pointer", fontWeight: 600,
+                          minHeight: "44px", minWidth: "44px",
                         }}>Elimina</button>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "13px" }}>

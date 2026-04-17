@@ -50,6 +50,10 @@ export default function TrainingPlanView() {
     successTimerRef.current = setTimeout(() => setSuccessMsg(null), 12000);
   };
 
+  // isMounted guard: protegge da setState dopo unmount (tab switch veloce,
+  // navigate, o plan generation lunga che completa dopo che l'utente ha lasciato).
+  const mountedRef = useRef(true);
+
   const load = async () => {
     const [p, profile, goals, days, hist, daysForZones] = await Promise.all([
       getJSON<TrainingPlan | null>("training-plan", null),
@@ -61,6 +65,7 @@ export default function TrainingPlanView() {
       // Indipendente dai 14gg usati per il matching piano↔diario.
       getLastNDays(60).catch(() => [] as Array<{ date: string; daily: any; workouts: any[] }>),
     ]);
+    if (!mountedRef.current) return;
     setPlan(p);
     setCurrentProfile(profile);
     setCurrentGoals(goals);
@@ -73,12 +78,16 @@ export default function TrainingPlanView() {
   };
 
   useEffect(() => {
+    mountedRef.current = true;
     load();
     const offPlan = events.on("plan:updated", load);
     const offProfile = events.on("profile:updated", load);
     const offGoals = events.on("goals:updated", load);
     const offWorkout = events.on("workout:saved", load);
-    return () => { offPlan(); offProfile(); offGoals(); offWorkout(); };
+    return () => {
+      mountedRef.current = false;
+      offPlan(); offProfile(); offGoals(); offWorkout();
+    };
   }, []);
 
   // State hash check: se profilo O goal sono cambiati rispetto al piano, segnala obsolescenza.
@@ -311,11 +320,16 @@ export default function TrainingPlanView() {
       // Archivia il piano corrente nello storico prima di sovrascrivere (se esiste)
       await savePlanWithHistory(next);
       events.emit("plan:updated", { at: new Date().toISOString() });
+      // mountedRef guard: generazione piano può durare 20-30s. Se l'utente
+      // ha cambiato tab nel frattempo il componente è smontato — non fare setState.
+      if (!mountedRef.current) return;
       setPlan(next);
       showSuccess(title, next.rationale);
     } catch (e) {
+      if (!mountedRef.current) return;
       setRegenError(translateGeminiError(e));
     }
+    if (!mountedRef.current) return;
     setRegenerating(false);
   };
 
@@ -332,13 +346,17 @@ export default function TrainingPlanView() {
       const next = await adaptPlan(profile, goals, plan, ctx.recentDaysText, req);
       await savePlanWithHistory(next);
       events.emit("plan:updated", { at: new Date().toISOString() });
+      // Stesso guard di handleRegenerate: adapt può durare 15-30s.
+      if (!mountedRef.current) return;
       setPlan(next);
       setAdaptRequest("");
       setAdaptOpen(false);
       showSuccess(`✓ Piano adattato — "${req}"`, next.rationale);
     } catch (e) {
+      if (!mountedRef.current) return;
       setAdaptError(translateGeminiError(e));
     }
+    if (!mountedRef.current) return;
     setAdapting(false);
   };
 
@@ -710,21 +728,22 @@ export default function TrainingPlanView() {
                           title="Range bpm calcolato dalle tue zone FC correnti"
                           style={{
                             fontFamily: "'JetBrains Mono', monospace",
-                            fontSize: "10px", fontWeight: 700,
+                            fontSize: "11px", fontWeight: 700,
                             color: c.text, background: c.bg,
                             border: `1px solid ${c.border}`,
                             padding: "2px 7px", borderRadius: "999px",
                             letterSpacing: "0.04em",
+                            whiteSpace: "nowrap",
                           }}
                         >
                           Z{chip.idx} · {chip.low}-{chip.high} bpm
                         </span>
                       );
                     })()}
-                    {isPerfect && <span style={{ color: "#22C55E", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>✓ FATTA</span>}
-                    {isPartial && <span style={{ color: "#F59E0B", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>⚠ VARIAZIONE</span>}
-                    {!isCompleted && isToday && <span style={{ color: "#E8553A", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
-                    {!isCompleted && !isToday && isPast && <span style={{ color: "#64748B", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>SALTATA</span>}
+                    {isPerfect && <span aria-label="Sessione completata" style={{ color: "#22C55E", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>✓ FATTA</span>}
+                    {isPartial && <span aria-label="Sessione con variazione" style={{ color: "#F59E0B", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>⚠ VARIAZIONE</span>}
+                    {!isCompleted && isToday && <span style={{ color: "#E8553A", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
+                    {!isCompleted && !isToday && isPast && <span style={{ color: "#94A3B8", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>SALTATA</span>}
                   </div>
                   {isPartial && completion && (
                     <div style={{ color: "#F59E0B", fontSize: "11px", marginBottom: "6px", fontWeight: 600 }}>

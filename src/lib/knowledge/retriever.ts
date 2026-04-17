@@ -46,14 +46,36 @@ export async function retrieveRelevantChunks(params: {
     if (!cache) return [];
     const qVec = await embedQuery(query);
     const scored: RetrievalResult[] = [];
+    // Teniamo traccia di TUTTI i punteggi per stale-cache detection (fix #8),
+    // prima del filtro minScore — così possiamo capire se la cache è degradata
+    // (es. provider cambiato, embeddings vecchi) anche quando tutto viene filtrato via.
+    const allScores: number[] = [];
     for (const chunk of CHUNKS) {
       const v = cache.vectors[chunk.id];
       if (!v) continue;
       const s = cosine(qVec, v);
+      allScores.push(s);
       if (s >= minScore) scored.push({ chunk, score: s });
     }
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, topK);
+    const results = scored.slice(0, topK);
+
+    // Fix #8 — stale cache detection. Se i top-N candidati (o, se insufficienti,
+    // tutti gli scores calcolati) hanno similarity < 0.2 (soglia molto bassa),
+    // probabilmente la cache embeddings è stale / incompatibile. Graceful
+    // degradation: loggiamo un warning e ritorniamo comunque i risultati filtrati.
+    const STALE_THRESHOLD = 0.2;
+    const topForCheck = allScores
+      .slice()
+      .sort((a, b) => b - a)
+      .slice(0, Math.max(topK, 1));
+    const hasEnoughSamples = topForCheck.length > 0;
+    const allBelowThreshold = hasEnoughSamples && topForCheck.every(s => s < STALE_THRESHOLD);
+    if (allBelowThreshold) {
+      console.warn("[RAG] Embeddings may be stale — all similarities near zero. Try regenerating knowledge base.");
+    }
+
+    return results;
   } catch (e) {
     console.error("[retriever] failed:", e);
     return [];

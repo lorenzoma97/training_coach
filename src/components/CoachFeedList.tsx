@@ -43,11 +43,11 @@ export default function CoachFeedList() {
 
   if (items.length === 0) {
     return (
-      <div style={{ textAlign: "center", color: "#94A3B8", padding: "40px 20px", fontSize: "13px" }}>
-        <div style={{ fontSize: "40px", marginBottom: "10px" }}>📮</div>
-        Nessun feedback del coach per ora.
-        <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "4px" }}>
-          Salva un allenamento nel Diario e il coach reagirà qui.
+      <div style={{ textAlign: "center", color: "#CBD5E1", padding: "40px 20px", fontSize: "13px" }}>
+        <div style={{ fontSize: "40px", marginBottom: "10px" }} aria-hidden="true">📮</div>
+        <div style={{ fontWeight: 600 }}>Nessun feedback del coach per ora.</div>
+        <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "6px", lineHeight: 1.5 }}>
+          Il coach reagisce automaticamente ai tuoi allenamenti salvati nel Diario e al check giornaliero. Qui trovi feedback post-sessione, report settimanali e alert.
         </div>
       </div>
     );

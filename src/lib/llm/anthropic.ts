@@ -3,6 +3,7 @@ import type {
   GenerateJSONParams, GenerateTextParams, StreamChatParams, ChatTurn,
 } from "./types";
 import { LLMKeyMissingError } from "./types";
+import { parseRobustJSON } from "./_jsonParser";
 
 const DEFAULT_CHAT_MODEL = "claude-haiku-4-5-20251001";
 const BASE = "https://api.anthropic.com/v1";
@@ -18,14 +19,35 @@ function mapHistory(history: ChatTurn[]): AnthropicMessage[] {
   }));
 }
 
+// Usa il parser robusto condiviso (direct JSON → markdown fence → balanced brace
+// extraction → truncation detection). Vedi `./_jsonParser.ts`.
 function parseJSONResponse<T>(text: string): T {
-  try { return JSON.parse(text) as T; } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      try { return JSON.parse(match[0]) as T; } catch { /* fallthrough */ }
-    }
-    throw new Error(`Risposta JSON non valida dal coach. Riprova.\n(raw: ${text.slice(0, 120)}...)`);
+  return parseRobustJSON<T>(text);
+}
+
+// ---------- Request-key dedupe (anti double-charge) ----------
+// Stessa logica dell'adapter Gemini/OpenAI: coalesce chiamate identiche in-flight.
+const inflightJSON = new Map<string, Promise<unknown>>();
+
+function jsonRequestKey(modelId: string, params: GenerateJSONParams): string {
+  const raw = `${modelId}\0${params.systemInstruction}\0${params.userPrompt}\0${params.schemaHint || ""}\0${params.maxTokens || ""}`;
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i++) {
+    h ^= raw.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
+  return `anthropic:${modelId}:${(h >>> 0).toString(36)}:${raw.length}`;
+}
+
+async function dedupedJSON<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const existing = inflightJSON.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const p = (async () => {
+    try { return await run(); }
+    finally { inflightJSON.delete(key); }
+  })();
+  inflightJSON.set(key, p as Promise<unknown>);
+  return p;
 }
 
 function headers(apiKey: string): HeadersInit {
@@ -81,12 +103,18 @@ function createAnthropicClient(config: LLMConfig): LLMClient {
     modelId,
 
     async generateJSON<T>(params: GenerateJSONParams): Promise<T> {
-      const system = `${params.systemInstruction}\n\nRispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza markdown code fences.`;
-      const user = params.schemaHint
-        ? `${params.userPrompt}\n\nSchema JSON atteso:\n${params.schemaHint}`
-        : params.userPrompt;
-      const text = await callMessages(system, [{ role: "user", content: user }], params.maxTokens ?? 2048, 0.6);
-      return parseJSONResponse<T>(text);
+      // Dedupe request-key (anti double-charge su doppio-click utente).
+      const key = jsonRequestKey(modelId, params);
+      return dedupedJSON<T>(key, async () => {
+        const system = `${params.systemInstruction}\n\nRispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza markdown code fences.`;
+        const user = params.schemaHint
+          ? `${params.userPrompt}\n\nSchema JSON atteso:\n${params.schemaHint}`
+          : params.userPrompt;
+        // parseJSONResponse fuori dall'eventuale retry: errore di parsing non
+        // deve causare una seconda chiamata (token-waste).
+        const text = await callMessages(system, [{ role: "user", content: user }], params.maxTokens ?? 2048, 0.6);
+        return parseJSONResponse<T>(text);
+      });
     },
 
     async generateText(params: GenerateTextParams): Promise<string> {

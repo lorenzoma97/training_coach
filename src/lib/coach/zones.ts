@@ -35,7 +35,16 @@ export interface ZonesResult {
   method: ZoneMethod;
   /** FCmax in bpm usata per derivare tutte le zone. */
   fcMax: number;
-  /** Se disponibile, FC max mai osservata nei workout. */
+  /**
+   * Valore informativo-only: FCmax più alta osservata nei workout di corsa.
+   * NON è usato per il calcolo delle zone — quelle derivano da `fcMax`
+   * (test sul campo o Tanaka). È mostrato nella card zone come riferimento
+   * visivo ("oss. XYZ bpm") e nel prompt coach come hint qualitativo.
+   * Ragione: un singolo battito alto da artefatto cinturino non deve
+   * ridefinire le zone (Mühlen INTERLIVE 2021). Filtriamo già a
+   * fcMaxCandidates con >=2 osservazioni >Tanaka+3 per ridurre noise.
+   * @see computeZones dove questo campo viene popolato.
+   */
   fcMaxObserved?: number;
   /** FC a riposo usata (Karvonen) se metodo = karvonen. */
   fcRest?: number;
@@ -126,7 +135,12 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
     .map(w => Number(w.fields?.fc_max))
     .filter(n => Number.isFinite(n) && n > 100 && n < 230) as number[];
   const aboveTanakaThreshold = fcMaxCandidates.filter(n => n > fcMaxTanaka + 3);
-  const fcMaxObserved = aboveTanakaThreshold.length >= 2 ? Math.max(...aboveTanakaThreshold) : undefined;
+  /**
+   * Valore informativo-only (fix #4): NON usato per calcolo zone.
+   * Mostrato nella card zone come riferimento visivo e nel prompt coach come hint.
+   * Deliberatamente NON sovrascrive `fcMax` — vedi commenti sopra / JSDoc su ZonesResult.fcMaxObserved.
+   */
+  const fcMaxObservedRaw = aboveTanakaThreshold.length >= 2 ? Math.max(...aboveTanakaThreshold) : undefined;
 
   // FCmax usata per le zone:
   // - se l'utente ha fatto un test → usa quella (più affidabile)
@@ -252,7 +266,7 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
   }
 
   return {
-    method, fcMax, fcMaxObserved, fcRest: fcRestLatest ?? undefined,
+    method, fcMax, fcMaxObserved: fcMaxObservedRaw, fcRest: fcRestLatest ?? undefined,
     empiricalSampleSize, empiricalZ2Hint, empiricalHintMessage,
     zones, methodExplanation,
   };
@@ -305,17 +319,56 @@ export function timeInZones(workouts: HistoryWorkout[], zones: Zone[]): TimeInZo
   }));
 }
 
+/** Livello di esperienza per calibrare la soglia di "polarizzazione" (fix #6). */
+export type PolarizationExperienceLevel = "neofita" | "amatore" | "competitivo";
+
 /**
- * Distribuzione polarizzata 80/20 (Seiler): % tempo in Z1+Z2 vs. Z3+Z4+Z5.
- * Atleti d'élite stanno ~80% in bassa intensità.
+ * Soglie di % tempo in bassa intensità (Z1+Z2) per considerare "polarizzato"
+ * il training. Calibrate per livello:
+ *   - neofita: 50% — obiettivo realistico per chi inizia, evita demoralizzazione.
+ *   - amatore: 65% — target pratico documentato in letteratura non-élite.
+ *   - competitivo: 75% — principio Seiler per atleti strutturati
+ *     (gli 80% di Seiler 2010 sono élite e inapplicabili al pubblico generale).
  */
-export function polarizationCheck(timeInZone: TimeInZone[]): { lowPct: number; highPct: number; isPolarized: boolean } {
+const POLARIZATION_LOW_PCT_BY_LEVEL: Record<PolarizationExperienceLevel, number> = {
+  neofita: 50,
+  amatore: 65,
+  competitivo: 75,
+};
+
+/**
+ * Distribuzione polarizzata (Seiler-adapted): % tempo in Z1+Z2 vs. Z3+Z4+Z5.
+ * @param timeInZone output di timeInZones()
+ * @param experienceLevel soglia tarata sul livello utente (default "amatore" = 65%).
+ *   Firma retrocompatibile: chiamate senza secondo arg restano valide.
+ */
+export function polarizationCheck(
+  timeInZone: TimeInZone[],
+  experienceLevel: PolarizationExperienceLevel = "amatore",
+): { lowPct: number; highPct: number; isPolarized: boolean; thresholdPct: number } {
   const total = timeInZone.reduce((a, z) => a + z.minutes, 0) || 1;
   const low = timeInZone.filter(z => z.zoneIndex <= 2).reduce((a, z) => a + z.minutes, 0);
   const high = timeInZone.filter(z => z.zoneIndex >= 3).reduce((a, z) => a + z.minutes, 0);
   const lowPct = Math.round((low / total) * 100);
   const highPct = Math.round((high / total) * 100);
-  return { lowPct, highPct, isPolarized: lowPct >= 75 };
+  const thresholdPct = POLARIZATION_LOW_PCT_BY_LEVEL[experienceLevel];
+  return { lowPct, highPct, isPolarized: lowPct >= thresholdPct, thresholdPct };
+}
+
+/**
+ * Mappa il campo `profile.experience` (sedentary/occasional/regular/competitive)
+ * alla classificazione polarizzazione (neofita/amatore/competitivo).
+ *   - sedentary / occasional → neofita
+ *   - regular → amatore
+ *   - competitive → competitivo
+ */
+export function mapExperienceToPolarizationLevel(
+  experience: "sedentary" | "occasional" | "regular" | "competitive" | string | undefined,
+): PolarizationExperienceLevel {
+  if (experience === "competitive") return "competitivo";
+  if (experience === "regular") return "amatore";
+  if (experience === "sedentary" || experience === "occasional") return "neofita";
+  return "amatore";
 }
 
 /** Formatta passo da secondi a "M:SS/km". */
@@ -351,7 +404,7 @@ export function computeZonesContext(
   }
   const zones = computeZones({ profile, fcRestLatest: latestMorningHR, recentWorkouts: allWorkouts });
   const timeInZone = timeInZones(allWorkouts, zones.zones);
-  const polar = polarizationCheck(timeInZone);
+  const polar = polarizationCheck(timeInZone, mapExperienceToPolarizationLevel(profile.experience));
   const totalSessions = timeInZone.reduce((a, z) => a + z.sessionCount, 0);
   return { zones, timeInZone, polar, totalSessions };
 }
@@ -386,6 +439,13 @@ export function inferSessionZone(
   if (/\btempo\b|marathon|pace gara|gara 21|gara 42/i.test(text)) return 3;
   if (/\blento|easy|fondo|conversazional|z2|base aerobica/i.test(text)) return 2;
   if (/\bprogressiv/i.test(text)) return 3; // finale in Z3
+  // Fallback conservativo (fix #5): se il testo menziona "ripetute" o "intervalli" senza
+  // qualificativo (brev/lungh/400m/...), non possiamo distinguere Z4 (threshold) da Z5
+  // (VO2max). Scegliamo Z4 perché:
+  //   - è la default più frequente nella pratica amatoriale (ripetute in soglia),
+  //   - è meno aggressivo: un errore verso il basso è più sicuro di uno verso l'alto,
+  //   - VO2max massimale richiede solitamente qualificativi espliciti nel piano.
+  if (/\bripetute\b|\bintervall[oi]?\b/i.test(text)) return 4;
   return null;
 }
 

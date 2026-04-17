@@ -10,6 +10,7 @@ import { maybeRunWeeklyReport } from "./lib/scheduler";
 import type { CoachFeedItem } from "./lib/types";
 import { useOnline } from "./lib/useOnline";
 import { events } from "./lib/events";
+import { checkPendingRestore, clearPendingRestoreFlag } from "./lib/backup";
 
 type Tab = "diary" | "trends" | "coach" | "settings";
 const LAST_SEEN_KEY = "coach-feed-last-seen";
@@ -46,6 +47,23 @@ export default function App() {
     (async () => {
       const done = await getJSON<boolean>("onboarding-completed", false);
       setOnboarded(done);
+      // All'avvio: se c'è un restore interrotto a metà da una sessione precedente
+      // (sentinel 'restore-in-progress'), avverti l'utente. Non blocchiamo l'app —
+      // la flag resta finché l'utente non agisce. Vedi backup.ts checkPendingRestore.
+      try {
+        const pending = await checkPendingRestore();
+        if (pending.status === "interrupted") {
+          const startedAt = pending.info?.startedAt || "(data sconosciuta)";
+          const msg = `Un ripristino backup è stato interrotto (${startedAt}). I dati potrebbero essere incompleti — puoi ripetere il ripristino da Impostazioni quando vuoi.\n\nPremi OK per chiudere questo avviso.`;
+          // alert() anziché confirm() perché l'azione è singola (dismissal).
+          // Cancelliamo la flag in OGNI caso (niente branch Annulla) così
+          // il banner non riappare ad ogni reload (risolto loop).
+          alert(msg);
+          await clearPendingRestoreFlag();
+        }
+      } catch (e) {
+        console.warn("[App] checkPendingRestore failed:", e);
+      }
     })();
   }, []);
 
@@ -222,12 +240,13 @@ export default function App() {
               <span>{t.label}</span>
               {t.badge > 0 && (
                 <span aria-label={`${t.badge} nuovi`} style={{
-                  position: "absolute", top: "4px", right: "calc(50% - 22px)",
+                  position: "absolute", top: "2px", right: "calc(50% - 24px)",
                   background: "#E8553A", color: "#FFF",
-                  minWidth: "18px", height: "18px", padding: "0 5px",
-                  borderRadius: "9px", fontSize: "10px", fontWeight: 800,
+                  minWidth: "20px", height: "20px", padding: "0 6px",
+                  borderRadius: "10px", fontSize: "11px", fontWeight: 800,
                   display: "flex", alignItems: "center", justifyContent: "center",
                   boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
+                  lineHeight: 1,
                 }}>{t.badge > 9 ? "9+" : t.badge}</span>
               )}
             </button>
