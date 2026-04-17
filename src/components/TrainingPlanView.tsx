@@ -100,6 +100,16 @@ export default function TrainingPlanView() {
     const [sy, sm, sd] = plan.startDate.split("-").map(Number);
     const start = new Date(sy, sm - 1, sd);
 
+    // Oggi (fine giornata) — non matchare sessioni PIANIFICATE nel FUTURO:
+    // l'utente potrebbe ancora farle. Es. mer Fondo Lento non deve essere
+    // associato al sab Fondo Lento ancora in programma.
+    // Inoltre: non contare come "saltata" una sessione di OGGI (giornata in
+    // corso, l'utente può ancora allenarsi).
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
     // Set di ID workout già matchati a una sessione del piano (evita doppi match)
     const usedWorkoutIds = new Set<string>();
     const completed = new Map<string, { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string }>();
@@ -125,6 +135,11 @@ export default function TrainingPlanView() {
         plannedDate.setDate(start.getDate() + w * 7 + dayIdx);
         const plannedKey = isoLocal(plannedDate);
         const key = sessionKey(week.weekNumber, s.day, plannedDate.getTime());
+
+        // Sessione nel FUTURO: non matchare (l'utente potrebbe ancora farla)
+        // e non contarla come saltata. Stato = "futura" (non marcato né fatta
+        // né saltata, il render mostra OGGI/futuro normalmente).
+        if (plannedDate > todayEnd) continue;
 
         // Cerca workout dello stesso tipo + subtipo nella settimana, non ancora matchato.
         // Matching a 2 livelli:
@@ -177,7 +192,9 @@ export default function TrainingPlanView() {
             strictMatch: match.strictMatch,
             actualSubtype: match.workout.fields?.tipo || match.workout.fields?.sport || undefined,
           });
-        } else {
+        } else if (plannedDate < todayStart) {
+          // SALTATA solo se nel passato (giorni precedenti). Oggi senza match
+          // resta "OGGI" nel render (l'utente può ancora allenarsi).
           skipped.add(key);
         }
       }
