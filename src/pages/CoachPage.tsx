@@ -173,7 +173,17 @@ export default function CoachPage() {
         </div>
       )}
 
-      <div role="tablist" style={{ display: "flex", gap: "6px", background: "#1A1A2E", padding: "4px", borderRadius: "12px", marginBottom: "16px" }}>
+      <div role="tablist" style={{
+        display: "flex", gap: "6px",
+        background: "#1A1A2E", padding: "4px", borderRadius: "12px",
+        marginBottom: "16px",
+        // Sticky top: il menu dei tab resta visibile quando si scorre (es. chat
+        // lunga). L'offset negativo compensa il padding-top del contenitore
+        // della pagina in modo che il bar "tocchi" il bordo superiore del
+        // viewport. Lo z-index tiene i tab sopra il contenuto che scorre.
+        position: "sticky", top: "0", zIndex: 20,
+        boxShadow: "0 2px 12px rgba(11,15,26,0.65)",
+      }}>
         {([
           { id: "plan" as const, label: "Piano" },
           { id: "chat" as const, label: "Chat" },

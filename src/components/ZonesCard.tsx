@@ -120,22 +120,27 @@ export default function ZonesCard({ compact = false, highlightZone }: Props) {
               background: isHi ? c.bg : "#1A1A2E",
               border: `1px solid ${isHi ? c.border : "rgba(255,255,255,0.06)"}`,
               borderRadius: "10px", padding: "10px 12px",
-              display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap",
+              // flexWrap rimosso: su mobile stretto il middle-col (nome zona)
+              // si restringe e wrappa il suo testo INTERNAMENTE, mantenendo
+              // il bpm sulla stessa riga (come nel layout desktop).
+              display: "flex", gap: "10px", alignItems: "center",
             }}>
               <div style={{
-                minWidth: "36px", textAlign: "center",
+                minWidth: "32px", textAlign: "center",
                 fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: "14px",
-                color: c.text,
+                color: c.text, flexShrink: 0,
               }}>
                 {z.shortLabel}
               </div>
-              <div style={{ flex: "1 1 160px", minWidth: "140px" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "#E2E8F0" }}>{z.name}</div>
-                <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "2px" }}>{z.usageHint}</div>
+              {/* Middle: minWidth 0 permette al flex item di restringersi
+                  sotto il contenuto e wrappare il testo invece di crescere */}
+              <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#E2E8F0", lineHeight: 1.25 }}>{z.name}</div>
+                <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "2px", lineHeight: 1.3 }}>{z.usageHint}</div>
               </div>
               <div style={{
                 fontFamily: "'JetBrains Mono', monospace", fontSize: "13px", fontWeight: 700,
-                color: c.text, minWidth: "100px", textAlign: "right",
+                color: c.text, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap",
               }}>
                 {z.hrLow}-{z.hrHigh} bpm
                 <div style={{ fontSize: "10px", color: "#94A3B8", fontWeight: 500 }}>
