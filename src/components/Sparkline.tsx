@@ -128,6 +128,25 @@ export default function Sparkline({
     } catch { return iso; }
   };
 
+  // Asse X: max 5 date distribuite uniformemente, format "dd mmm"
+  // IMPORTANTE: questo useMemo DEVE stare PRIMA dell'early return "if (!path)"
+  // altrimenti React crasha per hooks call-order mismatch quando period cambia.
+  const xLabels = useMemo(() => {
+    if (!Array.isArray(points) || points.length < 2) return [];
+    const maxLabels = Math.min(5, Math.max(2, Math.floor(width / 70)));
+    const step = Math.max(1, Math.floor((points.length - 1) / (maxLabels - 1)));
+    const indices: number[] = [];
+    for (let i = 0; i < points.length; i += step) indices.push(i);
+    if (indices[indices.length - 1] !== points.length - 1) indices.push(points.length - 1);
+    while (indices.length > maxLabels) indices.splice(1, 1);
+    return indices.map(i => {
+      const p = points[i];
+      const pct = points.length > 1 ? (i / (points.length - 1)) * 100 : 50;
+      return { pct, label: p?.date ? fmtDate(p.date) : "" };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points, width]);
+
   if (!path) {
     return (
       <div style={{ width, height, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", color: "#64748B" }}>
@@ -135,23 +154,6 @@ export default function Sparkline({
       </div>
     );
   }
-
-  // Asse X: max 5 date distribuite uniformemente, format "dd mmm"
-  const xLabels = useMemo(() => {
-    if (points.length < 2) return [];
-    const maxLabels = Math.min(5, Math.max(2, Math.floor(width / 70)));
-    const step = Math.max(1, Math.floor((points.length - 1) / (maxLabels - 1)));
-    const indices: number[] = [];
-    for (let i = 0; i < points.length; i += step) indices.push(i);
-    if (indices[indices.length - 1] !== points.length - 1) indices.push(points.length - 1);
-    // Riduci se troppi vicini
-    while (indices.length > maxLabels) indices.splice(1, 1);
-    return indices.map(i => {
-      const p = points[i];
-      const pct = points.length > 1 ? (i / (points.length - 1)) * 100 : 50;
-      return { pct, label: fmtDate(p.date) };
-    });
-  }, [points, width]);
 
   // Auto-dots: se pochi punti validi (≤ 8), mostra sempre i dot per non avere linee
   // invisibili con 2-3 punti su un grafico largo.
