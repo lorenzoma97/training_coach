@@ -77,33 +77,173 @@ export default function TrainingPlanView() {
     return plan.profileHash !== planStateHash(currentProfile, currentGoals);
   }, [plan, currentProfile, currentGoals]);
 
-  // Matching piano↔diario: per ogni giorno del piano, controlla se nel diario c'è un workout
-  // registrato in quella data. Restituisce set di chiavi "weekN-dayStr" completate.
-  const completedSessions = useMemo(() => {
-    if (!plan || !plan.startDate || !recentDays.length) return new Set<string>();
-    const done = new Set<string>();
+  // Matching intelligente piano↔diario.
+  // Per ogni sessione pianificata, cerca un workout del MEDESIMO TIPO nella settimana
+  // del piano (non solo nel giorno esatto). Tiene anche traccia dei workout EXTRA
+  // (fatti ma non pianificati) e delle sessioni SALTATE (pianificate ma non fatte).
+  const matchResult = useMemo(() => {
+    const sessionKey = (week: number, day: string, date: number) => `${week}-${day}-${date}`;
+    const isoLocal = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${dd}`;
+    };
+    if (!plan || !plan.startDate || !recentDays.length) {
+      return {
+        completed: new Map<string, { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string }>(),
+        extras: [] as Array<{ date: string; workout: any }>,
+        skipped: new Set<string>(),
+      };
+    }
     const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
     const [sy, sm, sd] = plan.startDate.split("-").map(Number);
     const start = new Date(sy, sm - 1, sd);
+
+    // Set di ID workout già matchati a una sessione del piano (evita doppi match)
+    const usedWorkoutIds = new Set<string>();
+    const completed = new Map<string, { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string }>();
+    const skipped = new Set<string>();
+
     for (let w = 0; w < plan.weeks.length; w++) {
       const week = plan.weeks[w];
+      // Calcola intervallo date della settimana del piano
+      const weekStart = new Date(start);
+      weekStart.setDate(start.getDate() + w * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      const weekStartKey = isoLocal(weekStart);
+      const weekEndKey = isoLocal(weekEnd);
+
+      // Workout di questa settimana nel diario
+      const weekDays = recentDays.filter((rd: { date: string }) => rd.date >= weekStartKey && rd.date <= weekEndKey);
+
+      for (const s of week.sessions) {
+        const dayIdx = DAY_KEYS.indexOf(s.day);
+        if (dayIdx < 0) continue;
+        const plannedDate = new Date(start);
+        plannedDate.setDate(start.getDate() + w * 7 + dayIdx);
+        const plannedKey = isoLocal(plannedDate);
+        const key = sessionKey(week.weekNumber, s.day, plannedDate.getTime());
+
+        // Cerca workout dello stesso tipo + subtipo nella settimana, non ancora matchato.
+        // Matching a 2 livelli:
+        // 1° tentativo: tipo + subtipo (sub di s = s.subtype, sub del workout = fields.tipo/sport)
+        // 2° tentativo: solo tipo (meno stretto)
+        // Preferisce sempre lo stesso giorno, poi altri giorni della settimana.
+        const plannedSub = (s.subtype || "").toLowerCase().trim();
+        const matchWorkoutSub = (w: any) => {
+          const sub = (w.fields?.tipo || w.fields?.sport || "").toLowerCase().trim();
+          return sub;
+        };
+        const daysInOrder = [...weekDays].sort((a: any, b: any) => {
+          const da = a.date === plannedKey ? 0 : 1;
+          const db = b.date === plannedKey ? 0 : 1;
+          return da - db;
+        });
+        let match: { dateKey: string; workout: any; strictMatch: boolean } | null = null;
+        // 1° tentativo: match stretto (tipo + subtipo)
+        if (plannedSub) {
+          for (const d of daysInOrder) {
+            for (const w of (d.workouts || [])) {
+              if (usedWorkoutIds.has(w.id)) continue;
+              if (w.type === s.type && matchWorkoutSub(w) === plannedSub) {
+                match = { dateKey: d.date, workout: w, strictMatch: true };
+                break;
+              }
+            }
+            if (match) break;
+          }
+        }
+        // 2° tentativo: match allentato (solo tipo)
+        if (!match) {
+          for (const d of daysInOrder) {
+            for (const w of (d.workouts || [])) {
+              if (usedWorkoutIds.has(w.id)) continue;
+              if (w.type === s.type) {
+                match = { dateKey: d.date, workout: w, strictMatch: false };
+                break;
+              }
+            }
+            if (match) break;
+          }
+        }
+
+        if (match) {
+          usedWorkoutIds.add(match.workout.id);
+          completed.set(key, {
+            date: match.dateKey,
+            sameDay: match.dateKey === plannedKey,
+            strictMatch: match.strictMatch,
+            actualSubtype: match.workout.fields?.tipo || match.workout.fields?.sport || undefined,
+          });
+        } else {
+          skipped.add(key);
+        }
+      }
+    }
+
+    // Workout EXTRA: tutti quelli non matchati con nessuna sessione del piano
+    const extras: Array<{ date: string; workout: any }> = [];
+    for (const rd of recentDays as Array<{ date: string; workouts: any[] }>) {
+      for (const w of (rd.workouts || [])) {
+        if (!usedWorkoutIds.has(w.id)) extras.push({ date: rd.date, workout: w });
+      }
+    }
+    // Limita extras a quelli nelle settimane del piano
+    const planStartKey = isoLocal(start);
+    const planEnd = new Date(start);
+    planEnd.setDate(start.getDate() + plan.weeks.length * 7 - 1);
+    const planEndKey = isoLocal(planEnd);
+    const extrasInPlanWindow = extras.filter(e => e.date >= planStartKey && e.date <= planEndKey);
+
+    return { completed, extras: extrasInPlanWindow, skipped };
+  }, [plan, recentDays]);
+
+  const completedSessions = matchResult.completed;
+  const extraWorkouts = matchResult.extras;
+  const skippedSessions = matchResult.skipped;
+
+  // Conta deviazioni: sessioni pianificate ma saltate/variate + workout non pianificati.
+  // Usato per mostrare il CTA "Adatta piano alle deviazioni".
+  const deviationCount = useMemo(() => {
+    let partial = 0;
+    completedSessions.forEach((c: { strictMatch: boolean }) => { if (!c.strictMatch) partial++; });
+    return { skipped: skippedSessions.size, partial, extras: extraWorkouts.length };
+  }, [completedSessions, extraWorkouts, skippedSessions]);
+
+  const hasDeviations = deviationCount.skipped > 0 || deviationCount.partial > 0 || deviationCount.extras > 0;
+
+  // Costruisce il messaggio per l'LLM quando l'utente clicca "Adatta alle deviazioni".
+  const buildDeviationRequest = (): string => {
+    if (!plan) return "";
+    const parts: string[] = [];
+    const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+    if (!plan.startDate) return "";
+    const [sy, sm, sd] = plan.startDate.split("-").map(Number);
+    const start = new Date(sy, sm - 1, sd);
+    for (const week of plan.weeks) {
       for (const s of week.sessions) {
         const dayIdx = DAY_KEYS.indexOf(s.day);
         if (dayIdx < 0) continue;
         const sessionDate = new Date(start);
-        sessionDate.setDate(start.getDate() + w * 7 + dayIdx);
-        const y = sessionDate.getFullYear();
-        const m = String(sessionDate.getMonth() + 1).padStart(2, "0");
-        const d = String(sessionDate.getDate()).padStart(2, "0");
-        const dateKey = `${y}-${m}-${d}`;
-        const dayEntry = recentDays.find((rd: { date: string; workouts: any[] }) => rd.date === dateKey);
-        if (dayEntry && (dayEntry.workouts || []).length > 0) {
-          done.add(`${week.weekNumber}-${s.day}-${sessionDate.getTime()}`);
+        sessionDate.setDate(start.getDate() + (week.weekNumber - 1) * 7 + dayIdx);
+        const key = `${week.weekNumber}-${s.day}-${sessionDate.getTime()}`;
+        const c = completedSessions.get(key);
+        if (skippedSessions.has(key)) {
+          parts.push(`- SALTATA: ${s.day} ${s.type}${s.subtype ? ` (${s.subtype})` : ""}, ${s.duration_min}min pianificata`);
+        } else if (c && !c.strictMatch) {
+          parts.push(`- VARIAZIONE ${s.day}: pianificato ${s.type}${s.subtype ? ` (${s.subtype})` : ""}, fatto invece ${c.actualSubtype || "variante dello stesso tipo"}${!c.sameDay ? ` il ${c.date}` : ""}`);
         }
       }
     }
-    return done;
-  }, [plan, recentDays]);
+    for (const e of extraWorkouts) {
+      const sub = e.workout.fields?.tipo || e.workout.fields?.sport || "";
+      const dur = e.workout.fields?.durata_totale || e.workout.fields?.durata || "";
+      parts.push(`- AUTONOMO: ${e.date} ${e.workout.type}${sub ? ` (${sub})` : ""}${dur ? `, ${dur}min` : ""} (non pianificato)`);
+    }
+    return `Il piano ha avuto le seguenti deviazioni:\n${parts.join("\n")}\n\nAdatta le sessioni future del piano in base a ciò che è stato realmente fatto (evita carichi duplicati, aggiungi recovery se sessioni autonome erano intense, mantieni il percorso verso gli obiettivi).`;
+  };
 
   const handleRegenerate = async () => {
     if (regenerating) return;
@@ -377,6 +517,43 @@ export default function TrainingPlanView() {
         {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
       </div>
 
+      {/* CTA "Adatta piano alle deviazioni" — compare solo se ci sono deviazioni */}
+      {!isExpired && hasDeviations && (
+        <div style={{
+          background: "#78350F20", border: "1px solid #F59E0B66",
+          borderRadius: "12px", padding: "12px 14px",
+          display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+        }}>
+          <div style={{ flex: 1, minWidth: "180px" }}>
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#F59E0B", marginBottom: "3px" }}>
+              Il piano si è discostato dalla realtà
+            </div>
+            <div style={{ fontSize: "11px", color: "#CBD5E1", lineHeight: 1.4 }}>
+              {[
+                deviationCount.skipped > 0 ? `${deviationCount.skipped} sessioni saltate` : "",
+                deviationCount.partial > 0 ? `${deviationCount.partial} con variazione` : "",
+                deviationCount.extras > 0 ? `${deviationCount.extras} allenamenti autonomi` : "",
+              ].filter(Boolean).join(" · ")}. Chiedi al coach di adattare il resto del piano alla realtà.
+            </div>
+          </div>
+          <button
+            onClick={() => handleAdapt(buildDeviationRequest())}
+            disabled={adapting || regenerating}
+            style={{
+              padding: "10px 14px",
+              background: adapting ? "#1E293B" : "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)",
+              border: "none", borderRadius: "10px", color: "#FFF",
+              fontSize: "12px", fontWeight: 700,
+              cursor: adapting ? "wait" : "pointer",
+              opacity: (adapting || regenerating) ? 0.5 : 1,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {adapting ? "⏳ Adatto…" : "🔁 Adatta alle deviazioni"}
+          </button>
+        </div>
+      )}
+
       {!isExpired && plan.weeks.map((w: TrainingPlan["weeks"][number]) => (
         <div key={w.weekNumber} style={{ background: "#16213E", borderRadius: "14px", padding: "18px 20px", border: "1px solid rgba(255,255,255,0.06)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "12px" }}>
@@ -390,8 +567,8 @@ export default function TrainingPlanView() {
               // È nel passato (già dovrebbe essere stata fatta)?
               const isPast = w.weekNumber < todayPlanWeekNumber ||
                 (w.weekNumber === todayPlanWeekNumber && ["lun","mar","mer","gio","ven","sab","dom"].indexOf(s.day) < ["lun","mar","mer","gio","ven","sab","dom"].indexOf(todayKey));
-              // Matching con diario: sessione completata se c'è un workout in quel giorno
-              let isCompleted = false;
+              // Matching piano↔diario: FATTA perfetta (verde), FATTA parziale (giallo), SALTATA (grigia)
+              let completion: { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string } | null = null;
               if (plan.startDate) {
                 const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
                 const dayIdx = DAY_KEYS.indexOf(s.day);
@@ -400,11 +577,15 @@ export default function TrainingPlanView() {
                   const start = new Date(sy, sm - 1, sd);
                   const sessionDate = new Date(start);
                   sessionDate.setDate(start.getDate() + (w.weekNumber - 1) * 7 + dayIdx);
-                  isCompleted = completedSessions.has(`${w.weekNumber}-${s.day}-${sessionDate.getTime()}`);
+                  completion = completedSessions.get(`${w.weekNumber}-${s.day}-${sessionDate.getTime()}`) || null;
                 }
               }
-              const bg = isCompleted ? "#14532D40" : isToday ? "#E8553A15" : isPast ? "#1A1A2E80" : "#1A1A2E";
-              const borderColor = isCompleted ? "#22C55E66" : isToday ? "#E8553A66" : "transparent";
+              const isCompleted = completion !== null;
+              const isPartial = completion !== null && !completion.strictMatch;
+              const isPerfect = completion !== null && completion.strictMatch;
+              const bg = isPerfect ? "#14532D40" : isPartial ? "#78350F30" : isToday ? "#E8553A15" : isPast ? "#1A1A2E80" : "#1A1A2E";
+              const borderColor = isPerfect ? "#22C55E66" : isPartial ? "#F59E0B66" : isToday ? "#E8553A66" : "transparent";
+              const dayLabelColor = isPerfect ? "#22C55E" : isPartial ? "#F59E0B" : isToday ? "#E8553A" : "#94A3B8";
               return (
                 <div key={`${w.weekNumber}-${s.day}-${i}`} style={{
                   padding: "12px 14px",
@@ -414,13 +595,25 @@ export default function TrainingPlanView() {
                   opacity: isPast && !isCompleted ? 0.55 : 1,
                 }}>
                   <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px" }}>
-                    <span style={{ fontWeight: 700, textTransform: "uppercase", color: isCompleted ? "#22C55E" : isToday ? "#E8553A" : "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{s.day}</span>
+                    <span style={{ fontWeight: 700, textTransform: "uppercase", color: dayLabelColor, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{s.day}</span>
                     <span style={{ fontWeight: 600 }}>{s.type}{s.subtype ? ` · ${s.subtype}` : ""}</span>
                     <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{s.duration_min}min</span>
-                    {isCompleted && <span style={{ color: "#22C55E", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>✓ FATTA</span>}
+                    {isPerfect && <span style={{ color: "#22C55E", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>✓ FATTA</span>}
+                    {isPartial && <span style={{ color: "#F59E0B", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>⚠ VARIAZIONE</span>}
                     {!isCompleted && isToday && <span style={{ color: "#E8553A", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
                     {!isCompleted && !isToday && isPast && <span style={{ color: "#64748B", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>SALTATA</span>}
                   </div>
+                  {isPartial && completion && (
+                    <div style={{ color: "#F59E0B", fontSize: "11px", marginBottom: "6px", fontWeight: 600 }}>
+                      Hai fatto {completion.actualSubtype ? `"${completion.actualSubtype}"` : "una variazione"} invece di "{s.subtype || s.type}"
+                      {!completion.sameDay && ` · il ${new Date(completion.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}`}
+                    </div>
+                  )}
+                  {isPerfect && completion && !completion.sameDay && (
+                    <div style={{ color: "#22C55E", fontSize: "11px", marginBottom: "6px", fontWeight: 600 }}>
+                      Fatto il {new Date(completion.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })} invece del giorno pianificato
+                    </div>
+                  )}
                   <div style={{ color: "#CBD5E1", lineHeight: 1.5 }}>{s.details}</div>
                   <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", marginTop: "6px", lineHeight: 1.5 }}>{s.rationale}</div>
                   {!isCompleted && (
@@ -452,6 +645,52 @@ export default function TrainingPlanView() {
                 </div>
               );
             })}
+
+            {/* Allenamenti autonomi (workout fatti fuori dal piano) in questa settimana */}
+            {(() => {
+              if (!plan.startDate) return null;
+              const [sy, sm, sd] = plan.startDate.split("-").map(Number);
+              const weekStart = new Date(sy, sm - 1, sd);
+              weekStart.setDate(weekStart.getDate() + (w.weekNumber - 1) * 7);
+              const weekEnd = new Date(weekStart);
+              weekEnd.setDate(weekStart.getDate() + 6);
+              const fmtLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+              const wkStartKey = fmtLocal(weekStart);
+              const wkEndKey = fmtLocal(weekEnd);
+              const weekExtras = extraWorkouts.filter((e: { date: string; workout: any }) => e.date >= wkStartKey && e.date <= wkEndKey);
+              if (weekExtras.length === 0) return null;
+              const DAY_LABELS_IT = ["dom","lun","mar","mer","gio","ven","sab"];
+              return weekExtras.map((e: { date: string; workout: any }, i: number) => {
+                const [ey, em, ed] = e.date.split("-").map(Number);
+                const dt = new Date(ey, em - 1, ed);
+                const dayKey = DAY_LABELS_IT[dt.getDay()];
+                const wtSubtype = e.workout.fields?.tipo || e.workout.fields?.sport || "";
+                const wtDur = e.workout.fields?.durata_totale || e.workout.fields?.durata || "";
+                return (
+                  <div key={`extra-${e.date}-${i}`} style={{
+                    padding: "12px 14px",
+                    background: "#1E3A8A20",
+                    border: "1px solid #3B82F666",
+                    borderRadius: "10px", fontSize: "13px",
+                  }}>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px" }}>
+                      <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#60A5FA", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{dayKey}</span>
+                      <span style={{ fontWeight: 600 }}>{e.workout.type}{wtSubtype ? ` · ${wtSubtype}` : ""}</span>
+                      {wtDur && <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{wtDur}min</span>}
+                      <span style={{ color: "#60A5FA", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>🔸 AUTONOMO</span>
+                    </div>
+                    <div style={{ color: "#CBD5E1", fontSize: "12px", marginTop: "2px", lineHeight: 1.4 }}>
+                      Allenamento non pianificato — registrato il {new Date(e.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}
+                    </div>
+                    {e.workout.notes && (
+                      <div style={{ color: "#94A3B8", fontSize: "11px", fontStyle: "italic", marginTop: "4px", lineHeight: 1.4 }}>
+                        {e.workout.notes}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
       ))}
