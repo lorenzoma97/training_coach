@@ -115,7 +115,7 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
   const confirmedObserved = aboveTanakaThreshold.length >= 2 ? Math.max(...aboveTanakaThreshold) : undefined;
   // Separiamo per trasparenza UI: mostriamo "osservata" solo se confermata (>1 volta sopra Tanaka+3)
   const fcMaxObserved = confirmedObserved;
-  const fcMax = fcMaxObserved ?? fcMaxTanaka;
+  let fcMax = fcMaxObserved ?? fcMaxTanaka;
 
   // Estrai corse "easy" dal diario per range empirico (Fondo Lento + RPE ≤ 5 + no dolore alto)
   const easyRuns = recentWorkouts.filter(w => {
@@ -179,18 +179,36 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
   // Questo evita di perdere la personalizzazione Karvonen quando salta in empirical.
   const useKarvonen = (method === "karvonen" || method === "empirical") && typeof fcRestLatest === "number" && fcRestLatest >= 35 && fcRestLatest <= 100;
 
-  // Step 1: calcola zone base (Karvonen o Tanaka) — contigue per costruzione
+  // Quando è attivo il metodo EMPIRICAL, usiamo il top della Z2 empirica
+  // come proxy di LT1 (soglia aerobica). Nel modello Coggan/Friel standard,
+  // Z2 top ≈ 75% FCmax. Quindi FCmax_effettiva ≈ Z2_empirica.top / 0.75.
+  // Questo respecta la scienza: se i tuoi fondi lenti reali hanno FC alta,
+  // la tua FCmax è probabilmente > Tanaka (errore individuale ±10-15 bpm).
+  // Tutte le zone vengono poi ricalcolate come % di questa FCmax effettiva,
+  // rendendo il ladder contiguo per costruzione con larghezze realistiche.
+  let effectiveFCmax = fcMax;
+  if (method === "empirical" && empiricalZ2Range) {
+    const impliedFCmax = Math.round(empiricalZ2Range.high / 0.75);
+    // Usa l'implicita solo se > Tanaka (user più fit del predetto)
+    // Safety cap: 220 bpm (limite fisiologico realistico per maggior parte adulti)
+    const SAFETY_CAP = 220;
+    if (impliedFCmax > fcMax && impliedFCmax <= SAFETY_CAP) {
+      effectiveFCmax = impliedFCmax;
+    }
+  }
+
+  // Calcola zone come contigue (% di effectiveFCmax per Tanaka, oppure Karvonen)
   const zones: Zone[] = ZONE_META.map((meta, i) => {
     const { lo, hi } = ZONE_BOUNDS_PCT[i];
     let hrLow: number, hrHigh: number;
 
     if (useKarvonen && fcRestLatest) {
-      const band = karvonenBand(fcMax, fcRestLatest, lo, hi);
+      const band = karvonenBand(effectiveFCmax, fcRestLatest, lo, hi);
       hrLow = band.low;
       hrHigh = band.high;
     } else {
-      hrLow = Math.round(lo * fcMax);
-      hrHigh = Math.round(hi * fcMax);
+      hrLow = Math.round(lo * effectiveFCmax);
+      hrHigh = Math.round(hi * effectiveFCmax);
     }
 
     return {
@@ -200,35 +218,31 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
     };
   });
 
-  // Step 2: override Z2 empirica + RICOMPATTA zone vicine per mantenere contiguità
-  // (evita sovrapposizioni Z2↔Z3 e gap Z1→Z2 quando Z2 empirica cade nel range
-  // teorico di Z3).
-  if (method === "empirical" && empiricalZ2Range) {
-    const empLow = empiricalZ2Range.low;
-    const empHigh = empiricalZ2Range.high;
-    // Imposta Z2 empirica
-    zones[1].hrLow = empLow;
-    zones[1].hrHigh = empHigh;
-    // Z1: chiudi a empLow - 1 (se Z1 teorica sarebbe oltre, la accorcia)
-    if (zones[0].hrHigh >= empLow) zones[0].hrHigh = empLow - 1;
-    // Z3: apri da empHigh + 1 (se Z3 teorica partiva prima, la sposta)
-    if (zones[2].hrLow <= empHigh) zones[2].hrLow = empHigh + 1;
-    // Se Z3 ora è invertita (low > high) significa che Z2 empirica ha mangiato
-    // tutta la Z3 teorica → estendi Z3 fino a Z4 low - 1 usando il % FCmax
-    if (zones[2].hrHigh < zones[2].hrLow) {
-      zones[2].hrHigh = Math.max(zones[2].hrLow, zones[3].hrLow - 1);
+  // Rendi le zone adjacente contigue (low di Z(n+1) = high di Z(n) + 1)
+  // per eliminare micro-gap dovuti all'arrotondamento tra % FCmax.
+  for (let i = 1; i < zones.length; i++) {
+    if (zones[i].hrLow > zones[i - 1].hrHigh + 1) {
+      zones[i].hrLow = zones[i - 1].hrHigh + 1;
+    } else if (zones[i].hrLow <= zones[i - 1].hrHigh) {
+      zones[i - 1].hrHigh = zones[i].hrLow - 1;
     }
-    // Se anche Z4 è intaccata, stessa logica a cascata
-    if (zones[3].hrLow <= zones[2].hrHigh) zones[3].hrLow = zones[2].hrHigh + 1;
-    if (zones[3].hrHigh < zones[3].hrLow) zones[3].hrHigh = Math.max(zones[3].hrLow, zones[4].hrLow - 1);
-    if (zones[4].hrLow <= zones[3].hrHigh) zones[4].hrLow = zones[3].hrHigh + 1;
-    if (zones[4].hrHigh < zones[4].hrLow) zones[4].hrHigh = zones[4].hrLow;
+  }
+
+  // Aggiorna fcMax visualizzato se è stata usata l'implicita
+  if (effectiveFCmax !== fcMax) {
+    // Persiste la scelta nella UI tramite il campo fcMax
+    fcMax = effectiveFCmax;
   }
 
   // Spiegazione user-facing del metodo
   let methodExplanation: string;
   if (method === "empirical") {
-    methodExplanation = `Z2 calcolata dai tuoi ultimi ${empiricalSampleSize} fondi lenti reali (percentile 25°-75° di FC media). Le altre zone usano la tua FCmax ${fcMaxObserved ? `osservata (${fcMaxObserved} bpm)` : `teorica Tanaka (${fcMaxTanaka} bpm)`}.`;
+    const wasAdjusted = effectiveFCmax !== (fcMaxObserved ?? fcMaxTanaka);
+    if (wasAdjusted) {
+      methodExplanation = `Z2 empirica da ${empiricalSampleSize} fondi lenti reali (${empiricalZ2Range?.low}-${empiricalZ2Range?.high} bpm). Il top Z2 suggerisce FCmax effettiva ~${effectiveFCmax} bpm (più alta della stima Tanaka ${fcMaxTanaka}) — coerente con errore individuale ±10-15 bpm documentato (Tanaka 2001). Tutte le zone sono ricalcolate come % della FCmax effettiva per un ladder contiguo scientificamente coerente (modello Coggan/Friel 5-zone).`;
+    } else {
+      methodExplanation = `Z2 empirica da ${empiricalSampleSize} fondi lenti reali. Altre zone calcolate come % FCmax (${effectiveFCmax} bpm).`;
+    }
   } else if (method === "karvonen") {
     methodExplanation = `Metodo Karvonen con la tua FC a riposo mattutina (${fcRestLatest} bpm) + FCmax ${fcMaxObserved ? `osservata ${fcMaxObserved}` : `Tanaka ${fcMaxTanaka}`}. Registra 5+ fondi lenti e scatterà il calcolo empirico dalle tue corse reali.`;
   } else {

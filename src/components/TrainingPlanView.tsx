@@ -578,7 +578,69 @@ export default function TrainingPlanView() {
             <div style={{ fontSize: "13px", color: "#CBD5E1", fontWeight: 600 }}>{w.focus}</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {w.sessions.map((s: TrainingPlan["weeks"][number]["sessions"][number], i: number) => {
+            {(() => {
+              // Costruisce entries ordinate per giorno (lun-dom): sessioni pianificate
+              // + allenamenti autonomi intervallati nel posto giusto.
+              const DAY_ORDER = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+              type PlannedEntry = { kind: "planned"; dayIdx: number; s: TrainingPlan["weeks"][number]["sessions"][number]; i: number };
+              type ExtraEntry = { kind: "extra"; dayIdx: number; e: { date: string; workout: any }; i: number };
+              const plannedEntries: PlannedEntry[] = w.sessions.map((s: TrainingPlan["weeks"][number]["sessions"][number], i: number) => ({
+                kind: "planned", dayIdx: DAY_ORDER.indexOf(s.day), s, i,
+              }));
+              let extraEntries: ExtraEntry[] = [];
+              if (plan.startDate) {
+                const [sy, sm, sd] = plan.startDate.split("-").map(Number);
+                const weekStart = new Date(sy, sm - 1, sd);
+                weekStart.setDate(weekStart.getDate() + (w.weekNumber - 1) * 7);
+                const weekEnd = new Date(weekStart);
+                weekEnd.setDate(weekStart.getDate() + 6);
+                const fmtLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                const wkStartKey = fmtLocal(weekStart);
+                const wkEndKey = fmtLocal(weekEnd);
+                const weekExtras = extraWorkouts.filter((e: { date: string; workout: any }) => e.date >= wkStartKey && e.date <= wkEndKey);
+                extraEntries = weekExtras.map((e: { date: string; workout: any }, i: number) => {
+                  const [ey, em, ed] = e.date.split("-").map(Number);
+                  const dt = new Date(ey, em - 1, ed);
+                  const DAY_LABELS_IT = ["dom","lun","mar","mer","gio","ven","sab"];
+                  return { kind: "extra" as const, dayIdx: DAY_ORDER.indexOf(DAY_LABELS_IT[dt.getDay()]), e, i };
+                });
+              }
+              const unified: Array<PlannedEntry | ExtraEntry> = [...plannedEntries, ...extraEntries]
+                .sort((a, b) => a.dayIdx - b.dayIdx);
+
+              return unified.map((entry) => {
+                if (entry.kind === "extra") {
+                  const e = entry.e;
+                  const dayKey = DAY_ORDER[entry.dayIdx] || "";
+                  const wtSubtype = e.workout.fields?.tipo || e.workout.fields?.sport || "";
+                  const wtDur = e.workout.fields?.durata_totale || e.workout.fields?.durata || "";
+                  return (
+                    <div key={`extra-${e.date}-${entry.i}`} style={{
+                      padding: "12px 14px",
+                      background: "#1E3A8A20",
+                      border: "1px solid #3B82F666",
+                      borderRadius: "10px", fontSize: "13px",
+                    }}>
+                      <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px" }}>
+                        <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#60A5FA", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{dayKey}</span>
+                        <span style={{ fontWeight: 600 }}>{e.workout.type}{wtSubtype ? ` · ${wtSubtype}` : ""}</span>
+                        {wtDur && <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{wtDur}min</span>}
+                        <span style={{ color: "#60A5FA", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>🔸 AUTONOMO</span>
+                      </div>
+                      <div style={{ color: "#CBD5E1", fontSize: "12px", marginTop: "2px", lineHeight: 1.4 }}>
+                        Allenamento non pianificato — registrato il {new Date(e.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}
+                      </div>
+                      {e.workout.notes && (
+                        <div style={{ color: "#94A3B8", fontSize: "11px", fontStyle: "italic", marginTop: "4px", lineHeight: 1.4 }}>
+                          {e.workout.notes}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                // Planned session
+                const s = entry.s;
+                const i = entry.i;
               // "Oggi" = il giorno della settimana corrente del piano (non hardcoded week 1)
               const isToday = w.weekNumber === todayPlanWeekNumber && s.day === todayKey;
               // È nel passato (già dovrebbe essere stata fatta)?
@@ -661,51 +723,6 @@ export default function TrainingPlanView() {
                   )}
                 </div>
               );
-            })}
-
-            {/* Allenamenti autonomi (workout fatti fuori dal piano) in questa settimana */}
-            {(() => {
-              if (!plan.startDate) return null;
-              const [sy, sm, sd] = plan.startDate.split("-").map(Number);
-              const weekStart = new Date(sy, sm - 1, sd);
-              weekStart.setDate(weekStart.getDate() + (w.weekNumber - 1) * 7);
-              const weekEnd = new Date(weekStart);
-              weekEnd.setDate(weekStart.getDate() + 6);
-              const fmtLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-              const wkStartKey = fmtLocal(weekStart);
-              const wkEndKey = fmtLocal(weekEnd);
-              const weekExtras = extraWorkouts.filter((e: { date: string; workout: any }) => e.date >= wkStartKey && e.date <= wkEndKey);
-              if (weekExtras.length === 0) return null;
-              const DAY_LABELS_IT = ["dom","lun","mar","mer","gio","ven","sab"];
-              return weekExtras.map((e: { date: string; workout: any }, i: number) => {
-                const [ey, em, ed] = e.date.split("-").map(Number);
-                const dt = new Date(ey, em - 1, ed);
-                const dayKey = DAY_LABELS_IT[dt.getDay()];
-                const wtSubtype = e.workout.fields?.tipo || e.workout.fields?.sport || "";
-                const wtDur = e.workout.fields?.durata_totale || e.workout.fields?.durata || "";
-                return (
-                  <div key={`extra-${e.date}-${i}`} style={{
-                    padding: "12px 14px",
-                    background: "#1E3A8A20",
-                    border: "1px solid #3B82F666",
-                    borderRadius: "10px", fontSize: "13px",
-                  }}>
-                    <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px" }}>
-                      <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#60A5FA", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{dayKey}</span>
-                      <span style={{ fontWeight: 600 }}>{e.workout.type}{wtSubtype ? ` · ${wtSubtype}` : ""}</span>
-                      {wtDur && <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{wtDur}min</span>}
-                      <span style={{ color: "#60A5FA", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>🔸 AUTONOMO</span>
-                    </div>
-                    <div style={{ color: "#CBD5E1", fontSize: "12px", marginTop: "2px", lineHeight: 1.4 }}>
-                      Allenamento non pianificato — registrato il {new Date(e.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}
-                    </div>
-                    {e.workout.notes && (
-                      <div style={{ color: "#94A3B8", fontSize: "11px", fontStyle: "italic", marginTop: "4px", lineHeight: 1.4 }}>
-                        {e.workout.notes}
-                      </div>
-                    )}
-                  </div>
-                );
               });
             })()}
           </div>
