@@ -14,6 +14,10 @@ const sessionSchema = z.object({
   duration_min: z.number().int().min(5).max(240),
   details: z.string(),
   rationale: z.string(),
+  // Zona FC target 1-5 (obbligatoria per tipi cardio, omessa per forza/mobilita).
+  // Il frontend renderizza il range bpm calcolato dinamicamente dalle zone
+  // personalizzate dell'utente — qui serve solo la prescrizione logica.
+  zone: z.number().int().min(1).max(5).optional(),
 });
 
 const weekSchema = z.object({
@@ -44,8 +48,9 @@ const schemaHint = `
           "type": "corsa"|"forza_gambe"|"forza_upper"|"sport"|"mobilita",
           "subtype": "opzionale es. 'Fondo Lento'",
           "duration_min": number,
-          "details": "descrizione breve (es. '25min Z2, conversazionale, passo libero')",
-          "rationale": "perché questa sessione qui"
+          "details": "descrizione breve senza numeri FC (es. 'conversazionale, passo libero'). NON scrivere range bpm — il frontend li calcola.",
+          "rationale": "perché questa sessione qui",
+          "zone": 1|2|3|4|5 (OBBLIGATORIO per corsa e sport; OMETTI per forza_gambe/forza_upper/mobilita)
         }
       ]
     }
@@ -53,6 +58,7 @@ const schemaHint = `
   "rationale": "2-3 frasi che spiegano la logica del piano (settimana singola)"
 }
 IMPORTANTE: l'array "weeks" deve contenere UNA SOLA settimana con weekNumber=1.
+ZONE: per ogni sessione cardio (corsa/sport) indica la zona target 1-5 nel campo "zone" (1=Recovery, 2=Easy/Fondo Lento, 3=Tempo, 4=Threshold/Soglia, 5=VO2max/Ripetute brevi). NON inserire numeri bpm nei "details": il frontend mostra il range corretto dalle zone personalizzate dell'utente. Scrivi solo la descrizione qualitativa (passo, sensazione, struttura).
 `.trim();
 
 export async function generateInitialPlan(
@@ -117,6 +123,7 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
         duration_min: s.duration_min,
         details: s.details,
         rationale: s.rationale,
+        zone: s.zone as (1 | 2 | 3 | 4 | 5 | undefined),
       })),
     })),
     rationale: parsed.rationale,

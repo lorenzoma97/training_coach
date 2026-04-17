@@ -355,3 +355,55 @@ export function computeZonesContext(
   const totalSessions = timeInZone.reduce((a, z) => a + z.sessionCount, 0);
   return { zones, timeInZone, polar, totalSessions };
 }
+
+// --- Inference e pulizia per piani legacy senza campo `zone` esplicito ---
+
+/**
+ * Inferisce la zona FC target (1-5) da subtype / details di una sessione
+ * pianificata. Usato SOLO come fallback per piani generati prima che il campo
+ * `zone` venisse aggiunto a PlannedSession. Ritorna null per sessioni non
+ * cardio o quando non c'è segnale chiaro.
+ *
+ * Match in ordine di specificità: prima token espliciti "Z1".."Z5" nei
+ * details, poi mappature semantiche del subtype.
+ */
+export function inferSessionZone(
+  type: string,
+  subtype: string | undefined,
+  details: string | undefined,
+): ZoneIndex | null {
+  if (type !== "corsa" && type !== "sport") return null;
+  const text = `${subtype || ""} ${details || ""}`.toLowerCase();
+
+  // Token espliciti Z1..Z5 (priorità massima)
+  const zMatch = text.match(/\bz([1-5])\b/);
+  if (zMatch) return Number(zMatch[1]) as ZoneIndex;
+
+  // Mappature semantiche (subtype ha più peso, ma controlliamo tutto il testo)
+  if (/\brecover|recupero|recover/i.test(text)) return 1;
+  if (/\bvo2|scatt|sprint|ripetute brev|intervall.{0,10}brev|400\s*m|800\s*m/i.test(text)) return 5;
+  if (/\bsogli|threshold|tempo run|ripetute lungh|1000\s*m|1k/i.test(text)) return 4;
+  if (/\btempo\b|marathon|pace gara|gara 21|gara 42/i.test(text)) return 3;
+  if (/\blento|easy|fondo|conversazional|z2|base aerobica/i.test(text)) return 2;
+  if (/\bprogressiv/i.test(text)) return 3; // finale in Z3
+  return null;
+}
+
+/**
+ * Rimuove dai details "inline" range bpm numerici (es. "Z2 (152-154 bpm)"
+ * → "Z2", oppure "150-160 bpm" → ""). Serve per:
+ * (a) pulire la visualizzazione quando il chip zona mostra il range corretto,
+ * (b) evitare che l'LLM riscriva range stale copiandoli dal piano corrente.
+ */
+export function stripInlineHRRange(text: string | undefined): string {
+  if (!text) return "";
+  return text
+    // "(152-154 bpm)" o "(152-154)"
+    .replace(/\s*\(\s*\d{2,3}\s*[-–]\s*\d{2,3}(?:\s*bpm)?\s*\)/gi, "")
+    // "152-154 bpm" / "152–154 bpm" standalone
+    .replace(/\s*\d{2,3}\s*[-–]\s*\d{2,3}\s*bpm/gi, "")
+    // pulizia spazi doppi / virgole orfane lasciate
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;])/g, "$1")
+    .trim();
+}

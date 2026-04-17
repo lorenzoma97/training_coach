@@ -9,6 +9,8 @@ import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach
 import { translateGeminiError } from "../lib/geminiErrors";
 import { savePlanWithHistory, getPlanHistory } from "../lib/coach/planHistory";
 import ZonesCard from "./ZonesCard";
+import { computeZonesContext, inferSessionZone, stripInlineHRRange, type ZonesResult } from "../lib/coach/zones";
+import type { PlannedSession } from "../lib/types";
 
 const ADAPT_QUICK_PROMPTS = [
   "Più intenso",
@@ -23,6 +25,7 @@ export default function TrainingPlanView() {
   const [currentProfile, setCurrentProfile] = useState<UserProfile | null>(null);
   const [currentGoals, setCurrentGoals] = useState<UserGoal[]>([]);
   const [recentDays, setRecentDays] = useState<Array<{ date: string; workouts: any[] }>>([]);
+  const [zonesCtx, setZonesCtx] = useState<ZonesResult | null>(null);
   const [history, setHistory] = useState<TrainingPlan[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -48,18 +51,25 @@ export default function TrainingPlanView() {
   };
 
   const load = async () => {
-    const [p, profile, goals, days, hist] = await Promise.all([
+    const [p, profile, goals, days, hist, daysForZones] = await Promise.all([
       getJSON<TrainingPlan | null>("training-plan", null),
       getJSON<UserProfile | null>("user-profile", null),
       getJSON<UserGoal[]>("user-goals", []),
       getLastNDays(14),
       getPlanHistory(),
+      // Zone FC: servono 60gg per il calcolo empirico (stesso scope di ZonesCard).
+      // Indipendente dai 14gg usati per il matching piano↔diario.
+      getLastNDays(60).catch(() => [] as Array<{ date: string; daily: any; workouts: any[] }>),
     ]);
     setPlan(p);
     setCurrentProfile(profile);
     setCurrentGoals(goals);
     setRecentDays(days);
     setHistory(hist);
+    // Ricalcola le zone dal profilo corrente + storico recente.
+    // Unica fonte di verità per i range bpm renderizzati nei chip delle sessioni.
+    const ctx = profile ? computeZonesContext(profile, daysForZones) : null;
+    setZonesCtx(ctx?.zones ?? null);
   };
 
   useEffect(() => {
@@ -223,6 +233,27 @@ export default function TrainingPlanView() {
   }, [completedSessions, extraWorkouts, skippedSessions]);
 
   const hasDeviations = deviationCount.skipped > 0 || deviationCount.partial > 0 || deviationCount.extras > 0;
+
+  // Ritorna il chip zona per una sessione: indice Z1-5 + range bpm calcolato
+  // dalle zone personalizzate correnti (unica fonte di verità). Preferisce il
+  // campo `session.zone` esplicito (piani nuovi), altrimenti infer da
+  // subtype/details (piani legacy). Null se non è una sessione cardio.
+  const zoneChipFor = (s: PlannedSession): { idx: 1 | 2 | 3 | 4 | 5; low: number; high: number } | null => {
+    if (!zonesCtx) return null;
+    const idx = (s.zone as 1 | 2 | 3 | 4 | 5 | undefined) ?? inferSessionZone(s.type, s.subtype, s.details);
+    if (!idx) return null;
+    const z = zonesCtx.zones.find((zz: { index: number }) => zz.index === idx);
+    if (!z) return null;
+    return { idx, low: z.hrLow, high: z.hrHigh };
+  };
+
+  const ZONE_CHIP_COLORS: Record<number, { bg: string; border: string; text: string }> = {
+    1: { bg: "#10B98120", border: "#10B98166", text: "#10B981" },
+    2: { bg: "#22C55E20", border: "#22C55E66", text: "#22C55E" },
+    3: { bg: "#EAB30820", border: "#EAB30866", text: "#EAB308" },
+    4: { bg: "#F9731620", border: "#F9731666", text: "#F97316" },
+    5: { bg: "#EF444420", border: "#EF444466", text: "#EF4444" },
+  };
 
   // Costruisce il messaggio per l'LLM quando l'utente clicca "Adatta alle deviazioni".
   const buildDeviationRequest = (): string => {
@@ -401,7 +432,7 @@ export default function TrainingPlanView() {
     if (session.subtype) prefill.subtype = session.subtype;
     const notes = [
       `📋 Dal piano del coach:`,
-      session.details,
+      stripInlineHRRange(session.details),
       "",
       `Razionale: ${session.rationale}`,
     ].join("\n");
@@ -666,10 +697,30 @@ export default function TrainingPlanView() {
                   borderRadius: "10px", fontSize: "13px",
                   opacity: isPast && !isCompleted ? 0.55 : 1,
                 }}>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px" }}>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px", flexWrap: "wrap" }}>
                     <span style={{ fontWeight: 700, textTransform: "uppercase", color: dayLabelColor, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{s.day}</span>
                     <span style={{ fontWeight: 600 }}>{s.type}{s.subtype ? ` · ${s.subtype}` : ""}</span>
                     <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{s.duration_min}min</span>
+                    {(() => {
+                      const chip = zoneChipFor(s);
+                      if (!chip) return null;
+                      const c = ZONE_CHIP_COLORS[chip.idx];
+                      return (
+                        <span
+                          title="Range bpm calcolato dalle tue zone FC correnti"
+                          style={{
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: "10px", fontWeight: 700,
+                            color: c.text, background: c.bg,
+                            border: `1px solid ${c.border}`,
+                            padding: "2px 7px", borderRadius: "999px",
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          Z{chip.idx} · {chip.low}-{chip.high} bpm
+                        </span>
+                      );
+                    })()}
                     {isPerfect && <span style={{ color: "#22C55E", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>✓ FATTA</span>}
                     {isPartial && <span style={{ color: "#F59E0B", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>⚠ VARIAZIONE</span>}
                     {!isCompleted && isToday && <span style={{ color: "#E8553A", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
@@ -686,7 +737,7 @@ export default function TrainingPlanView() {
                       Fatto il {new Date(completion.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })} invece del giorno pianificato
                     </div>
                   )}
-                  <div style={{ color: "#CBD5E1", lineHeight: 1.5 }}>{s.details}</div>
+                  <div style={{ color: "#CBD5E1", lineHeight: 1.5 }}>{stripInlineHRRange(s.details)}</div>
                   <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", marginTop: "6px", lineHeight: 1.5 }}>{s.rationale}</div>
                   {!isCompleted && (
                     <button
@@ -779,7 +830,7 @@ export default function TrainingPlanView() {
                           <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", minWidth: "28px" }}>{s.day}</span>
                           <span style={{ fontWeight: 600, color: "#CBD5E1" }}>{s.type}{s.subtype ? ` · ${s.subtype}` : ""}</span>
                           <span style={{ color: "#64748B", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px" }}>{s.duration_min}min</span>
-                          <span style={{ color: "#64748B", fontSize: "11px", flex: 1, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.details}</span>
+                          <span style={{ color: "#64748B", fontSize: "11px", flex: 1, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stripInlineHRRange(s.details)}</span>
                         </div>
                       ))}
                     </div>

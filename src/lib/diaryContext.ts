@@ -1,5 +1,6 @@
 import { getJSON } from "./storage";
 import type { UserProfile, UserGoal, TrainingPlan } from "./types";
+import { stripInlineHRRange } from "./coach/zones";
 
 const WORKOUT_LABELS: Record<string, string> = {
   corsa: "Corsa",
@@ -182,7 +183,13 @@ export function planAsPrompt(plan: TrainingPlan | null): string {
   if (!plan) return "(nessun piano attivo)";
   const header = `Piano generato ${plan.generatedAt}, valido fino a ${plan.validUntil}. Razionale: ${plan.rationale}`;
   const weeks = plan.weeks.map(w => {
-    const sessions = w.sessions.map(s => `  - ${s.day}: ${s.type}${s.subtype ? ` (${s.subtype})` : ""}, ${s.duration_min}min — ${s.details}`).join("\n");
+    const sessions = w.sessions.map(s => {
+      // Strip di eventuali range bpm inline dai details (piani legacy) per
+      // evitare che l'LLM riscriva numeri stale copiandoli dal piano corrente.
+      const cleanDetails = stripInlineHRRange(s.details);
+      const zoneTag = s.zone ? ` [Z${s.zone}]` : "";
+      return `  - ${s.day}: ${s.type}${s.subtype ? ` (${s.subtype})` : ""}${zoneTag}, ${s.duration_min}min — ${cleanDetails}`;
+    }).join("\n");
     return `Settimana ${w.weekNumber} (focus: ${w.focus}):\n${sessions}`;
   }).join("\n\n");
   return `${header}\n\n${weeks}`;

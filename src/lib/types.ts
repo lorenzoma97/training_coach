@@ -79,6 +79,14 @@ export interface PlannedSession {
   duration_min: number;
   details: string;
   rationale: string;
+  /**
+   * Zona FC target (1-5, modello Coggan/Friel). Solo per tipi cardio (corsa/sport).
+   * Se presente, il frontend renderizza il range bpm CALCOLATO al momento della
+   * visualizzazione dalle zone personalizzate dell'utente — separando la
+   * prescrizione logica (es. "Z2") dal valore numerico che varia col profilo.
+   * Per piani legacy senza questo campo, l'inference avviene da subtype/details.
+   */
+  zone?: 1 | 2 | 3 | 4 | 5;
 }
 
 export interface PlanWeek {
