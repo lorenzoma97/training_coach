@@ -2,7 +2,7 @@ import { z } from "zod";
 import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, planAsPrompt, getLastNDays } from "../diaryContext";
-import type { UserProfile, UserGoal, TrainingPlan } from "../types";
+import type { UserProfile, UserGoal, TrainingPlan, PlanWeek } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 import { validatePlan, planStateHash, computePlanStartDate } from "./planValidator";
 import { computeZonesContext } from "./zones";
@@ -61,6 +61,27 @@ IMPORTANTE: l'array "weeks" deve contenere UNA SOLA settimana con weekNumber=1.
 ZONE: per ogni sessione cardio (corsa/sport) indica la zona target 1-5 nel campo "zone" (1=Recovery, 2=Easy/Fondo Lento, 3=Tempo, 4=Threshold/Soglia, 5=VO2max/Ripetute brevi). NON inserire numeri bpm nei "details": il frontend mostra il range corretto dalle zone personalizzate dell'utente. Scrivi solo la descrizione qualitativa (passo, sensazione, struttura).
 `.trim();
 
+/**
+ * Map dei weeks Zod→PlanWeek[]. Serve perché Zod tipa `zone` come `number`
+ * mentre PlannedSession.zone è `1 | 2 | 3 | 4 | 5`. La narrowing la fa
+ * il schema (min 1 / max 5), il cast qui è sicuro.
+ */
+function coerceWeeks(weeks: z.infer<typeof planSchema>["weeks"]): PlanWeek[] {
+  return weeks.map(w => ({
+    weekNumber: w.weekNumber,
+    focus: w.focus,
+    sessions: w.sessions.map(s => ({
+      day: s.day,
+      type: s.type,
+      subtype: s.subtype,
+      duration_min: s.duration_min,
+      details: s.details,
+      rationale: s.rationale,
+      zone: s.zone as (1 | 2 | 3 | 4 | 5 | undefined),
+    })),
+  }));
+}
+
 export async function generateInitialPlan(
   profile: UserProfile,
   goals: UserGoal[],
@@ -113,19 +134,7 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
     validUntil: validUntil.toISOString(),
     startDate: computePlanStartDate(now),
     profileHash: planStateHash(profile, goals),
-    weeks: parsed.weeks.map((w: z.infer<typeof weekSchema>) => ({
-      weekNumber: w.weekNumber,
-      focus: w.focus,
-      sessions: w.sessions.map((s: z.infer<typeof sessionSchema>) => ({
-        day: s.day,
-        type: s.type,
-        subtype: s.subtype,
-        duration_min: s.duration_min,
-        details: s.details,
-        rationale: s.rationale,
-        zone: s.zone as (1 | 2 | 3 | 4 | 5 | undefined),
-      })),
-    })),
+    weeks: coerceWeeks(parsed.weeks),
     rationale: parsed.rationale,
   };
   // Validator deterministico post-LLM: logga violazioni safety anche se il modello
@@ -199,7 +208,7 @@ Se rilevi red flag, proponi deload esplicito.
     validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
     startDate: computePlanStartDate(now),
     profileHash: planStateHash(profile, goals),
-    weeks: parsed.weeks,
+    weeks: coerceWeeks(parsed.weeks),
     rationale: parsed.rationale,
   };
   const validation = validatePlan(plan, profile);
@@ -288,7 +297,7 @@ Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le
     validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
     startDate: currentPlan.startDate ?? computePlanStartDate(now),
     profileHash: planStateHash(profile, goals),
-    weeks: parsed.weeks,
+    weeks: coerceWeeks(parsed.weeks),
     rationale: parsed.rationale,
   };
   const validation = validatePlan(plan, profile);
