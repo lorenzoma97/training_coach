@@ -128,11 +128,20 @@ export default function TrainingPlanView() {
     };
     if (!plan || !plan.startDate || !recentDays.length) {
       return {
-        completed: new Map<string, { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string }>(),
+        completed: new Map<string, { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string; actualType?: string }>(),
         extras: [] as Array<{ date: string; workout: any }>,
         skipped: new Set<string>(),
       };
     }
+    // Family matching: forza_gambe e forza_upper sono interscambiabili per
+    // pianificazione. Se pianifico upper ma faccio gambe lo stesso giorno,
+    // conta come VARIAZIONE (non SALTATA + AUTONOMO duplicati).
+    // cardio (corsa/sport) resta distinto — un utente che pianifica corsa
+    // e fa tennis ha davvero saltato la corsa.
+    const typeFamily = (type: string): string => {
+      if (type === "forza_gambe" || type === "forza_upper") return "forza";
+      return type;
+    };
     const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
     const [sy, sm, sd] = plan.startDate.split("-").map(Number);
     const start = new Date(sy, sm - 1, sd);
@@ -149,7 +158,7 @@ export default function TrainingPlanView() {
 
     // Set di ID workout già matchati a una sessione del piano (evita doppi match)
     const usedWorkoutIds = new Set<string>();
-    const completed = new Map<string, { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string }>();
+    const completed = new Map<string, { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string; actualType?: string }>();
     const skipped = new Set<string>();
 
     for (let w = 0; w < plan.weeks.length; w++) {
@@ -212,6 +221,20 @@ export default function TrainingPlanView() {
               }
             }
           }
+          // 3° tentativo stesso-giorno: stessa family (forza_gambe ↔ forza_upper).
+          // Se il piano dice forza upper ma l'utente ha fatto forza gambe, è
+          // comunque una sessione di forza sullo stesso giorno — conta come
+          // VARIAZIONE (not SALTATA + AUTONOMO duplicati).
+          if (!match) {
+            const plannedFamily = typeFamily(s.type);
+            for (const w of (plannedDayEntry.workouts || [])) {
+              if (usedWorkoutIds.has(w.id)) continue;
+              if (typeFamily(w.type) === plannedFamily && w.type !== s.type) {
+                match = { dateKey: plannedDayEntry.date, workout: w, strictMatch: false };
+                break;
+              }
+            }
+          }
         }
 
         if (match) {
@@ -221,6 +244,9 @@ export default function TrainingPlanView() {
             sameDay: match.dateKey === plannedKey,
             strictMatch: match.strictMatch,
             actualSubtype: match.workout.fields?.tipo || match.workout.fields?.sport || undefined,
+            // Se il tipo registrato differisce da quello pianificato (family match
+            // forza_gambe↔forza_upper), il render lo mostra per trasparenza.
+            actualType: match.workout.type !== s.type ? match.workout.type : undefined,
           });
         } else if (plannedDate < todayStart) {
           // SALTATA solo se nel passato (giorni precedenti). Oggi senza match
@@ -305,7 +331,8 @@ export default function TrainingPlanView() {
         if (skippedSessions.has(key)) {
           parts.push(`- SALTATA: ${s.day} ${s.type}${s.subtype ? ` (${s.subtype})` : ""}, ${s.duration_min}min pianificata`);
         } else if (c && !c.strictMatch) {
-          parts.push(`- VARIAZIONE ${s.day}: pianificato ${s.type}${s.subtype ? ` (${s.subtype})` : ""}, fatto invece ${c.actualSubtype || "variante dello stesso tipo"}${!c.sameDay ? ` il ${c.date}` : ""}`);
+          const actualTypeHint = c.actualType ? `${c.actualType}${c.actualSubtype ? ` (${c.actualSubtype})` : ""}` : (c.actualSubtype || "variante dello stesso tipo");
+          parts.push(`- VARIAZIONE ${s.day}: pianificato ${s.type}${s.subtype ? ` (${s.subtype})` : ""}, fatto invece ${actualTypeHint}${!c.sameDay ? ` il ${c.date}` : ""}`);
         }
       }
     }
@@ -721,7 +748,7 @@ export default function TrainingPlanView() {
               const isPast = w.weekNumber < todayPlanWeekNumber ||
                 (w.weekNumber === todayPlanWeekNumber && ["lun","mar","mer","gio","ven","sab","dom"].indexOf(s.day) < ["lun","mar","mer","gio","ven","sab","dom"].indexOf(todayKey));
               // Matching piano↔diario: FATTA perfetta (verde), FATTA parziale (giallo), SALTATA (grigia)
-              let completion: { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string } | null = null;
+              let completion: { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string; actualType?: string } | null = null;
               if (plan.startDate) {
                 const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
                 const dayIdx = DAY_KEYS.indexOf(s.day);
@@ -779,7 +806,9 @@ export default function TrainingPlanView() {
                   </div>
                   {isPartial && completion && (
                     <div style={{ color: "#F59E0B", fontSize: "11px", marginBottom: "6px", fontWeight: 600 }}>
-                      Hai fatto {completion.actualSubtype ? `"${completion.actualSubtype}"` : "una variazione"} invece di "{s.subtype || s.type}"
+                      {completion.actualType
+                        ? <>Hai fatto <b>{completion.actualType}</b>{completion.actualSubtype ? ` · ${completion.actualSubtype}` : ""} invece di <b>{s.type}</b>{s.subtype ? ` · ${s.subtype}` : ""}</>
+                        : <>Hai fatto {completion.actualSubtype ? `"${completion.actualSubtype}"` : "una variazione"} invece di "{s.subtype || s.type}"</>}
                       {!completion.sameDay && ` · il ${new Date(completion.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}`}
                     </div>
                   )}
