@@ -2,7 +2,34 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { registerSW } from "virtual:pwa-register";
 import "./styles.css";
+
+// Service Worker registration + update notification.
+// vite-plugin-pwa emette `virtual:pwa-register` con callback:
+// - onNeedRefresh: nuovo SW installato e in attesa. Prompt utente per reload.
+// - onOfflineReady: app pronta per uso offline (primo install).
+// Con skipWaiting+clientsClaim in vite.config, il SW prende controllo subito,
+// ma avvisiamo comunque l'utente che c'è una nuova versione così sa perché
+// l'app si aggiorna al prossimo reload.
+const updateSW = registerSW({
+  onNeedRefresh() {
+    // Toast nativo: low-fi ma affidabile. Non serve sync con React state.
+    // Il ritardo di 1.5s evita interruzioni se l'utente sta digitando.
+    setTimeout(() => {
+      const reload = confirm(
+        "📦 Nuova versione dell'app disponibile.\n\nRicaricare ora per applicare gli aggiornamenti? (Le modifiche in corso saranno perse.)"
+      );
+      if (reload) updateSW(true);
+    }, 1500);
+  },
+  onOfflineReady() {
+    console.info("[PWA] App pronta per l'uso offline.");
+  },
+  onRegisterError(err) {
+    console.warn("[PWA] Service Worker registration failed:", err);
+  },
+});
 
 // Global error handlers: non bloccanti, solo log per debug.
 // Catturiamo errori sincroni non gestiti e promise rejection mai caught:

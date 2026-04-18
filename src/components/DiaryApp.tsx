@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useId, useRef } from "react";
-import { storage, getJSON, setJSON } from "../lib/storage";
+import { storage, getJSON, setJSON, StorageQuotaError, StorageValueTooLargeError } from "../lib/storage";
 import { events } from "../lib/events";
 
 const WORKOUT_TYPES = [
@@ -485,7 +485,12 @@ export default function DiaryApp() {
       setScreen("home");
     } catch (e: any) {
       console.error("[handleSaveWorkout]", e);
-      if (!savedOk) flash(e?.message?.includes("Spazio locale") ? e.message : "Errore nel salvataggio ✗");
+      if (!savedOk) {
+        const msg = (e instanceof StorageValueTooLargeError || e instanceof StorageQuotaError)
+          ? (e.message || "Spazio locale esaurito ✗")
+          : "Errore nel salvataggio ✗";
+        flash(msg);
+      }
     } finally {
       setSaving(false);
     }
@@ -571,10 +576,10 @@ export default function DiaryApp() {
       setScreen("home");
     } catch (e: any) {
       console.error("[handleSaveDaily]", e);
-      // Distingue errori di storage (size/quota) da errori generici — coerente
-      // con handleSaveWorkout così l'utente vede il motivo vero se quota piena.
-      const msg = (e?.name === "StorageValueTooLargeError" || e?.name === "StorageQuotaError")
-        ? (e?.message || "Spazio locale esaurito ✗")
+      // instanceof check robusto (funziona anche se e.name viene modificato):
+      // StorageQuotaError/ValueTooLargeError sono importati da storage.ts.
+      const msg = (e instanceof StorageValueTooLargeError || e instanceof StorageQuotaError)
+        ? (e.message || "Spazio locale esaurito ✗")
         : "Errore nel salvataggio ✗";
       flash(msg);
     } finally {

@@ -45,11 +45,27 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   private copyDetails = async (): Promise<void> => {
     const { error, errorInfo } = this.state;
+    // Privacy: redigiamo URL (solo origin+path, no query/hash che potrebbero
+    // contenere token/PII) e UserAgent (solo family/OS, niente versioni
+    // dettagliate utili per fingerprinting).
+    const redactedUrl = (() => {
+      try {
+        const u = new URL(window.location.href);
+        return `${u.origin}${u.pathname}`;
+      } catch { return "(redacted)"; }
+    })();
+    const uaFamily = (() => {
+      const ua = navigator.userAgent || "";
+      // Estraiamo solo token di alto livello (Chrome/Firefox/Safari/Edge + OS)
+      const match = ua.match(/(Chrome|Firefox|Safari|Edge|Opera)[\/\s]*\d+/i)?.[0] || "browser";
+      const os = ua.match(/\(([^)]+)\)/)?.[1]?.split(";")[0]?.trim() || "os";
+      return `${match} on ${os}`;
+    })();
     const payload = [
       `Errore: ${error?.name || "Error"}: ${error?.message || "(no message)"}`,
       `Data: ${new Date().toISOString()}`,
-      `URL: ${window.location.href}`,
-      `UserAgent: ${navigator.userAgent}`,
+      `URL (redatto): ${redactedUrl}`,
+      `Browser: ${uaFamily}`,
       "",
       "Stack:",
       error?.stack || "(no stack)",

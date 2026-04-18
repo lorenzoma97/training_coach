@@ -61,11 +61,35 @@ export default function BackupSection() {
   const fileRef = useRef<HTMLInputElement>(null);
   const msgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => {
     if (msgTimerRef.current) clearTimeout(msgTimerRef.current);
     if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
   }, []);
+
+  // Dialog keyboard: Escape chiude la conferma restore; focus trappato nel
+  // dialog così Tab non sfugge a elementi sottostanti (WCAG 2.1.2 + 2.4.3).
+  useEffect(() => {
+    if (!confirmState) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    // Focus sul primo button focusable all'apertura.
+    const focusables = dialog.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    focusables[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setConfirmState(null); return; }
+      if (e.key !== "Tab" || focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [confirmState]);
 
   const show = (type: "info" | "error" | "success", text: string) => {
     setMessage({ type, text });
@@ -232,6 +256,7 @@ export default function BackupSection() {
 
       {confirmState && (
         <div
+          ref={dialogRef}
           style={{
             marginTop: "14px",
             padding: "14px",
@@ -243,6 +268,7 @@ export default function BackupSection() {
             lineHeight: 1.55,
           }}
           role="dialog"
+          aria-modal="true"
           aria-label="Conferma ripristino backup"
         >
           <div style={{ fontWeight: 700, marginBottom: "8px", color: "#FCA5A5" }}>

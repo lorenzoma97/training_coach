@@ -56,14 +56,32 @@ export function extractBodyComp(days: Array<{ daily: any }>): {
   return { latest, trend7d };
 }
 
+// Soglia per batching: sotto questa quota, Promise.all senza batching è OK.
+// Sopra (es. diario 1+ anno su TrendsPage), batchiamo a 60 per volta per
+// evitare picchi di parsing JSON che bloccano il main thread.
+const BATCH_SIZE = 60;
+
+async function loadDaysBatched(dates: string[]): Promise<Array<{ date: string; d: any }>> {
+  if (dates.length <= BATCH_SIZE) {
+    return Promise.all(dates.map(date => loadDay(date).then(d => ({ date, d }))));
+  }
+  const out: Array<{ date: string; d: any }> = [];
+  for (let i = 0; i < dates.length; i += BATCH_SIZE) {
+    const chunk = dates.slice(i, i + BATCH_SIZE);
+    const loaded = await Promise.all(chunk.map(date => loadDay(date).then(d => ({ date, d }))));
+    out.push(...loaded);
+    // Yield al main thread tra batch (microtask) — permette al browser di
+    // fare altri lavori pendenti (input, paint) prima del prossimo chunk.
+    await new Promise(r => setTimeout(r, 0));
+  }
+  return out;
+}
+
 /** Ultimi N giorni ordinati crescente, con workouts e daily. */
 export async function getLastNDays(n: number): Promise<Array<{ date: string; daily: any; workouts: any[] }>> {
   const idx = await loadIndex();
   const sorted = idx.sort((a, b) => b.localeCompare(a)).slice(0, n).sort((a, b) => a.localeCompare(b));
-  // Parallelo: loadDay è IO-bound (localStorage sync wrappato in async); eseguire
-  // sequenzialmente N chiamate introduce latenza cumulativa inutile. Promise.all
-  // mantiene l'ordine di `sorted`, che è già crescente — niente re-sort necessario.
-  const loaded = await Promise.all(sorted.map(date => loadDay(date).then(d => ({ date, d }))));
+  const loaded = await loadDaysBatched(sorted);
   return loaded
     .filter(({ d }) => d != null)
     .map(({ date, d }) => ({ date, daily: d.daily, workouts: d.workouts || [] }));
@@ -72,7 +90,7 @@ export async function getLastNDays(n: number): Promise<Array<{ date: string; dai
 export async function getAllDays() {
   const idx = await loadIndex();
   const sorted = idx.sort((a, b) => a.localeCompare(b));
-  const loaded = await Promise.all(sorted.map(date => loadDay(date).then(d => ({ date, d }))));
+  const loaded = await loadDaysBatched(sorted);
   return loaded
     .filter(({ d }) => d != null)
     .map(({ date, d }) => ({ date, ...d }));

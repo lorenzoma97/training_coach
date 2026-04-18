@@ -27,16 +27,15 @@ export default defineConfig({
         orientation: "portrait",
         start_url: ".",
         scope: ".",
-        // TODO(ops): generare icon-192.png e icon-512.png in public/icons/
-        // (es. con vite-plugin-pwa-assets-generator oppure online SVG→PNG).
-        // Senza questi PNG, Android/Chrome possono rifiutare l'installazione
-        // su alcune versioni OS (requisito 192px + 512px maskable).
-        // iOS ≥16 usa apple-touch-icon (vedi index.html) come fallback.
+        // Icone PWA — solo SVG scalable (nessun PNG placeholder per evitare
+        // 404 silenti in produzione). Chrome ≥93 e Firefox ≥93 accettano SVG
+        // come icona PWA. iOS ≥16 usa apple-touch-icon (vedi index.html).
+        // Se serve target Android <10 o Chrome legacy: generare PNG 192/512
+        // con tool esterno (es. https://realfavicongenerator.net) e aggiungere
+        // qui entry dedicate + file binari in public/icons/.
         icons: [
-          { src: "favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
-          { src: "favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
-          { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" }
+          { src: "favicon.svg", sizes: "192x192 512x512", type: "image/svg+xml", purpose: "any" },
+          { src: "favicon.svg", sizes: "192x192 512x512", type: "image/svg+xml", purpose: "maskable" }
         ]
       },
       workbox: {

@@ -37,6 +37,24 @@ export default function TrainingPlanView() {
   const [adapting, setAdapting] = useState(false);
   const [adaptError, setAdaptError] = useState<string | null>(null);
 
+  // Timer elapsed per generazione/adapt: mostra all'utente un countdown reale
+  // durante l'attesa LLM (tipicamente 10-30s). Evita la sensazione di freeze.
+  const [llmElapsedSec, setLlmElapsedSec] = useState(0);
+  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    const busy = regenerating || adapting;
+    if (busy) {
+      setLlmElapsedSec(0);
+      elapsedTimerRef.current = setInterval(() => setLlmElapsedSec((s: number) => s + 1), 1000);
+    } else {
+      if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+      setLlmElapsedSec(0);
+    }
+    return () => {
+      if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+    };
+  }, [regenerating, adapting]);
+
   // Notifica successo post-update
   const [successMsg, setSuccessMsg] = useState<{ title: string; rationale: string } | null>(null);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -382,7 +400,7 @@ export default function TrainingPlanView() {
       }}
     >
       {regenerating
-        ? <span role="progressbar" aria-label="Rigenerazione in corso" aria-busy="true">⏳ Rigenerazione…</span>
+        ? <span role="progressbar" aria-label={`Rigenerazione in corso — ${llmElapsedSec} secondi`} aria-busy="true">⏳ Rigenerazione… {llmElapsedSec}s</span>
         : (plan ? "🔁 Rigenera piano (integra dati recenti)" : "🎯 Genera piano")}
     </button>
   );
@@ -536,7 +554,7 @@ export default function TrainingPlanView() {
                 opacity: regenerating ? 0.5 : 1,
               }}
             >
-              {regenerating ? "⏳ Rigenerazione…" : "🔁 Rigenera ora"}
+              {regenerating ? `⏳ Rigenerazione… ${llmElapsedSec}s` : "🔁 Rigenera ora"}
             </button>
           )}
         </div>
@@ -567,7 +585,7 @@ export default function TrainingPlanView() {
           </button>
           <button onClick={handleRegenerate} disabled={regenerating || adapting} aria-busy={regenerating || undefined} role={regenerating ? "status" : undefined} aria-label={regenerating ? "Rigenerazione piano in corso" : undefined} style={{ flex: "1 1 140px", padding: "10px 14px", background: regenerating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: regenerating ? "wait" : "pointer", opacity: regenerating ? 0.5 : 1 }}>
             {regenerating
-              ? <span role="progressbar" aria-label="Rigenerazione in corso" aria-busy="true">⏳ Rigenerazione…</span>
+              ? <span role="progressbar" aria-label={`Rigenerazione in corso — ${llmElapsedSec} secondi`} aria-busy="true">⏳ Rigenerazione… {llmElapsedSec}s</span>
               : "🔁 Rigenera con dati recenti"}
           </button>
         </div>
@@ -580,7 +598,7 @@ export default function TrainingPlanView() {
             <textarea value={adaptRequest} onChange={e => setAdaptRequest(e.target.value)} placeholder="es. 'settimana più leggera perché ho un viaggio' o 'aumenta le ripetute'" disabled={adapting} rows={2} style={{ width: "100%", padding: "10px 12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#E2E8F0", fontSize: "14px", fontFamily: "inherit", resize: "vertical", minHeight: "60px", outline: "none", boxSizing: "border-box" }} />
             <div style={{ display: "flex", gap: "8px" }}>
               <button onClick={() => handleAdapt()} disabled={adapting || !adaptRequest.trim()} aria-busy={adapting || undefined} role={adapting ? "status" : undefined} aria-label={adapting ? "Adattamento piano in corso" : undefined} style={{ flex: 1, padding: "10px", background: adapting ? "#1E293B" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: adapting ? "wait" : "pointer", opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1 }}>
-                {adapting ? "⏳ Adatto il piano…" : "Applica modifica"}
+                {adapting ? `⏳ Adatto il piano… ${llmElapsedSec}s` : "Applica modifica"}
               </button>
               <button onClick={() => { setAdaptOpen(false); setAdaptRequest(""); setAdaptError(null); }} disabled={adapting} style={{ padding: "10px 14px", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#94A3B8", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>Annulla</button>
             </div>
@@ -622,7 +640,7 @@ export default function TrainingPlanView() {
               whiteSpace: "nowrap",
             }}
           >
-            {adapting ? "⏳ Adatto…" : "🔁 Adatta alle deviazioni"}
+            {adapting ? `⏳ Adatto… ${llmElapsedSec}s` : "🔁 Adatta alle deviazioni"}
           </button>
         </div>
       )}

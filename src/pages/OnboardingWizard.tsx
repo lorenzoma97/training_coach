@@ -804,18 +804,18 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
           </div>
 
           <div style={cardStyle}>
-            <label style={labelStyle}>Infortuni o condizioni (opzionale)</label>
-            <input type="text" style={inputStyle} placeholder="es. tendinopatia polpaccio sx, ernia L5"
+            <label htmlFor="ob-injuries" style={labelStyle}>Infortuni o condizioni (opzionale)</label>
+            <input id="ob-injuries" type="text" style={inputStyle} placeholder="es. tendinopatia polpaccio sx, ernia L5"
               value={injuriesRaw}
               onChange={e => setInjuriesRaw(e.target.value)}
               onBlur={e => setProfile(p => ({ ...p, injuries: parseCSV(e.target.value) }))} />
             <div style={{ marginTop: "12px" }}>
-              <label style={labelStyle}>Farmaci / integratori (opzionale)</label>
-              <input type="text" style={inputStyle} value={profile.meds || ""} onChange={e => setProfile(p => ({ ...p, meds: e.target.value }))} />
+              <label htmlFor="ob-meds" style={labelStyle}>Farmaci / integratori (opzionale)</label>
+              <input id="ob-meds" type="text" style={inputStyle} value={profile.meds || ""} onChange={e => setProfile(p => ({ ...p, meds: e.target.value }))} />
             </div>
             <div style={{ marginTop: "12px" }}>
-              <label style={labelStyle}>Attrezzatura disponibile (opzionale)</label>
-              <input type="text" style={inputStyle} placeholder="es. tapis roulant, manubri 10kg, palestra"
+              <label htmlFor="ob-equipment" style={labelStyle}>Attrezzatura disponibile (opzionale)</label>
+              <input id="ob-equipment" type="text" style={inputStyle} placeholder="es. tapis roulant, manubri 10kg, palestra"
                 value={equipmentRaw}
                 onChange={e => setEquipmentRaw(e.target.value)}
                 onBlur={e => setProfile(p => ({ ...p, equipment: parseCSV(e.target.value) }))} />

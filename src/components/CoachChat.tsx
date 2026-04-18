@@ -42,8 +42,24 @@ export default function CoachChat() {
   // dalla variazione della chiave (profileAge + recentDaysRaw.length).
   const zonesCtxCacheRef = useRef<{ key: string; result: ReturnType<typeof computeZonesContext> } | null>(null);
   const loadHistory = async () => {
-    const saved = await getJSON<Msg[]>(HISTORY_KEY, []);
-    setMessages(saved.map(m => m.id ? m : { ...m, id: genId() }));
+    const raw = await getJSON<unknown>(HISTORY_KEY, []);
+    // Schema validation: filtriamo solo record con shape Msg valida.
+    // Storage può essere manomesso (altra tab, extension, debug console).
+    // Un payload malformato non deve crashare il render.
+    if (!Array.isArray(raw)) {
+      console.warn("[CoachChat] history non è array — reset.");
+      setMessages([]);
+      return;
+    }
+    const validated: Msg[] = raw
+      .filter((m): m is Partial<Msg> => m !== null && typeof m === "object")
+      .filter(m => (m.role === "user" || m.role === "model") && typeof m.content === "string")
+      .map(m => ({
+        id: typeof m.id === "string" && m.id ? m.id : genId(),
+        role: m.role as "user" | "model",
+        content: m.content as string,
+      }));
+    setMessages(validated);
   };
 
   useEffect(() => {
