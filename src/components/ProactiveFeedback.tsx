@@ -8,6 +8,22 @@ import { checkLocalRedFlags } from "../lib/coach/safetyRules";
 import { getLastNDays } from "../lib/diaryContext";
 import { computeZones } from "../lib/coach/zones";
 
+// Cache 1-entry per computeZones: la stessa combinazione (profileAge,
+// fcRestLatest, workoutCount) ritorna lo stesso risultato. Il costo di
+// computeZones non è trascurabile su 60gg di storico. La cache è module-level:
+// ProactiveFeedback è montato una sola volta (root app), quindi sopravvive
+// agli event handler `workout:saved` consecutivi.
+let zonesCacheKey: string | null = null;
+let zonesCacheResult: ReturnType<typeof computeZones> | null = null;
+function computeZonesCached(input: Parameters<typeof computeZones>[0]): ReturnType<typeof computeZones> {
+  const key = `${input.profile?.age ?? "-"}:${input.fcRestLatest ?? "-"}:${(input.recentWorkouts || []).length}`;
+  if (key === zonesCacheKey && zonesCacheResult) return zonesCacheResult;
+  const result = computeZones(input);
+  zonesCacheKey = key;
+  zonesCacheResult = result;
+  return result;
+}
+
 // Mutex semplice via Promise-chain: chiamate concorrenti si accodano e vengono
 // serializzate. Per chiamate sequenziali (già serializzate dal caller) il
 // comportamento è identico alla versione precedente. La queue è SELF-HEALING:
@@ -58,7 +74,7 @@ export default function ProactiveFeedback() {
       }
       const zoneZ2 = profile
         ? (() => {
-            const z = computeZones({ profile, fcRestLatest: latestMorningHR, recentWorkouts: workoutsFlat }).zones.find(x => x.index === 2);
+            const z = computeZonesCached({ profile, fcRestLatest: latestMorningHR, recentWorkouts: workoutsFlat }).zones.find(x => x.index === 2);
             return z ? { low: z.hrLow, high: z.hrHigh } : undefined;
           })()
         : undefined;

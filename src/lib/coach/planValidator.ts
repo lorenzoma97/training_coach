@@ -4,6 +4,7 @@
 
 import type { TrainingPlan, UserProfile, PlanWeek, PlannedSession, UserGoal } from "../types";
 import { restDaysMinForAge, SAFETY } from "./safetyRules";
+import { isCanonicalSubtype, WORKOUT_SUBTYPES } from "../workoutCatalog";
 
 export interface PlanValidationIssue {
   weekNumber: number;
@@ -14,7 +15,8 @@ export interface PlanValidationIssue {
     | "invalid_zone_config"
     | "volume_spike_johansen"
     | "strength_excessive_for_master"
-    | "strength_unsafe_elder";
+    | "strength_unsafe_elder"
+    | "subtype_out_of_catalog";
   message: string;
   severity: "warn" | "error";
   /** Categoria usata per metriche/raggruppamento (coincide con `type`). */
@@ -183,6 +185,7 @@ export function validatePlan(
       validateSessionZoneConfig(s, week.weekNumber, issues);
       if (hasHistory) validateSessionSpike(s, week.weekNumber, mediansByType, issues);
       validateStrengthAgeTiered(s, week.weekNumber, profile.age, issues);
+      validateSessionSubtype(s, week.weekNumber, issues);
     }
   }
 
@@ -288,6 +291,35 @@ function validateStrengthAgeTiered(
       type: "strength_excessive_for_master",
       category: "strength_excessive_for_master",
       message: `Settimana ${weekNumber} / ${s.day} ${type}: ${s.duration_min}min > 60min — eccessivo per età ≥65 (ACSM Chodzko-Zajko 2009: qualità > durata per master athlete).`,
+      severity: "warn",
+    });
+  }
+}
+
+/**
+ * Fix #4 — Subtype must be in catalog (risolve bug "Forza e stabilità" inventato).
+ * Se l'LLM crea un subtype non presente in WORKOUT_SUBTYPES, il matching
+ * piano↔diario fallisce (l'utente registra un workout ma il piano mostra
+ * "VARIAZIONE" per sempre). Severity warn: non rompe il piano, ma segnala
+ * drift dell'LLM. Issue category: "subtype_out_of_catalog".
+ */
+function validateSessionSubtype(
+  s: PlannedSession,
+  weekNumber: number,
+  issues: PlanValidationIssue[],
+): void {
+  const type = (s.type || "").toLowerCase();
+  // Subtype opzionale per definizione — se assente, non validiamo.
+  if (!s.subtype) return;
+  // Se il type non è mappato in catalogo, non possiamo validare (tolleranza).
+  if (!WORKOUT_SUBTYPES[type]) return;
+  if (!isCanonicalSubtype(type, s.subtype)) {
+    const allowed = WORKOUT_SUBTYPES[type].join(", ");
+    issues.push({
+      weekNumber,
+      type: "subtype_out_of_catalog",
+      category: "subtype_out_of_catalog",
+      message: `Settimana ${weekNumber} / ${s.day} ${type}: subtype "${s.subtype}" non è in catalogo. Valori ammessi: ${allowed}.`,
       severity: "warn",
     });
   }

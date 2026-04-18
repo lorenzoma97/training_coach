@@ -6,6 +6,7 @@ import type { UserProfile, UserGoal, TrainingPlan, PlanWeek } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 import { validatePlan, planStateHash, computePlanStartDate } from "./planValidator";
 import { computeZonesContext } from "./zones";
+import { workoutSubtypesForPrompt, isCanonicalSubtype } from "../workoutCatalog";
 
 const sessionSchema = z.object({
   day: z.enum(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]),
@@ -46,7 +47,7 @@ const schemaHint = `
         {
           "day": "lun"|"mar"|"mer"|"gio"|"ven"|"sab"|"dom",
           "type": "corsa"|"forza_gambe"|"forza_upper"|"sport"|"mobilita",
-          "subtype": "opzionale es. 'Fondo Lento'",
+          "subtype": "DEVE essere uno dei valori canonici per il tipo (lista sotto) — NON inventare nomi",
           "duration_min": number,
           "details": "descrizione breve senza numeri FC (es. 'conversazionale, passo libero'). NON scrivere range bpm — il frontend li calcola.",
           "rationale": "perché questa sessione qui",
@@ -58,6 +59,11 @@ const schemaHint = `
   "rationale": "2-3 frasi che spiegano la logica del piano (settimana singola)"
 }
 IMPORTANTE: l'array "weeks" deve contenere UNA SOLA settimana con weekNumber=1.
+
+SUBTYPE ALLOWLIST (obbligatorio — inventare nomi rompe il matching piano↔diario):
+${workoutSubtypesForPrompt()}
+Se un'attività non ha un subtype adatto nella lista sopra, scegli il più vicino semanticamente (es. "circuito funzionale" → "Circuito Misto") invece di inventare un nuovo nome.
+
 ZONE: per ogni sessione cardio (corsa/sport) indica la zona target 1-5 nel campo "zone" (1=Recovery, 2=Easy/Fondo Lento, 3=Tempo, 4=Threshold/Soglia, 5=VO2max/Ripetute brevi). NON inserire numeri bpm nei "details": il frontend mostra il range corretto dalle zone personalizzate dell'utente. Scrivi solo la descrizione qualitativa (passo, sensazione, struttura).
 `.trim();
 
@@ -80,6 +86,158 @@ function coerceWeeks(weeks: z.infer<typeof planSchema>["weeks"]): PlanWeek[] {
       zone: s.zone as (1 | 2 | 3 | 4 | 5 | undefined),
     })),
   }));
+}
+
+/**
+ * Piano di emergenza hard-coded: usato SOLO se l'LLM fallisce durante
+ * l'onboarding (generateInitialPlan). Garantisce che l'utente possa
+ * completare il flusso di onboarding e iniziare ad allenarsi in sicurezza
+ * anche se Gemini è down o rifiuta il JSON.
+ *
+ * Principi di sicurezza:
+ * - Volume conservativo (≤90min/sessione, Z2 per il cardio).
+ * - Età ≥65: riduzione durata corsa (20min) e zona cap Z2.
+ * - experience=sedentary/occasional: nessuna Z3+, volume ridotto.
+ * - Rispetta disponibilità settimanale: sforiamo verso il BASSO, mai in alto.
+ * - Almeno 2 giorni di riposo.
+ */
+function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPlan {
+  const isBeginner = profile.experience === "sedentary" || profile.experience === "occasional";
+  const isSenior = profile.age >= 65;
+  const availableDays = Math.max(1, Math.min(7, profile.weekly_availability?.days ?? 4));
+  const hoursPerSession = Math.max(0.25, profile.weekly_availability?.hoursPerSession ?? 1);
+  // Durata max per sessione, cappata a 60min per beginner/senior, altrimenti 75min.
+  const maxDurMin = Math.min(
+    Math.round(hoursPerSession * 60),
+    isBeginner || isSenior ? 60 : 75,
+  );
+
+  // Durate conservative per i vari tipi
+  const runDur = Math.min(maxDurMin, isSenior ? 20 : isBeginner ? 25 : 35);
+  const strDur = Math.min(maxDurMin, 30);
+  const mobDur = Math.min(maxDurMin, 20);
+
+  // Template base 7 giorni: 3 corse Z2 + 1 forza + 1 mobilità + 2 riposi.
+  // I giorni non scelti restano senza sessione (= riposo).
+  type DayKey = "lun" | "mar" | "mer" | "gio" | "ven" | "sab" | "dom";
+  const template: Array<{ day: DayKey; session: PlanWeek["sessions"][number] | null }> = [
+    {
+      day: "lun",
+      session: {
+        day: "lun",
+        type: "corsa",
+        subtype: "Fondo Lento",
+        duration_min: runDur,
+        details: "Corsa conversazionale in Z2, passo libero e sostenibile. Se serve, cammina nei primi minuti per riscaldare.",
+        rationale: "Fondo aerobico: base di resistenza senza stress cardiovascolare eccessivo.",
+        zone: 2,
+      },
+    },
+    {
+      day: "mar",
+      session: {
+        day: "mar",
+        type: "forza_gambe",
+        subtype: "Base total-body",
+        duration_min: strDur,
+        details: "3 serie × 10 ripetizioni: squat a corpo libero, affondi, plank 30-45s, push-up (anche su ginocchia). Recupero 60-90s.",
+        rationale: "Forza funzionale leggera: supporta corsa e previene infortuni (Rønnestad 2014).",
+      },
+    },
+    { day: "mer", session: null }, // riposo
+    {
+      day: "gio",
+      session: {
+        day: "gio",
+        type: "corsa",
+        subtype: "Fondo Lento",
+        duration_min: runDur,
+        details: "Come lunedì: Z2 conversazionale. Se senti fatica dalla sessione forza, riduci il passo.",
+        rationale: "Seconda corsa aerobica: consolida l'adattamento senza sovraccarico.",
+        zone: 2,
+      },
+    },
+    {
+      day: "ven",
+      session: {
+        day: "ven",
+        type: "mobilita",
+        subtype: "Mobilità & stretching",
+        duration_min: mobDur,
+        details: "Mobilità anche/caviglie + stretching dinamico gambe + core leggero. Movimenti lenti e controllati.",
+        rationale: "Recovery attivo: mantiene range di movimento e riduce il rischio infortuni.",
+      },
+    },
+    {
+      day: "sab",
+      session: {
+        day: "sab",
+        type: "corsa",
+        subtype: "Fondo Lento",
+        duration_min: runDur,
+        details: "Corsa Z2 lunga ma senza intensità. Rispetta il respiro: devi poter parlare.",
+        rationale: "Volume settimanale: costruzione aerobica con carico distribuito.",
+        zone: 2,
+      },
+    },
+    { day: "dom", session: null }, // riposo
+  ];
+
+  // Filtra al numero di giorni disponibili. Ordine di priorità (preserviamo
+  // un MIX sensato se `availableDays` è basso):
+  //   1) prima corsa (lun)
+  //   2) forza (mar)
+  //   3) seconda corsa (gio)
+  //   4) terza corsa (sab)
+  //   5) mobilità (ven)
+  // Così con 2 giorni disponibili otteniamo 1 corsa + 1 forza (non 2 corse),
+  // con 3 → 2 corse + 1 forza, con 4+ → include anche mobilità.
+  const priorityByDay: Record<string, number> = {
+    lun: 1,
+    mar: 2,
+    gio: 3,
+    sab: 4,
+    ven: 5,
+  };
+  const activeDays = template.filter(t => t.session !== null);
+  const sortedByPriority = [...activeDays].sort(
+    (a, b) => (priorityByDay[a.day] ?? 99) - (priorityByDay[b.day] ?? 99),
+  );
+  const keepCount = Math.min(activeDays.length, availableDays);
+  const keepSet = new Set(sortedByPriority.slice(0, keepCount).map(t => t.day));
+
+  const sessions: PlanWeek["sessions"] = template
+    .filter(t => t.session !== null && keepSet.has(t.day))
+    .map(t => t.session!);
+
+  const now = new Date();
+  const validUntil = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
+  const ageNote = isSenior ? " Durate ridotte per fascia età ≥65." : "";
+  const begNote = isBeginner ? " Volume e intensità conservativi (beginner cap)." : "";
+  const goalNote = goals.length
+    ? " Il piano si concentra su base aerobica e forza funzionale — gli obiettivi specifici saranno integrati quando il coach AI tornerà disponibile."
+    : "";
+
+  return {
+    generatedAt: now.toISOString(),
+    validUntil: validUntil.toISOString(),
+    startDate: computePlanStartDate(now),
+    profileHash: planStateHash(profile, goals),
+    weeks: [
+      {
+        weekNumber: 1,
+        focus: "Base aerobica + forza funzionale (piano di emergenza)",
+        sessions,
+      },
+    ],
+    rationale:
+      `[Piano di emergenza — LLM non disponibile] Settimana introduttiva con ` +
+      `${sessions.filter(s => s.type === "corsa").length} corse in Z2, ` +
+      `${sessions.filter(s => s.type === "forza_gambe").length} sessione forza e ` +
+      `${sessions.filter(s => s.type === "mobilita").length} mobilità.` +
+      ageNote + begNote + goalNote +
+      " Puoi rigenerare un piano personalizzato dal pannello Coach appena il servizio risponde.",
+  };
 }
 
 export async function generateInitialPlan(
@@ -114,16 +272,25 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
   };
   const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
-  const raw = await generateJSON<unknown>({
-    systemInstruction,
-    userPrompt,
-    schemaHint,
-    maxTokens: 1800,
-  });
+  // Fallback graceful: se la chiamata LLM fallisce o il JSON non è parsabile,
+  // restituiamo un piano di emergenza hard-coded invece di bloccare l'onboarding.
+  // L'utente può rigenerare un piano personalizzato in qualunque momento.
+  let raw: unknown;
+  try {
+    raw = await generateJSON<unknown>({
+      systemInstruction,
+      userPrompt,
+      schemaHint,
+      maxTokens: 1800,
+    });
+  } catch (e) {
+    console.error("[planGenerator] generateJSON failed in onboarding, returning fallback plan:", e);
+    return buildFallbackPlan(profile, goals);
+  }
   const parseResult = planSchema.safeParse(raw);
   if (!parseResult.success) {
-    console.error("[planGenerator] Zod parse failed:", parseResult.error.message);
-    throw new Error("Il coach non è riuscito a generare un piano strutturato. Riprova tra qualche secondo.");
+    console.error("[planGenerator] Zod parse failed in onboarding, returning fallback plan:", parseResult.error.message);
+    return buildFallbackPlan(profile, goals);
   }
   const parsed = parseResult.data;
 

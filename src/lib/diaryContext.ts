@@ -60,23 +60,22 @@ export function extractBodyComp(days: Array<{ daily: any }>): {
 export async function getLastNDays(n: number): Promise<Array<{ date: string; daily: any; workouts: any[] }>> {
   const idx = await loadIndex();
   const sorted = idx.sort((a, b) => b.localeCompare(a)).slice(0, n).sort((a, b) => a.localeCompare(b));
-  const out = [];
-  for (const date of sorted) {
-    const d = await loadDay(date);
-    if (d) out.push({ date, daily: d.daily, workouts: d.workouts || [] });
-  }
-  return out;
+  // Parallelo: loadDay è IO-bound (localStorage sync wrappato in async); eseguire
+  // sequenzialmente N chiamate introduce latenza cumulativa inutile. Promise.all
+  // mantiene l'ordine di `sorted`, che è già crescente — niente re-sort necessario.
+  const loaded = await Promise.all(sorted.map(date => loadDay(date).then(d => ({ date, d }))));
+  return loaded
+    .filter(({ d }) => d != null)
+    .map(({ date, d }) => ({ date, daily: d.daily, workouts: d.workouts || [] }));
 }
 
 export async function getAllDays() {
   const idx = await loadIndex();
   const sorted = idx.sort((a, b) => a.localeCompare(b));
-  const out = [];
-  for (const date of sorted) {
-    const d = await loadDay(date);
-    if (d) out.push({ date, ...d });
-  }
-  return out;
+  const loaded = await Promise.all(sorted.map(date => loadDay(date).then(d => ({ date, d }))));
+  return loaded
+    .filter(({ d }) => d != null)
+    .map(({ date, d }) => ({ date, ...d }));
 }
 
 /** Formato testuale leggibile per l'LLM, riuso lo stile dell'export TXT originale. */

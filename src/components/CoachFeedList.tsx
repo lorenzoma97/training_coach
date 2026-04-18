@@ -25,12 +25,15 @@ export default function CoachFeedList() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 3000);
+    // Polling rimosso: gli eventi `data:externalChange` (per cross-tab) e
+    // `plan:updated` coprono tutti i casi di variazione del feed. Il
+    // precedente setInterval(load, 3000) era ridondante e causava fetch
+    // periodici inutili dello storage.
     const off = events.on("plan:updated", load);
     const offExt = events.on("data:externalChange", ({ key }) => {
       if (key === "coach-feed") load();
     });
-    return () => { clearInterval(id); off(); offExt(); };
+    return () => { off(); offExt(); };
   }, []);
 
   const dismiss = async (id: string) => {

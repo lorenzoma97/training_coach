@@ -1,4 +1,4 @@
-import { getJSON, setJSON } from "./storage";
+import { getJSON, setJSON, storage } from "./storage";
 import { generateWeeklyReport } from "./coach/weeklyReport";
 import { regenerateNextWeek } from "./coach/planGenerator";
 import { savePlanWithHistory } from "./coach/planHistory";
@@ -14,6 +14,32 @@ const LAST_REPORT_KEY = "last-weekly-report-date"; // YYYY-MM-DD
 const LAST_MOTIVATION_KEY = "last-motivation-date"; // YYYY-MM-DD
 const MOTIVATION_MIN_IDLE_DAYS = 3; // giorni senza workout prima di triggerare check-in
 const MOTIVATION_MIN_GAP_DAYS = 4;  // intervallo minimo tra due check-in motivazionali
+
+// Soft-mutex cross-tab per il weekly report: il lock in-memory copre solo lo
+// stesso mount; con più tab aperte entrambe possono passare il check sulla data
+// e lanciare in parallelo (LLM + scrittura feed duplicata). Scriviamo una flag
+// con timestamp e UUID tab: se un altro tab l'ha scritta da <60s, skippiamo.
+const WEEKLY_LOCK_KEY = "weekly-report-running";
+const WEEKLY_LOCK_TTL_MS = 60_000;
+
+interface WeeklyLock { ts: number; tabId: string }
+
+// ID persistente per tab. sessionStorage è scoped per tab, quindi due tab hanno
+// ID diversi (ok per lock cross-tab); localStorage NO, sarebbe condiviso.
+function getTabId(): string {
+  try {
+    let id = sessionStorage.getItem("tab-id");
+    if (!id) {
+      id = (typeof crypto !== "undefined" && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now().toString(36);
+      sessionStorage.setItem("tab-id", id);
+    }
+    return id;
+  } catch {
+    return Math.random().toString(36).slice(2);
+  }
+}
 
 function todayLocal(): string {
   const d = new Date();
@@ -45,61 +71,86 @@ async function _runWeekly(force: boolean): Promise<CoachFeedItem | null> {
   const todayStr = todayLocal();
   if (last === todayStr && !force) return null;
 
-  // Marca subito la data per evitare duplicati se più tab aperte
-  await setJSON(LAST_REPORT_KEY, todayStr);
-
-  const profile = await getJSON<UserProfile | null>("user-profile", null);
-  if (!profile) return null;
-
-  const report = await generateWeeklyReport();
-  const item: CoachFeedItem = {
-    id: Date.now().toString(36),
-    date: today.toISOString(),
-    type: "weekly-report",
-    title: "Report settimanale",
-    severity: "info",
-    content: [
-      report.summary,
-      "",
-      `**Aderenza**: ${Math.round(report.adherencePct)}%`,
-      `**Volume**: ${Object.entries(report.volumeByDiscipline).map(([k, v]) => `${k} ${v.actual_min}/${v.planned_min}min`).join(" · ")}`,
-      `**Dolore**: ${report.painTrend}`,
-      `**Sonno/Stanchezza**: ${report.sleepFatigueTrend}`,
-      "",
-      `**Settimana prossima**: ${report.adjustments}`,
-    ].join("\n"),
-  };
-
-  const feed = await getJSON<CoachFeedItem[]>("coach-feed", []);
-  feed.unshift(item);
-  await setJSON("coach-feed", feed.slice(0, 200));
-
-  // Rigenera piano prossime 2 settimane
-  try {
-    const goals = await getJSON<UserGoal[]>("user-goals", []);
-    const ctx = await buildCoachContext({ daysBack: 14 });
-    const currentPlan = await getJSON<TrainingPlan | null>("training-plan", null);
-    const nextPlan = await regenerateNextWeek(profile, goals, currentPlan, ctx.recentDaysText);
-    // Archivia il piano precedente nello storico prima di sovrascrivere.
-    await savePlanWithHistory(nextPlan);
-    events.emit("plan:updated", { at: new Date().toISOString() });
-
-    const planUpdate: CoachFeedItem = {
-      id: Date.now().toString(36) + "p",
-      date: new Date().toISOString(),
-      type: "plan-update",
-      title: "Piano aggiornato",
-      severity: "info",
-      content: nextPlan.rationale,
-    };
-    const f2 = await getJSON<CoachFeedItem[]>("coach-feed", []);
-    f2.unshift(planUpdate);
-    await setJSON("coach-feed", f2.slice(0, 200));
-  } catch (e) {
-    console.error("[scheduler] plan regen failed", e);
+  // Soft-mutex cross-tab: se un altro tab ha iniziato da <60s, skippa.
+  // La flag stale (>60s) è considerata abbandonata (crash/reload) e sovrascritta.
+  const tabId = getTabId();
+  const existingLock = await getJSON<WeeklyLock | null>(WEEKLY_LOCK_KEY, null);
+  if (existingLock && existingLock.tabId !== tabId) {
+    const age = Date.now() - existingLock.ts;
+    if (age >= 0 && age < WEEKLY_LOCK_TTL_MS) {
+      console.info(
+        `[scheduler] weekly: skip, altro tab in esecuzione (tab=${existingLock.tabId}, age=${age}ms)`,
+      );
+      return null;
+    }
   }
+  await setJSON(WEEKLY_LOCK_KEY, { ts: Date.now(), tabId } satisfies WeeklyLock);
 
-  return item;
+  try {
+    // Marca subito la data per evitare duplicati se più tab aperte
+    await setJSON(LAST_REPORT_KEY, todayStr);
+
+    const profile = await getJSON<UserProfile | null>("user-profile", null);
+    if (!profile) return null;
+
+    const report = await generateWeeklyReport();
+    const item: CoachFeedItem = {
+      id: Date.now().toString(36),
+      date: today.toISOString(),
+      type: "weekly-report",
+      title: "Report settimanale",
+      severity: "info",
+      content: [
+        report.summary,
+        "",
+        `**Aderenza**: ${Math.round(report.adherencePct)}%`,
+        `**Volume**: ${Object.entries(report.volumeByDiscipline).map(([k, v]) => `${k} ${v.actual_min}/${v.planned_min}min`).join(" · ")}`,
+        `**Dolore**: ${report.painTrend}`,
+        `**Sonno/Stanchezza**: ${report.sleepFatigueTrend}`,
+        "",
+        `**Settimana prossima**: ${report.adjustments}`,
+      ].join("\n"),
+    };
+
+    const feed = await getJSON<CoachFeedItem[]>("coach-feed", []);
+    feed.unshift(item);
+    await setJSON("coach-feed", feed.slice(0, 200));
+
+    // Rigenera piano prossime 2 settimane
+    try {
+      const goals = await getJSON<UserGoal[]>("user-goals", []);
+      const ctx = await buildCoachContext({ daysBack: 14 });
+      const currentPlan = await getJSON<TrainingPlan | null>("training-plan", null);
+      const nextPlan = await regenerateNextWeek(profile, goals, currentPlan, ctx.recentDaysText);
+      // Archivia il piano precedente nello storico prima di sovrascrivere.
+      await savePlanWithHistory(nextPlan);
+      events.emit("plan:updated", { at: new Date().toISOString() });
+
+      const planUpdate: CoachFeedItem = {
+        id: Date.now().toString(36) + "p",
+        date: new Date().toISOString(),
+        type: "plan-update",
+        title: "Piano aggiornato",
+        severity: "info",
+        content: nextPlan.rationale,
+      };
+      const f2 = await getJSON<CoachFeedItem[]>("coach-feed", []);
+      f2.unshift(planUpdate);
+      await setJSON("coach-feed", f2.slice(0, 200));
+    } catch (e) {
+      console.error("[scheduler] plan regen failed", e);
+    }
+
+    return item;
+  } finally {
+    // Rilascia il lock a prescindere dall'esito (success/error): una flag stale
+    // bloccherebbe altre esecuzioni fino alla scadenza TTL.
+    try {
+      await storage.delete(WEEKLY_LOCK_KEY);
+    } catch (e) {
+      console.warn("[scheduler] weekly: failed to clear lock", e);
+    }
+  }
 }
 
 // ---------- Motivation check-in ----------

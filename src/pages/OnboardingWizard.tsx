@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useId } from "react";
 import { setJSON, getJSON } from "../lib/storage";
 import type { UserProfile, UserGoal, TrainingPlan, FeasibilityCheck, Experience } from "../lib/types";
 import { hasApiKey } from "../lib/gemini";
@@ -31,7 +31,12 @@ interface OnboardingDraft {
   goalTexts?: string[];
   acceptedDisclaimer?: boolean;
   goalsNeedRecheck?: boolean;
+  // ISO timestamp ultimo salvataggio — usato per scartare draft più vecchi di 30 giorni.
+  savedAt?: string;
 }
+
+// Soglia in ms oltre la quale un draft viene considerato stantio e scartato (30 giorni).
+const DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 const cardStyle: React.CSSProperties = {
   background: "#16213E", border: "1px solid rgba(255,255,255,0.06)",
@@ -63,10 +68,16 @@ const EXP_OPTIONS: Array<{ v: Experience; label: string; hint: string }> = [
 ];
 
 export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
+  // Prefisso stabile per id dei campi (a11y: label htmlFor).
+  const uidBase = useId();
+  const fid = (name: string) => `${uidBase}-${name}`;
+
   const [step, setStep] = useState<Step>("intro");
   const [goalsNeedRecheck, setGoalsNeedRecheck] = useState(false);
   const [acceptedDisclaimer, setAcceptedDisclaimer] = useState(false);
   const draftLoadedRef = useRef(false);
+  // Draft in attesa di essere ripreso/ricominciato. Se != null, mostra banner in testa.
+  const [pendingDraft, setPendingDraft] = useState<OnboardingDraft | null>(null);
 
   // Provider/modello/chiave (multi-LLM)
   const [provider, setProvider] = useState<ProviderId>("gemini");
@@ -107,18 +118,42 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       // Carica goal già accettati
       const existingGoals = await getJSON<UserGoal[]>("user-goals", []);
       if (existingGoals.length) setGoals(existingGoals);
-      // Ripristina draft (step corrente, testi goal non ancora confermati, flag disclaimer)
+      // Ripristina draft: se presente e recente (<=30gg) lo espone come banner "Riprendi?".
+      // Se più vecchio, lo scarta silenziosamente così l'onboarding parte pulito.
       const draft = await getJSON<OnboardingDraft | null>("onboarding-draft", null);
       if (draft) {
-        if (draft.step && STEPS.includes(draft.step)) setStep(draft.step);
-        if (draft.goalsCount) setGoalsCount(draft.goalsCount);
-        if (Array.isArray(draft.goalTexts) && draft.goalTexts.length === 3) setGoalTexts(draft.goalTexts);
-        if (draft.acceptedDisclaimer) setAcceptedDisclaimer(true);
-        if (draft.goalsNeedRecheck) setGoalsNeedRecheck(true);
+        const savedAtMs = draft.savedAt ? new Date(draft.savedAt).getTime() : 0;
+        const isStale = savedAtMs > 0 && (Date.now() - savedAtMs) > DRAFT_MAX_AGE_MS;
+        const hasContent = !!(draft.step && draft.step !== "intro")
+          || !!(draft.goalTexts && draft.goalTexts.some(t => t && t.trim()))
+          || !!draft.acceptedDisclaimer;
+        if (isStale) {
+          try { await setJSON("onboarding-draft", null); } catch { /* ignore */ }
+        } else if (hasContent) {
+          setPendingDraft(draft);
+        }
       }
       draftLoadedRef.current = true;
     })();
   }, []);
+
+  // Applica il draft in stato e nasconde il banner
+  const resumeDraft = () => {
+    const draft = pendingDraft;
+    if (!draft) return;
+    if (draft.step && STEPS.includes(draft.step)) setStep(draft.step);
+    if (draft.goalsCount) setGoalsCount(draft.goalsCount);
+    if (Array.isArray(draft.goalTexts) && draft.goalTexts.length === 3) setGoalTexts(draft.goalTexts);
+    if (draft.acceptedDisclaimer) setAcceptedDisclaimer(true);
+    if (draft.goalsNeedRecheck) setGoalsNeedRecheck(true);
+    setPendingDraft(null);
+  };
+
+  // Cancella il draft dallo storage e riparte da intro
+  const discardDraft = async () => {
+    try { await setJSON("onboarding-draft", null); } catch { /* ignore */ }
+    setPendingDraft(null);
+  };
 
   const onProviderChange = (p: ProviderId) => {
     setProvider(p);
@@ -201,9 +236,11 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   // Non partire prima del caricamento iniziale per evitare di sovrascrivere il draft esistente.
   useEffect(() => {
     if (!draftLoadedRef.current) return;
-    const draft: OnboardingDraft = { step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck };
+    // Non sovrascrivere il draft mentre il banner di resume è ancora in attesa di risposta utente.
+    if (pendingDraft) return;
+    const draft: OnboardingDraft = { step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck, savedAt: new Date().toISOString() };
     setJSON("onboarding-draft", draft).catch(() => { /* ignore quota here, non-critical */ });
-  }, [step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck]);
+  }, [step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck, pendingDraft]);
 
   const parseNum = (v: string): number | undefined => {
     const t = v.trim();
@@ -436,6 +473,24 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         ))}
       </div>
 
+      {pendingDraft && (
+        <div role="region" aria-label="Riprendi onboarding" style={{
+          ...cardStyle, marginBottom: "16px",
+          border: "1px solid #F59E0B66", background: "#F59E0B15",
+        }}>
+          <div style={{ fontWeight: 700, color: "#F59E0B", marginBottom: "6px" }}>
+            Riprendi onboarding da dove l'hai lasciato?
+          </div>
+          <div style={{ fontSize: "13px", color: "#CBD5E1", marginBottom: "12px", lineHeight: 1.5 }}>
+            Abbiamo trovato un setup incompleto salvato in precedenza. Puoi riprenderlo o ricominciare da zero (i dati del draft verranno cancellati).
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button onClick={resumeDraft} style={{ ...primaryBtn, flex: "1 1 140px", padding: "10px", fontSize: "14px" }}>Riprendi</button>
+            <button onClick={discardDraft} style={{ ...ghostBtn, flex: "1 1 140px" }}>Ricomincia da zero</button>
+          </div>
+        </div>
+      )}
+
       {step === "intro" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
@@ -483,8 +538,8 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
           </div>
 
           <div style={cardStyle}>
-            <label style={labelStyle}>Provider LLM</label>
-            <select style={{ ...inputStyle, fontFamily: "inherit" }} value={provider} onChange={e => onProviderChange(e.target.value as ProviderId)}>
+            <label htmlFor={fid("provider")} style={labelStyle}>Provider LLM</label>
+            <select id={fid("provider")} style={{ ...inputStyle, fontFamily: "inherit" }} value={provider} onChange={e => onProviderChange(e.target.value as ProviderId)}>
               {(Object.keys(PROVIDER_LABELS) as ProviderId[]).map(p => (
                 <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
               ))}
@@ -495,13 +550,16 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             </div>
 
             <div style={{ marginTop: "12px" }}>
-              <label style={labelStyle}>
+              <label htmlFor={fid("apiKey")} style={labelStyle}>
                 Chiave API <span style={{ color: "#E8553A" }} aria-label="obbligatoria">*</span>
               </label>
-              <input type="password" style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }}
+              <input id={fid("apiKey")} type="password" style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }}
                 value={apiKeyInput}
                 onChange={e => { setApiKeyInput(e.target.value); setKeyOk(null); setModels([]); }}
-                placeholder={PROVIDER_PLACEHOLDER[provider]} autoComplete="off" />
+                placeholder={PROVIDER_PLACEHOLDER[provider]} autoComplete="off"
+                aria-invalid={keyOk === false ? true : undefined}
+                aria-describedby={keyOk === false ? fid("error-apiKey") : undefined}
+              />
             </div>
 
             <button onClick={discoverModels}
@@ -516,8 +574,8 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
 
             {models.length > 0 && (
               <div style={{ marginTop: "12px" }}>
-                <label style={labelStyle}>Modello</label>
-                <select style={{ ...inputStyle, fontFamily: "inherit" }} value={modelId} onChange={e => { setModelId(e.target.value); setKeyOk(null); }}>
+                <label htmlFor={fid("model")} style={labelStyle}>Modello</label>
+                <select id={fid("model")} style={{ ...inputStyle, fontFamily: "inherit" }} value={modelId} onChange={e => { setModelId(e.target.value); setKeyOk(null); }}>
                   {models.map(m => (
                     <option key={m.id} value={m.id}>{m.displayName ? `${m.displayName} (${m.id})` : m.id}</option>
                   ))}
@@ -540,7 +598,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
               </div>
             )}
             {keyOk === false && (
-              <div style={{ marginTop: "10px", fontSize: "13px", color: "#EF4444" }}>{keyError}</div>
+              <div id={fid("error-apiKey")} role="alert" style={{ marginTop: "10px", fontSize: "13px", color: "#EF4444" }}>{keyError}</div>
             )}
           </div>
 
@@ -566,28 +624,49 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
           </div>
 
           <div style={cardStyle}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
-              <div>
-                <label style={labelStyle}>Età <span style={{ color: "#E8553A" }} aria-label="obbligatorio">*</span></label>
-                <input type="number" min={10} max={100} style={inputStyle} value={profile.age ?? ""} onChange={e => setProfile(p => ({ ...p, age: parseNum(e.target.value) }))} />
-              </div>
-              <div>
-                <label style={labelStyle}>Sesso</label>
-                <select style={inputStyle} value={profile.sex} onChange={e => setProfile(p => ({ ...p, sex: e.target.value as any }))}>
-                  <option value="m">Maschile</option>
-                  <option value="f">Femminile</option>
-                  <option value="other">Altro / Preferisco non dirlo</option>
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Peso (kg) <span style={{ color: "#E8553A" }} aria-label="obbligatorio">*</span></label>
-                <input type="number" step="0.1" style={inputStyle} value={profile.weight_kg ?? ""} onChange={e => setProfile(p => ({ ...p, weight_kg: parseNum(e.target.value) }))} />
-              </div>
-              <div>
-                <label style={labelStyle}>Altezza (cm) <span style={{ color: "#E8553A" }} aria-label="obbligatorio">*</span></label>
-                <input type="number" style={inputStyle} value={profile.height_cm ?? ""} onChange={e => setProfile(p => ({ ...p, height_cm: parseNum(e.target.value) }))} />
-              </div>
-            </div>
+            {(() => {
+              // Per associare aria-describedby in modo granulare, calcoliamo errori per ciascun campo.
+              // Riusa i limiti di profileValidationError ma mirato sul singolo input.
+              const ageErr = profile.age == null ? null : (profile.age < 10 ? "Età minima 10 anni." : profile.age > 100 ? "Età massima 100 anni." : null);
+              const weightErr = profile.weight_kg == null ? null : (profile.weight_kg < 25 ? "Peso minimo 25 kg." : profile.weight_kg > 300 ? "Peso massimo 300 kg." : null);
+              const heightErr = profile.height_cm == null ? null : (profile.height_cm < 100 ? "Altezza minima 100 cm." : profile.height_cm > 250 ? "Altezza massima 250 cm." : null);
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                  <div>
+                    <label htmlFor={fid("age")} style={labelStyle}>Età <span style={{ color: "#E8553A" }} aria-label="obbligatorio">*</span></label>
+                    <input id={fid("age")} type="number" min={10} max={100} style={inputStyle} value={profile.age ?? ""}
+                      onChange={e => setProfile(p => ({ ...p, age: parseNum(e.target.value) }))}
+                      aria-invalid={ageErr ? true : undefined}
+                      aria-describedby={ageErr ? fid("error-age") : undefined} />
+                    {ageErr && <div id={fid("error-age")} role="alert" style={{ fontSize: "12px", color: "#EF4444", marginTop: "4px" }}>{ageErr}</div>}
+                  </div>
+                  <div>
+                    <label htmlFor={fid("sex")} style={labelStyle}>Sesso</label>
+                    <select id={fid("sex")} style={inputStyle} value={profile.sex} onChange={e => setProfile(p => ({ ...p, sex: e.target.value as any }))}>
+                      <option value="m">Maschile</option>
+                      <option value="f">Femminile</option>
+                      <option value="other">Altro / Preferisco non dirlo</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor={fid("weight")} style={labelStyle}>Peso (kg) <span style={{ color: "#E8553A" }} aria-label="obbligatorio">*</span></label>
+                    <input id={fid("weight")} type="number" step="0.1" style={inputStyle} value={profile.weight_kg ?? ""}
+                      onChange={e => setProfile(p => ({ ...p, weight_kg: parseNum(e.target.value) }))}
+                      aria-invalid={weightErr ? true : undefined}
+                      aria-describedby={weightErr ? fid("error-weight") : undefined} />
+                    {weightErr && <div id={fid("error-weight")} role="alert" style={{ fontSize: "12px", color: "#EF4444", marginTop: "4px" }}>{weightErr}</div>}
+                  </div>
+                  <div>
+                    <label htmlFor={fid("height")} style={labelStyle}>Altezza (cm) <span style={{ color: "#E8553A" }} aria-label="obbligatorio">*</span></label>
+                    <input id={fid("height")} type="number" style={inputStyle} value={profile.height_cm ?? ""}
+                      onChange={e => setProfile(p => ({ ...p, height_cm: parseNum(e.target.value) }))}
+                      aria-invalid={heightErr ? true : undefined}
+                      aria-describedby={heightErr ? fid("error-height") : undefined} />
+                    {heightErr && <div id={fid("error-height")} role="alert" style={{ fontSize: "12px", color: "#EF4444", marginTop: "4px" }}>{heightErr}</div>}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {profile.sex === "f" && (

@@ -5,6 +5,7 @@ import SettingsPage from "./pages/SettingsPage";
 import OnboardingWizard from "./pages/OnboardingWizard";
 import TrendsPage from "./pages/TrendsPage";
 import ProactiveFeedback from "./components/ProactiveFeedback";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { getJSON, setJSON } from "./lib/storage";
 import { maybeRunWeeklyReport } from "./lib/scheduler";
 import type { CoachFeedItem } from "./lib/types";
@@ -83,7 +84,10 @@ export default function App() {
 
   useEffect(() => {
     refreshUnread();
-    const id = setInterval(refreshUnread, 4000);
+    // 15s fallback: il cross-tab polling via storage-event già copre le modifiche
+    // live, ma alcuni browser droppano storage events in alcuni scenari (es. quota
+    // eventi privacy). Questo interval è la safety net di ultima istanza.
+    const id = setInterval(refreshUnread, 15000);
     const off = events.on("plan:updated", refreshUnread);
     const offExt = events.on("data:externalChange", ({ key }) => {
       if (key === "coach-feed" || key === "coach-feed-last-seen") refreshUnread();
@@ -203,10 +207,22 @@ export default function App() {
       )}
 
       <div className="page-pad-bottom">
-        {tab === "diary" && <DiaryApp />}
-        {tab === "trends" && <TrendsPage />}
-        {tab === "coach" && <CoachPage />}
-        {tab === "settings" && <SettingsPage onResetOnboarding={() => setOnboarded(false)} />}
+        {/* Un ErrorBoundary per pagina: un crash nel Coach non deve abbattere
+            il menu di navigazione, l'utente può passare ad altra tab. */}
+        {tab === "diary" && (
+          <ErrorBoundary label="DiaryApp"><DiaryApp /></ErrorBoundary>
+        )}
+        {tab === "trends" && (
+          <ErrorBoundary label="TrendsPage"><TrendsPage /></ErrorBoundary>
+        )}
+        {tab === "coach" && (
+          <ErrorBoundary label="CoachPage"><CoachPage /></ErrorBoundary>
+        )}
+        {tab === "settings" && (
+          <ErrorBoundary label="SettingsPage">
+            <SettingsPage onResetOnboarding={() => setOnboarded(false)} />
+          </ErrorBoundary>
+        )}
       </div>
 
       {/* Bottom nav */}

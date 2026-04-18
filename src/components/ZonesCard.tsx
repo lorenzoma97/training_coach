@@ -9,6 +9,39 @@ import { computeZones, formatPace, type ZonesResult, type Zone } from "../lib/co
 import type { UserProfile } from "../lib/types";
 import { events } from "../lib/events";
 
+// Cache module-level 1-slot per computeZones: quando ZonesCard è montato più
+// volte nella stessa pagina (es. compact + full, o più highlightZone diversi
+// nel piano), evita di ricalcolare le zone N volte. Key = hash del profilo
+// stringificato + workoutCount + fcRest. Invalidazione esplicita via listener
+// sugli stessi eventi che triggerano reload (`workout:saved`, `daily:saved`,
+// `profile:updated`).
+let zonesCacheKey: string | null = null;
+let zonesCacheResult: ZonesResult | null = null;
+const invalidateZonesCache = () => { zonesCacheKey = null; zonesCacheResult = null; };
+// Attach listener a livello modulo: una sola iscrizione per l'intera app,
+// non per-instance (idempotente — events.on ritorna offFn, mai richiamato).
+let invalidationAttached = false;
+function ensureInvalidationListeners() {
+  if (invalidationAttached) return;
+  invalidationAttached = true;
+  events.on("workout:saved", invalidateZonesCache);
+  events.on("daily:saved", invalidateZonesCache);
+  events.on("profile:updated", invalidateZonesCache);
+}
+function computeZonesCached(
+  profile: UserProfile,
+  fcRestLatest: number | null,
+  workouts: any[],
+): ZonesResult {
+  ensureInvalidationListeners();
+  const key = `${JSON.stringify(profile)}|${workouts.length}|${fcRestLatest ?? "-"}`;
+  if (key === zonesCacheKey && zonesCacheResult) return zonesCacheResult;
+  const r = computeZones({ profile, fcRestLatest, recentWorkouts: workouts });
+  zonesCacheKey = key;
+  zonesCacheResult = r;
+  return r;
+}
+
 const ZONE_COLORS: Record<number, { bg: string; border: string; text: string }> = {
   1: { bg: "#10B98115", border: "#10B98166", text: "#10B981" },
   2: { bg: "#22C55E20", border: "#22C55E66", text: "#22C55E" },
@@ -42,7 +75,7 @@ export default function ZonesCard({ compact = false, highlightZone }: Props) {
         if (Number.isFinite(n) && n >= 35 && n <= 100) latestMorningHR = n;
       }
     }
-    setResult(computeZones({ profile, fcRestLatest: latestMorningHR, recentWorkouts: workouts }));
+    setResult(computeZonesCached(profile, latestMorningHR, workouts));
     setLoading(false);
   };
 

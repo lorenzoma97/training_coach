@@ -37,6 +37,10 @@ export default function CoachChat() {
 
   // Persiste lo snapshot corrente dei messaggi (anche parziale su abort/unmount).
   const persistRef = useRef<() => void>(() => {});
+  // Cache 1-slot per computeZonesContext: evita ricalcolo ad ogni send()
+  // quando profilo e count giorni non sono cambiati. Invalidato implicitamente
+  // dalla variazione della chiave (profileAge + recentDaysRaw.length).
+  const zonesCtxCacheRef = useRef<{ key: string; result: ReturnType<typeof computeZonesContext> } | null>(null);
   const loadHistory = async () => {
     const saved = await getJSON<Msg[]>(HISTORY_KEY, []);
     setMessages(saved.map(m => m.id ? m : { ...m, id: genId() }));
@@ -54,11 +58,24 @@ export default function CoachChat() {
     // Persist su chiusura pagina: garantisce che eventuali token parziali non vadano persi.
     const onBeforeUnload = () => { try { persistRef.current(); } catch { /* ignore */ } };
     window.addEventListener("beforeunload", onBeforeUnload);
+    // Connettività: auto-clear dell'error "Offline" quando si torna online;
+    // set dell'error se si va offline durante una sessione (non interrompe
+    // stream in corso, solo blocca i prossimi send).
+    const onOnline = () => {
+      setError(prev => (prev === "Offline. Riconnettiti per parlare con il coach." ? "" : prev));
+    };
+    const onOffline = () => {
+      if (!abortRef.current) setError("Offline. Riconnettiti per parlare con il coach.");
+    };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
     return () => {
       offExt();
       offChat();
       offFb();
       window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
       // Se lo stream è in corso quando il componente viene smontato, fermalo e persist
       abortRef.current?.abort();
       try { persistRef.current(); } catch { /* ignore */ }
@@ -78,6 +95,12 @@ export default function CoachChat() {
   const send = async (text: string) => {
     if (!text.trim() || loading) return;
     if (!hasApiKey()) { setError("Chiave Gemini non configurata. Vai in Impostazioni."); return; }
+    // Guard offline: evita tentativi di streamChat se navigator.onLine=false.
+    // Il listener `online` in useEffect auto-pulisce l'errore al ritorno online.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setError("Offline. Riconnettiti per parlare con il coach.");
+      return;
+    }
     // Hard limit sul singolo messaggio: 100 KB. Previene paste accidentali
     // di testi enormi che saturerebbero quota storage e token LLM.
     const MAX_MESSAGE_CHARS = 100_000;
@@ -122,8 +145,18 @@ export default function CoachChat() {
       const ragResults = await retrieveRelevantChunks({ query: text, topK: 3, minScore: 0.55 });
       const ragBlock = chunksAsPromptBlock(ragResults);
 
-      // Injection condizionale: moduli basati sul profilo/contesto utente
-      const zonesCtxChat = computeZonesContext(ctx.profile, ctx.recentDaysRaw || []);
+      // Injection condizionale: moduli basati sul profilo/contesto utente.
+      // Cache 1-slot: ricalcola solo se profilo (età) o numero giorni variano
+      // rispetto all'ultimo send. Evita ricomputo costoso su ogni messaggio.
+      const recentDaysRaw = ctx.recentDaysRaw || [];
+      const zonesCacheKey = `${ctx.profile?.age ?? "-"}:${recentDaysRaw.length}`;
+      let zonesCtxChat: ReturnType<typeof computeZonesContext>;
+      if (zonesCtxCacheRef.current && zonesCtxCacheRef.current.key === zonesCacheKey) {
+        zonesCtxChat = zonesCtxCacheRef.current.result;
+      } else {
+        zonesCtxChat = computeZonesContext(ctx.profile, recentDaysRaw);
+        zonesCtxCacheRef.current = { key: zonesCacheKey, result: zonesCtxChat };
+      }
       const bCtx: BuildContext = {
         profile: ctx.profile,
         hasRunningGoal: ctx.goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription || "")),
@@ -216,7 +249,14 @@ DOMANDA UTENTE: ${text}
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "60vh" }}>
-      <div className="scroll-area" style={{ flex: 1, overflowY: "auto", padding: "8px 0", display: "flex", flexDirection: "column", gap: "10px", minHeight: "300px" }}>
+      <div
+        className="scroll-area"
+        role="log"
+        aria-live="polite"
+        aria-atomic="false"
+        aria-label="Conversazione con il coach"
+        style={{ flex: 1, overflowY: "auto", padding: "8px 0", display: "flex", flexDirection: "column", gap: "10px", minHeight: "300px" }}
+      >
         {messages.length === 0 && (
           <div style={{ textAlign: "center", color: "#94A3B8", padding: "30px 20px" }}>
             <div style={{ fontSize: "40px", marginBottom: "10px" }}>💬</div>

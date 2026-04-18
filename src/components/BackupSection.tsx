@@ -165,6 +165,28 @@ export default function BackupSection() {
         </span>
       </div>
 
+      {/* Warning PII sempre visibile sopra le azioni export/import. */}
+      <div
+        role="note"
+        aria-label="Avviso privacy dati sensibili"
+        style={{
+          marginBottom: "14px",
+          padding: "10px 12px",
+          background: "#78350F22",
+          border: "1px solid #F59E0B",
+          borderRadius: "10px",
+          color: "#FDE68A",
+          fontSize: "12px",
+          lineHeight: 1.5,
+          fontWeight: 600,
+        }}
+      >
+        ⚠ <b>Privacy:</b> il backup contiene dati personali sensibili (peso, sonno,
+        infortuni, ciclo mestruale, FC, chat con il coach). <b>Non condividere</b>
+        {" "}questo file via chat/forum/email. Usalo solo per backup personale o
+        trasferimento dispositivo.
+      </div>
+
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
         <button
           onClick={handleExport}
@@ -231,6 +253,26 @@ export default function BackupSection() {
             <b>{new Date(confirmState.after.exportedAt).toLocaleString("it-IT")}</b>.
             <br />
             Tutti i dati attuali verranno <b>sostituiti</b> in modo atomico.
+          </div>
+          {/* Warning PII ripetuto nel dialog di conferma (contesto: l'utente sta per
+              ripristinare un file che potrebbe provenire da canali diversi). */}
+          <div
+            style={{
+              marginBottom: "10px",
+              padding: "8px 10px",
+              background: "#78350F22",
+              border: "1px solid #F59E0B",
+              borderRadius: "8px",
+              color: "#FDE68A",
+              fontSize: "11px",
+              lineHeight: 1.5,
+              fontWeight: 600,
+            }}
+          >
+            ⚠ <b>Privacy:</b> il backup contiene dati personali sensibili
+            (peso, sonno, infortuni, ciclo mestruale, FC, chat con il coach).
+            <b> Non condividere</b> questo file via chat/forum/email. Usalo
+            solo per backup personale o trasferimento dispositivo.
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
             <div style={{ padding: "8px 10px", background: "#1E293B", borderRadius: "8px" }}>

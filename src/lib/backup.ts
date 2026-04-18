@@ -93,16 +93,101 @@ function isValidDayShape(v: unknown): boolean {
   return dailyOk && workoutsOk && hasAtLeastOne;
 }
 
+/**
+ * Validazione profonda dei contratti base delle chiavi annidate.
+ * Ritorna il primo errore incontrato oppure null se tutto ok.
+ *
+ * Nota: la validazione NON è un full-schema — si limita a garantire che
+ * il payload non contenga tipi nativamente incompatibili (es. `user-goals`
+ * che è una stringa invece che un array). Eventuali campi sconosciuti
+ * dentro gli oggetti sono tollerati (forward compatibility).
+ */
+function validateNestedShape(payload: { data: Record<string, unknown> }): string | null {
+  const d = payload.data;
+
+  // days: ogni entry deve essere un oggetto con daily (oggetto) e/o workouts (array)
+  const days = d.days;
+  if (days && typeof days === "object" && !Array.isArray(days)) {
+    for (const [date, dayData] of Object.entries(days as Record<string, unknown>)) {
+      if (!dayData || typeof dayData !== "object" || Array.isArray(dayData)) {
+        return `Giorno "${date}": non è un oggetto valido.`;
+      }
+      const day = dayData as Record<string, unknown>;
+      if (day.workouts !== undefined && !Array.isArray(day.workouts)) {
+        return `Giorno "${date}": campo "workouts" deve essere un array.`;
+      }
+      if (
+        day.daily !== undefined &&
+        (day.daily === null || typeof day.daily !== "object" || Array.isArray(day.daily))
+      ) {
+        return `Giorno "${date}": campo "daily" deve essere un oggetto.`;
+      }
+    }
+  }
+
+  // user-profile: se presente → oggetto con age numerico 1-120
+  const profile = d["user-profile"];
+  if (profile !== undefined && profile !== null) {
+    if (typeof profile !== "object" || Array.isArray(profile)) {
+      return `"user-profile" deve essere un oggetto.`;
+    }
+    const age = (profile as Record<string, unknown>).age;
+    if (typeof age !== "number" || !Number.isFinite(age) || age < 1 || age > 120) {
+      return `"user-profile.age" deve essere un numero tra 1 e 120.`;
+    }
+  }
+
+  // user-goals: se presente → array
+  const goals = d["user-goals"];
+  if (goals !== undefined && goals !== null && !Array.isArray(goals)) {
+    return `"user-goals" deve essere un array.`;
+  }
+
+  // diary-index: se presente → array di stringhe
+  const idx = d["diary-index"];
+  if (idx !== undefined && idx !== null && !Array.isArray(idx)) {
+    return `"diary-index" deve essere un array.`;
+  }
+
+  // coach-chat-history: se presente → array
+  const chat = d["coach-chat-history"];
+  if (chat !== undefined && chat !== null && !Array.isArray(chat)) {
+    return `"coach-chat-history" deve essere un array.`;
+  }
+
+  // coach-feed: se presente → array
+  const feed = d["coach-feed"];
+  if (feed !== undefined && feed !== null && !Array.isArray(feed)) {
+    return `"coach-feed" deve essere un array.`;
+  }
+
+  // training-plan: se presente → oggetto
+  const plan = d["training-plan"];
+  if (plan !== undefined && plan !== null && (typeof plan !== "object" || Array.isArray(plan))) {
+    return `"training-plan" deve essere un oggetto.`;
+  }
+
+  return null;
+}
+
 /** Valida la struttura base del payload e ne estrae una versione sicura. */
 export function validateBackup(raw: unknown): { ok: true; payload: BackupPayload } | { ok: false; error: string } {
   if (!raw || typeof raw !== "object") return { ok: false, error: "File non valido (non è un oggetto)" };
-  const p = raw as any;
+  const p = raw as { schema?: unknown; version?: unknown; data?: unknown };
   if (p.schema !== "training-coach-backup") return { ok: false, error: "Schema non riconosciuto — non sembra un backup di Training Coach" };
   if (typeof p.version !== "number") return { ok: false, error: "Versione del backup mancante" };
   if (p.version > 1) return { ok: false, error: `Versione backup ${p.version} non supportata (app supporta max v1)` };
   if (!p.data || typeof p.data !== "object") return { ok: false, error: "Payload 'data' mancante" };
-  if (!p.data.days || typeof p.data.days !== "object") return { ok: false, error: "Diario (days) mancante" };
-  return { ok: true, payload: p as BackupPayload };
+  const data = p.data as Record<string, unknown>;
+  if (!data.days || typeof data.days !== "object" || Array.isArray(data.days)) {
+    return { ok: false, error: "Diario (days) mancante o malformato" };
+  }
+
+  // Validazione profonda dei contratti base delle chiavi annidate.
+  const nestedErr = validateNestedShape({ data });
+  if (nestedErr) return { ok: false, error: `Struttura backup non valida: ${nestedErr}` };
+
+  return { ok: true, payload: p as unknown as BackupPayload };
 }
 
 export interface RestoreOptions {

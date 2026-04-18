@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useId, useRef } from "react";
 import { storage, getJSON, setJSON } from "../lib/storage";
 import { events } from "../lib/events";
 
@@ -112,46 +112,153 @@ async function saveIndex(dates: string[]) {
   await setJSON("diary-index", dates);
 }
 
-function FieldRow({ field, value, onChange }: { field: Field; value: any; onChange: (v: any) => void }) {
+// Validazione range di base per input numerici dei workout (a11y: mostra errore accessibile)
+function validateFieldValue(field: Field, v: string): string | null {
+  if (field.type !== "number") return null;
+  if (!v) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "Valore non valido.";
+  // Range prudenziali per i vari campi
+  const key = (field as any).key as string;
+  if (key === "fc_media" || key === "fc_max") {
+    if (n < 30 || n > 230) return "Valore fuori range (30-230 bpm).";
+  } else if (key === "cadenza") {
+    if (n < 40 || n > 240) return "Valore fuori range (40-240 ppm).";
+  } else if (key === "kcal") {
+    if (n < 0 || n > 10000) return "Valore fuori range (0-10000 kcal).";
+  } else if (key.startsWith("durata")) {
+    if (n < 0 || n > 1440) return "Valore fuori range (0-1440 min).";
+  } else if (n < 0) {
+    return "Valore non può essere negativo.";
+  }
+  return null;
+}
+
+function FieldRow({ field, value, onChange, id }: { field: Field; value: any; onChange: (v: any) => void; id: string }) {
   const v = value || "";
+  const errorId = `error-${id}`;
+  const err = validateFieldValue(field, String(v));
   if (field.type === "select") return (
-    <select style={inputStyle} value={v} onChange={e => onChange(e.target.value)}>
+    <select id={id} style={inputStyle} value={v} onChange={e => onChange(e.target.value)}>
       <option value="">Seleziona...</option>
       {(field as any).options.map((o: string) => <option key={o} value={o}>{o}</option>)}
     </select>
   );
   if (field.type === "textarea") return (
-    <textarea style={{ ...inputStyle, resize: "vertical", minHeight: "60px" }} value={v} placeholder={(field as any).placeholder || ""} onChange={e => onChange(e.target.value)} rows={2} />
+    <textarea id={id} style={{ ...inputStyle, resize: "vertical", minHeight: "60px" }} value={v} placeholder={(field as any).placeholder || ""} onChange={e => onChange(e.target.value)} rows={2} />
   );
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-      <input style={{ ...inputStyle, flex: 1 }} type={field.type as string} value={v} placeholder={(field as any).placeholder || ""} onChange={e => onChange(e.target.value)} />
-      {(field as any).unit && <span style={{ fontSize: "13px", color: "#64748B", minWidth: "36px" }}>{(field as any).unit}</span>}
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <input id={id} style={{ ...inputStyle, flex: 1 }} type={field.type as string} value={v} placeholder={(field as any).placeholder || ""} onChange={e => onChange(e.target.value)}
+          aria-invalid={err ? true : undefined}
+          aria-describedby={err ? errorId : undefined} />
+        {(field as any).unit && <span style={{ fontSize: "13px", color: "#64748B", minWidth: "36px" }}>{(field as any).unit}</span>}
+      </div>
+      {err && (
+        <div id={errorId} role="alert" style={{ fontSize: "12px", color: "#EF4444", marginTop: "4px" }}>{err}</div>
+      )}
     </div>
   );
 }
 
 function PainPicker({ label, value, onChange }: { label: string; value: number | null; onChange: (v: number) => void }) {
+  const groupRef = useRef<HTMLDivElement>(null);
+  const focusByIndex = (i: number) => {
+    const n = PAIN_LEVELS.length;
+    const idx = ((i % n) + n) % n;
+    const btn = groupRef.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[idx];
+    btn?.focus();
+    onChange(PAIN_LEVELS[idx].v);
+  };
+  const onKeyDown = (e: React.KeyboardEvent, currentIdx: number) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); focusByIndex(currentIdx + 1); }
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); focusByIndex(currentIdx - 1); }
+    else if (e.key === "Home") { e.preventDefault(); focusByIndex(0); }
+    else if (e.key === "End") { e.preventDefault(); focusByIndex(PAIN_LEVELS.length - 1); }
+  };
+  // Se nessun valore, il primo bottone è focusable (tabIndex=0) per entrare nel gruppo
+  const selectedIdx = PAIN_LEVELS.findIndex(p => p.v === value);
+  const firstFocusableIdx = selectedIdx >= 0 ? selectedIdx : 0;
   return (
     <div>
       <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600, marginBottom: "8px", textAlign: "center" }}>{label}</div>
-      <div role="radiogroup" aria-label={`Dolore ${label}`} style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
-        {PAIN_LEVELS.map(p => (
-          <button key={p.v} onClick={() => onChange(p.v)} aria-label={`${p.v}: ${p.desc}`} aria-pressed={value === p.v} style={{
-            width: "44px", height: "44px", borderRadius: "10px",
-            border: value === p.v ? `2px solid ${p.color}` : "1px solid rgba(255,255,255,0.08)",
-            background: value === p.v ? p.color + "30" : "#1A1A2E",
-            color: p.color, fontSize: "16px", cursor: "pointer", fontWeight: 700,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "'JetBrains Mono', monospace",
-          }}>{p.v === 4 ? "4" : p.v}</button>
-        ))}
+      <div ref={groupRef} role="radiogroup" aria-label={`Dolore ${label}`} style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+        {PAIN_LEVELS.map((p, i) => {
+          const checked = value === p.v;
+          return (
+            <button key={p.v} type="button" role="radio" aria-checked={checked}
+              tabIndex={i === firstFocusableIdx ? 0 : -1}
+              onClick={() => onChange(p.v)}
+              onKeyDown={e => onKeyDown(e, i)}
+              aria-label={`${p.v}: ${p.desc}`}
+              style={{
+                width: "44px", height: "44px", borderRadius: "10px",
+                border: checked ? `2px solid ${p.color}` : "1px solid rgba(255,255,255,0.08)",
+                background: checked ? p.color + "30" : "#1A1A2E",
+                color: p.color, fontSize: "16px", cursor: "pointer", fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontFamily: "'JetBrains Mono', monospace",
+              }}>{p.v === 4 ? "4" : p.v}</button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
+// Generic radio-group picker (RPE, freshness, fatigue) with arrow-key navigation.
+function NumberRadioPicker({ values, value, onChange, ariaLabel, colorFor }: {
+  values: number[];
+  value: number | null;
+  onChange: (v: number) => void;
+  ariaLabel: string;
+  colorFor: (n: number) => string;
+}) {
+  const groupRef = useRef<HTMLDivElement>(null);
+  const focusByIndex = (i: number) => {
+    const n = values.length;
+    const idx = ((i % n) + n) % n;
+    const btn = groupRef.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[idx];
+    btn?.focus();
+    onChange(values[idx]);
+  };
+  const onKeyDown = (e: React.KeyboardEvent, currentIdx: number) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); focusByIndex(currentIdx + 1); }
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); focusByIndex(currentIdx - 1); }
+    else if (e.key === "Home") { e.preventDefault(); focusByIndex(0); }
+    else if (e.key === "End") { e.preventDefault(); focusByIndex(values.length - 1); }
+  };
+  const selectedIdx = values.findIndex(v => v === value);
+  const firstFocusableIdx = selectedIdx >= 0 ? selectedIdx : 0;
+  return (
+    <div ref={groupRef} role="radiogroup" aria-label={ariaLabel} style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+      {values.map((n, i) => {
+        const checked = value === n;
+        return (
+          <button key={n} type="button" role="radio" aria-checked={checked}
+            tabIndex={i === firstFocusableIdx ? 0 : -1}
+            onClick={() => onChange(n)}
+            onKeyDown={e => onKeyDown(e, i)}
+            aria-label={`${ariaLabel} ${n}`}
+            style={{
+              width: "44px", height: "44px", borderRadius: "10px",
+              background: checked ? colorFor(n) + "30" : "#1A1A2E",
+              border: checked ? `2px solid ${colorFor(n)}` : "1px solid rgba(255,255,255,0.08)",
+              color: colorFor(n), fontSize: "15px", fontWeight: 700, cursor: "pointer",
+              fontFamily: "'JetBrains Mono', monospace",
+            }}>{n}</button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function DiaryApp() {
+  // Prefisso unico/stabile per gli id dei campi (accessibility: <label htmlFor>).
+  // useId() assicura unicità tra istanze e stabilità tra render.
+  const uidBase = useId();
+  const fid = (name: string) => `${uidBase}-${name}`;
   const [screen, setScreen] = useState<"home" | "add" | "daily" | "detail">("home");
   const [index, setIndex] = useState<string[]>([]);
   const [todayData, setTodayData] = useState<any>(null);
@@ -462,9 +569,14 @@ export default function DiaryApp() {
       resetDailyFields();
       setEditingDaily(false);
       setScreen("home");
-    } catch (e) {
+    } catch (e: any) {
       console.error("[handleSaveDaily]", e);
-      flash("Errore nel salvataggio ✗");
+      // Distingue errori di storage (size/quota) da errori generici — coerente
+      // con handleSaveWorkout così l'utente vede il motivo vero se quota piena.
+      const msg = (e?.name === "StorageValueTooLargeError" || e?.name === "StorageQuotaError")
+        ? (e?.message || "Spazio locale esaurito ✗")
+        : "Errore nel salvataggio ✗";
+      flash(msg);
     } finally {
       setSaving(false);
     }
@@ -561,16 +673,25 @@ export default function DiaryApp() {
 
   return (
     <div style={{ minHeight: "100vh", color: "#E2E8F0", fontFamily: "'DM Sans', -apple-system, sans-serif" }}>
-      {saveMsg && (
-        <div role="status" aria-live="polite" style={{
-          position: "fixed", top: "max(20px, calc(env(safe-area-inset-top, 0px) + 12px))",
-          left: "50%", transform: "translateX(-50%)", zIndex: 999,
-          background: saveMsg.includes("obbligatori") ? "#7F1D1D" : "#14532D",
-          color: "#FFF", padding: "12px 24px", borderRadius: "12px", fontSize: "14px", fontWeight: 700,
-          boxShadow: "0 8px 30px rgba(0,0,0,0.5)", animation: "fadeIn 0.2s ease",
-          maxWidth: "90%", textAlign: "center",
-        }}>{saveMsg}</div>
-      )}
+      {saveMsg && (() => {
+        // Gli errori di salvataggio o validazione sono "alert/assertive" per leggere subito
+        // il messaggio anche interrompendo eventuali altri annunci. I successi restano "status/polite".
+        const isError = saveMsg.includes("Errore") || saveMsg.includes("✗") || saveMsg.includes("obbligatori") || saveMsg.includes("Spazio locale");
+        return (
+          <div
+            role={isError ? "alert" : "status"}
+            aria-live={isError ? "assertive" : "polite"}
+            aria-atomic="true"
+            style={{
+              position: "fixed", top: "max(20px, calc(env(safe-area-inset-top, 0px) + 12px))",
+              left: "50%", transform: "translateX(-50%)", zIndex: 999,
+              background: isError ? "#7F1D1D" : "#14532D",
+              color: "#FFF", padding: "12px 24px", borderRadius: "12px", fontSize: "14px", fontWeight: 700,
+              boxShadow: "0 8px 30px rgba(0,0,0,0.5)", animation: "fadeIn 0.2s ease",
+              maxWidth: "90%", textAlign: "center",
+            }}>{saveMsg}</div>
+        );
+      })()}
 
       {screen === "home" && (
         <div style={{ maxWidth: "560px", margin: "0 auto" }}>
@@ -716,8 +837,8 @@ export default function DiaryApp() {
 
           <div style={{ padding: "20px 24px" }}>
             <div style={{ marginBottom: "20px" }}>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#94A3B8", display: "block", marginBottom: "8px" }}>📅 Data della sessione</label>
-              <input type="date" value={addDate} max={today()} onChange={e => setAddDate(e.target.value)} style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }} />
+              <label htmlFor={fid("addDate")} style={{ fontSize: "13px", fontWeight: 600, color: "#94A3B8", display: "block", marginBottom: "8px" }}>📅 Data della sessione</label>
+              <input id={fid("addDate")} type="date" value={addDate} max={today()} onChange={e => setAddDate(e.target.value)} style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }} />
               {addDate !== today() && (
                 <div style={{ fontSize: "12px", color: "#D97706", marginTop: "6px", fontWeight: 600 }}>
                   ⚠ Stai inserendo una sessione passata ({fmtDate(addDate)})
@@ -753,15 +874,18 @@ export default function DiaryApp() {
                 ); })()}
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  {wType(addType)!.fields.map((f: any) => (
-                    <div key={f.key}>
-                      <div style={{ display: "flex", gap: "6px", marginBottom: "6px", alignItems: "center" }}>
-                        <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1" }}>{f.label}</label>
-                        {f.required && <span style={{ color: "#E8553A", fontSize: "10px" }}>●</span>}
+                  {wType(addType)!.fields.map((f: any) => {
+                    const inputId = fid(`workout-${f.key}`);
+                    return (
+                      <div key={f.key}>
+                        <div style={{ display: "flex", gap: "6px", marginBottom: "6px", alignItems: "center" }}>
+                          <label htmlFor={inputId} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1" }}>{f.label}</label>
+                          {f.required && <span style={{ color: "#E8553A", fontSize: "10px" }} aria-label="obbligatorio">●</span>}
+                        </div>
+                        <FieldRow id={inputId} field={f} value={addFields[f.key]} onChange={v => setAddFields(p => ({ ...p, [f.key]: v }))} />
                       </div>
-                      <FieldRow field={f} value={addFields[f.key]} onChange={v => setAddFields(p => ({ ...p, [f.key]: v }))} />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {painAreas.length > 0 && painAreas.map(area => {
@@ -784,23 +908,19 @@ export default function DiaryApp() {
                 })}
 
                 <div style={{ marginTop: "16px" }}>
-                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", marginBottom: "8px" }}>RPE — Sforzo Percepito</div>
-                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                    {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                      <button key={n} onClick={() => setAddRpe(n)} aria-label={`RPE ${n}`} aria-pressed={addRpe === n} style={{
-                        width: "44px", height: "44px", borderRadius: "10px",
-                        background: addRpe === n ? FATIGUE_COLORS(n) + "30" : "#1A1A2E",
-                        border: addRpe === n ? `2px solid ${FATIGUE_COLORS(n)}` : "1px solid rgba(255,255,255,0.08)",
-                        color: FATIGUE_COLORS(n), fontSize: "15px", fontWeight: 700, cursor: "pointer",
-                        fontFamily: "'JetBrains Mono', monospace",
-                      }}>{n}</button>
-                    ))}
-                  </div>
+                  <div id={fid("rpe-label")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", marginBottom: "8px" }}>RPE — Sforzo Percepito</div>
+                  <NumberRadioPicker
+                    values={[1,2,3,4,5,6,7,8,9,10]}
+                    value={addRpe}
+                    onChange={setAddRpe}
+                    ariaLabel="RPE — Sforzo Percepito"
+                    colorFor={FATIGUE_COLORS}
+                  />
                 </div>
 
                 <div style={{ marginTop: "16px" }}>
-                  <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Note & Sensazioni</label>
-                  <textarea style={{ ...inputStyle, minHeight: "70px", resize: "vertical" }} value={addNotes} onChange={e => setAddNotes(e.target.value)} placeholder="Come ti sei sentito? Sensazioni muscolari, energia..." />
+                  <label htmlFor={fid("workout-notes")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Note & Sensazioni</label>
+                  <textarea id={fid("workout-notes")} style={{ ...inputStyle, minHeight: "70px", resize: "vertical" }} value={addNotes} onChange={e => setAddNotes(e.target.value)} placeholder="Come ti sei sentito? Sensazioni muscolari, energia..." />
                 </div>
 
                 <button onClick={handleSaveWorkout} disabled={saving} style={{
@@ -833,26 +953,64 @@ export default function DiaryApp() {
           </div>
           <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
             <div>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#94A3B8", display: "block", marginBottom: "6px" }}>📅 Data</label>
-              <input type="date" value={dailyDate} max={today()} onChange={e => setDailyDate(e.target.value)} style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }} />
+              <label htmlFor={fid("daily-date")} style={{ fontSize: "13px", fontWeight: 600, color: "#94A3B8", display: "block", marginBottom: "6px" }}>📅 Data</label>
+              <input id={fid("daily-date")} type="date" value={dailyDate} max={today()} onChange={e => setDailyDate(e.target.value)} style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }} />
             </div>
             <div>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Peso Mattutino (a digiuno)</label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <input type="number" step="0.1" value={dailyFields.weight} onChange={e => setDailyFields(p => ({ ...p, weight: e.target.value }))} placeholder="es. 82.3" style={{ ...inputStyle, flex: 1 }} />
-                <span style={{ fontSize: "13px", color: "#64748B" }}>kg</span>
-              </div>
+              <label htmlFor={fid("daily-weight")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Peso Mattutino (a digiuno)</label>
+              {(() => {
+                const val = dailyFields.weight;
+                const err = val !== "" ? ((): string | null => {
+                  const n = Number(val);
+                  if (!Number.isFinite(n)) return "Valore non valido.";
+                  if (n < 25 || n > 300) return "Valore fuori range (25-300 kg).";
+                  return null;
+                })() : null;
+                return (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <input id={fid("daily-weight")} type="number" step="0.1" value={val}
+                        onChange={e => setDailyFields(p => ({ ...p, weight: e.target.value }))}
+                        placeholder="es. 82.3" style={{ ...inputStyle, flex: 1 }}
+                        aria-invalid={err ? true : undefined}
+                        aria-describedby={err ? fid("error-daily-weight") : undefined}
+                      />
+                      <span style={{ fontSize: "13px", color: "#64748B" }}>kg</span>
+                    </div>
+                    {err && <div id={fid("error-daily-weight")} role="alert" style={{ fontSize: "12px", color: "#EF4444", marginTop: "4px" }}>{err}</div>}
+                  </>
+                );
+              })()}
             </div>
             <div>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Ore di Sonno</label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <input type="number" step="0.5" value={dailyFields.sleep} onChange={e => setDailyFields(p => ({ ...p, sleep: e.target.value }))} placeholder="es. 7.5" style={{ ...inputStyle, flex: 1 }} />
-                <span style={{ fontSize: "13px", color: "#64748B" }}>h</span>
-              </div>
+              <label htmlFor={fid("daily-sleep")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Ore di Sonno</label>
+              {(() => {
+                const val = dailyFields.sleep;
+                const err = val !== "" ? ((): string | null => {
+                  const n = Number(val);
+                  if (!Number.isFinite(n)) return "Valore non valido.";
+                  if (n < 0 || n > 24) return "Valore fuori range (0-24 ore).";
+                  return null;
+                })() : null;
+                return (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <input id={fid("daily-sleep")} type="number" step="0.5" value={val}
+                        onChange={e => setDailyFields(p => ({ ...p, sleep: e.target.value }))}
+                        placeholder="es. 7.5" style={{ ...inputStyle, flex: 1 }}
+                        aria-invalid={err ? true : undefined}
+                        aria-describedby={err ? fid("error-daily-sleep") : undefined}
+                      />
+                      <span style={{ fontSize: "13px", color: "#64748B" }}>h</span>
+                    </div>
+                    {err && <div id={fid("error-daily-sleep")} role="alert" style={{ fontSize: "12px", color: "#EF4444", marginTop: "4px" }}>{err}</div>}
+                  </>
+                );
+              })()}
             </div>
             <div>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Qualità Sonno</label>
-              <select value={dailyFields.sleepQ} onChange={e => setDailyFields(p => ({ ...p, sleepQ: e.target.value }))} style={inputStyle}>
+              <label htmlFor={fid("daily-sleepQ")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Qualità Sonno</label>
+              <select id={fid("daily-sleepQ")} value={dailyFields.sleepQ} onChange={e => setDailyFields(p => ({ ...p, sleepQ: e.target.value }))} style={inputStyle}>
                 <option value="">Seleziona...</option>
                 <option value="ottima">Ottima — riposato</option>
                 <option value="buona">Buona — nella norma</option>
@@ -861,49 +1019,61 @@ export default function DiaryApp() {
               </select>
             </div>
             <div>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>FC a riposo mattutina</label>
-              <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "6px" }}>
+              <label htmlFor={fid("daily-morningHR")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>FC a riposo mattutina</label>
+              <div id={fid("daily-morningHR-hint")} style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "6px" }}>
                 Misurata al risveglio prima di alzarti (da smartwatch/fascia o manualmente contando 60 sec). Abilita il calcolo zone Karvonen personalizzato + indicatore di recupero.
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <input type="number" min={35} max={100} value={dailyFields.morningHR} onChange={e => setDailyFields(p => ({ ...p, morningHR: e.target.value }))} placeholder="es. 52" style={{ ...inputStyle, flex: 1 }} />
-                <span style={{ fontSize: "13px", color: "#64748B" }}>bpm</span>
-              </div>
+              {(() => {
+                const val = dailyFields.morningHR;
+                const err = val !== "" ? ((): string | null => {
+                  const n = Number(val);
+                  if (!Number.isFinite(n)) return "Valore non valido.";
+                  if (n < 35 || n > 100) return "Valore fuori range (35-100 bpm).";
+                  return null;
+                })() : null;
+                const describedBy = [fid("daily-morningHR-hint"), err ? fid("error-daily-morningHR") : null].filter(Boolean).join(" ");
+                return (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <input id={fid("daily-morningHR")} type="number" min={35} max={100} value={val}
+                        onChange={e => setDailyFields(p => ({ ...p, morningHR: e.target.value }))}
+                        placeholder="es. 52" style={{ ...inputStyle, flex: 1 }}
+                        aria-invalid={err ? true : undefined}
+                        aria-describedby={describedBy || undefined}
+                      />
+                      <span style={{ fontSize: "13px", color: "#64748B" }}>bpm</span>
+                    </div>
+                    {err && <div id={fid("error-daily-morningHR")} role="alert" style={{ fontSize: "12px", color: "#EF4444", marginTop: "4px" }}>{err}</div>}
+                  </>
+                );
+              })()}
             </div>
             <div>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "8px" }}>Freschezza percepita al risveglio</label>
+              <div id={fid("daily-freshness-label")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "8px" }}>Freschezza percepita al risveglio</div>
               <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "6px" }}>
                 1 = molto stanco/indolenzito · 10 = lucido e pimpante. Usato dal coach come indicatore di recupero (Saw 2016).
               </div>
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                  <button key={n} onClick={() => setDailyFields(p => ({ ...p, morningFreshness: n }))} aria-label={`Freschezza ${n}`} aria-pressed={dailyFields.morningFreshness === n} style={{
-                    width: "44px", height: "44px", borderRadius: "10px",
-                    background: dailyFields.morningFreshness === n ? "#22C55E30" : "#1A1A2E",
-                    border: dailyFields.morningFreshness === n ? "2px solid #22C55E" : "1px solid rgba(255,255,255,0.08)",
-                    color: "#22C55E", fontSize: "15px", fontWeight: 700, cursor: "pointer",
-                    fontFamily: "'JetBrains Mono', monospace",
-                  }}>{n}</button>
-                ))}
-              </div>
+              <NumberRadioPicker
+                values={[1,2,3,4,5,6,7,8,9,10]}
+                value={dailyFields.morningFreshness}
+                onChange={n => setDailyFields(p => ({ ...p, morningFreshness: n }))}
+                ariaLabel="Freschezza percepita al risveglio"
+                colorFor={() => "#22C55E"}
+              />
             </div>
             <div>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "8px" }}>Stanchezza Generale</label>
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                  <button key={n} onClick={() => setDailyFields(p => ({ ...p, fatigue: n }))} aria-label={`Stanchezza ${n}`} aria-pressed={dailyFields.fatigue === n} style={{
-                    width: "44px", height: "44px", borderRadius: "10px",
-                    background: dailyFields.fatigue === n ? FATIGUE_COLORS(n) + "30" : "#1A1A2E",
-                    border: dailyFields.fatigue === n ? `2px solid ${FATIGUE_COLORS(n)}` : "1px solid rgba(255,255,255,0.08)",
-                    color: FATIGUE_COLORS(n), fontSize: "15px", fontWeight: 700, cursor: "pointer",
-                    fontFamily: "'JetBrains Mono', monospace",
-                  }}>{n}</button>
-                ))}
-              </div>
+              <div id={fid("daily-fatigue-label")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "8px" }}>Stanchezza Generale</div>
+              <NumberRadioPicker
+                values={[1,2,3,4,5,6,7,8,9,10]}
+                value={dailyFields.fatigue}
+                onChange={n => setDailyFields(p => ({ ...p, fatigue: n }))}
+                ariaLabel="Stanchezza Generale"
+                colorFor={FATIGUE_COLORS}
+              />
             </div>
             <div>
-              <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Farmaci / Integratori</label>
-              <input type="text" value={dailyFields.meds} onChange={e => setDailyFields(p => ({ ...p, meds: e.target.value }))} placeholder="es. Antistaminico, Magnesio..." style={inputStyle} />
+              <label htmlFor={fid("daily-meds")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Farmaci / Integratori</label>
+              <input id={fid("daily-meds")} type="text" value={dailyFields.meds} onChange={e => setDailyFields(p => ({ ...p, meds: e.target.value }))} placeholder="es. Antistaminico, Magnesio..." style={inputStyle} />
             </div>
 
             <details style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "12px", padding: "12px 14px" }}>
@@ -912,25 +1082,63 @@ export default function DiaryApp() {
               </summary>
               <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "14px" }}>
                 <div>
-                  <label style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Massa grassa (% BF)</label>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <input type="number" step="0.1" min={3} max={60} value={dailyFields.bodyFat} onChange={e => setDailyFields(p => ({ ...p, bodyFat: e.target.value }))} placeholder="es. 18.5" style={{ ...inputStyle, flex: 1 }} />
-                    <span style={{ fontSize: "13px", color: "#94A3B8" }}>%</span>
-                  </div>
+                  <label htmlFor={fid("daily-bodyFat")} style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Massa grassa (% BF)</label>
+                  {(() => {
+                    const val = dailyFields.bodyFat;
+                    const err = val !== "" ? ((): string | null => {
+                      const n = Number(val);
+                      if (!Number.isFinite(n)) return "Valore non valido.";
+                      if (n < 3 || n > 60) return "Valore fuori range (3-60 %).";
+                      return null;
+                    })() : null;
+                    return (
+                      <>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <input id={fid("daily-bodyFat")} type="number" step="0.1" min={3} max={60} value={val}
+                            onChange={e => setDailyFields(p => ({ ...p, bodyFat: e.target.value }))}
+                            placeholder="es. 18.5" style={{ ...inputStyle, flex: 1 }}
+                            aria-invalid={err ? true : undefined}
+                            aria-describedby={err ? fid("error-daily-bodyFat") : undefined}
+                          />
+                          <span style={{ fontSize: "13px", color: "#94A3B8" }}>%</span>
+                        </div>
+                        {err && <div id={fid("error-daily-bodyFat")} role="alert" style={{ fontSize: "12px", color: "#EF4444", marginTop: "4px" }}>{err}</div>}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div>
-                  <label style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Massa muscolare</label>
+                  <label htmlFor={fid("daily-muscleMass")} style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Massa muscolare</label>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <input type="number" step="0.1" value={dailyFields.muscleMass} onChange={e => setDailyFields(p => ({ ...p, muscleMass: e.target.value }))} placeholder="es. 34.2 (kg) o 41.5 (%)" style={{ ...inputStyle, flex: 1 }} />
+                    <input id={fid("daily-muscleMass")} type="number" step="0.1" value={dailyFields.muscleMass} onChange={e => setDailyFields(p => ({ ...p, muscleMass: e.target.value }))} placeholder="es. 34.2 (kg) o 41.5 (%)" style={{ ...inputStyle, flex: 1 }} />
                     <span style={{ fontSize: "13px", color: "#94A3B8" }}>kg / %</span>
                   </div>
                 </div>
                 <div>
-                  <label style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Acqua corporea (% TBW)</label>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <input type="number" step="0.1" min={30} max={75} value={dailyFields.bodyWater} onChange={e => setDailyFields(p => ({ ...p, bodyWater: e.target.value }))} placeholder="es. 55.0" style={{ ...inputStyle, flex: 1 }} />
-                    <span style={{ fontSize: "13px", color: "#94A3B8" }}>%</span>
-                  </div>
+                  <label htmlFor={fid("daily-bodyWater")} style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Acqua corporea (% TBW)</label>
+                  {(() => {
+                    const val = dailyFields.bodyWater;
+                    const err = val !== "" ? ((): string | null => {
+                      const n = Number(val);
+                      if (!Number.isFinite(n)) return "Valore non valido.";
+                      if (n < 30 || n > 75) return "Valore fuori range (30-75 %).";
+                      return null;
+                    })() : null;
+                    return (
+                      <>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <input id={fid("daily-bodyWater")} type="number" step="0.1" min={30} max={75} value={val}
+                            onChange={e => setDailyFields(p => ({ ...p, bodyWater: e.target.value }))}
+                            placeholder="es. 55.0" style={{ ...inputStyle, flex: 1 }}
+                            aria-invalid={err ? true : undefined}
+                            aria-describedby={err ? fid("error-daily-bodyWater") : undefined}
+                          />
+                          <span style={{ fontSize: "13px", color: "#94A3B8" }}>%</span>
+                        </div>
+                        {err && <div id={fid("error-daily-bodyWater")} role="alert" style={{ fontSize: "12px", color: "#EF4444", marginTop: "4px" }}>{err}</div>}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.4 }}>
                   Valori da bilancia BIA (impedenziometria). Hanno errore ~±3-8% ma utili per trend.
@@ -940,10 +1148,11 @@ export default function DiaryApp() {
 
             {profileSex === "f" && (
               <div>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>
+                <label htmlFor={fid("daily-cyclePhase")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>
                   🌸 Fase ciclo (opzionale)
                 </label>
                 <select
+                  id={fid("daily-cyclePhase")}
                   value={dailyFields.cyclePhase}
                   onChange={e => setDailyFields(p => ({ ...p, cyclePhase: e.target.value as typeof p.cyclePhase }))}
                   style={inputStyle}

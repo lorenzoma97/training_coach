@@ -227,7 +227,11 @@ export default function TrainingPlanView() {
     const extrasInPlanWindow = extras.filter(e => e.date >= planStartKey && e.date <= planEndKey);
 
     return { completed, extras: extrasInPlanWindow, skipped };
-  }, [plan, recentDays]);
+    // currentGoals incluso nelle deps: anche se il body del memo non ne legge
+    // direttamente, un cambio di goals (reorder, priority) può invalidare il
+    // matching logico visto a livello utente (es. priorità modifica quali
+    // sessioni vengono considerate "rilevanti" nelle viste derivate).
+  }, [plan, recentDays, currentGoals]);
 
   const completedSessions = matchResult.completed;
   const extraWorkouts = matchResult.extras;
@@ -364,6 +368,9 @@ export default function TrainingPlanView() {
     <button
       onClick={handleRegenerate}
       disabled={regenerating}
+      aria-busy={regenerating || undefined}
+      role={regenerating ? "status" : undefined}
+      aria-label={regenerating ? "Rigenerazione piano in corso" : undefined}
       style={{
         padding: "10px 14px",
         background: regenerating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
@@ -374,7 +381,9 @@ export default function TrainingPlanView() {
         width: "100%",
       }}
     >
-      {regenerating ? "⏳ Rigenerazione…" : (plan ? "🔁 Rigenera piano (integra dati recenti)" : "🎯 Genera piano")}
+      {regenerating
+        ? <span role="progressbar" aria-label="Rigenerazione in corso" aria-busy="true">⏳ Rigenerazione…</span>
+        : (plan ? "🔁 Rigenera piano (integra dati recenti)" : "🎯 Genera piano")}
     </button>
   );
 
@@ -515,6 +524,9 @@ export default function TrainingPlanView() {
             <button
               onClick={handleRegenerate}
               disabled={regenerating}
+              aria-busy={regenerating || undefined}
+              role={regenerating ? "status" : undefined}
+              aria-label={regenerating ? "Rigenerazione piano in corso" : undefined}
               style={{
                 padding: "10px 14px",
                 background: regenerating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
@@ -553,8 +565,10 @@ export default function TrainingPlanView() {
           <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); }} disabled={adapting || regenerating} style={{ flex: "1 1 140px", padding: "10px 14px", background: adaptOpen ? "#E8553A22" : "#1A1A2E", border: adaptOpen ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#E8553A" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
             ✏ Adatta con richiesta
           </button>
-          <button onClick={handleRegenerate} disabled={regenerating || adapting} style={{ flex: "1 1 140px", padding: "10px 14px", background: regenerating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: regenerating ? "wait" : "pointer", opacity: regenerating ? 0.5 : 1 }}>
-            {regenerating ? "⏳ Rigenerazione…" : "🔁 Rigenera con dati recenti"}
+          <button onClick={handleRegenerate} disabled={regenerating || adapting} aria-busy={regenerating || undefined} role={regenerating ? "status" : undefined} aria-label={regenerating ? "Rigenerazione piano in corso" : undefined} style={{ flex: "1 1 140px", padding: "10px 14px", background: regenerating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: regenerating ? "wait" : "pointer", opacity: regenerating ? 0.5 : 1 }}>
+            {regenerating
+              ? <span role="progressbar" aria-label="Rigenerazione in corso" aria-busy="true">⏳ Rigenerazione…</span>
+              : "🔁 Rigenera con dati recenti"}
           </button>
         </div>
         {adaptOpen && (
@@ -565,7 +579,7 @@ export default function TrainingPlanView() {
             </div>
             <textarea value={adaptRequest} onChange={e => setAdaptRequest(e.target.value)} placeholder="es. 'settimana più leggera perché ho un viaggio' o 'aumenta le ripetute'" disabled={adapting} rows={2} style={{ width: "100%", padding: "10px 12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#E2E8F0", fontSize: "14px", fontFamily: "inherit", resize: "vertical", minHeight: "60px", outline: "none", boxSizing: "border-box" }} />
             <div style={{ display: "flex", gap: "8px" }}>
-              <button onClick={() => handleAdapt()} disabled={adapting || !adaptRequest.trim()} style={{ flex: 1, padding: "10px", background: adapting ? "#1E293B" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: adapting ? "wait" : "pointer", opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1 }}>
+              <button onClick={() => handleAdapt()} disabled={adapting || !adaptRequest.trim()} aria-busy={adapting || undefined} role={adapting ? "status" : undefined} aria-label={adapting ? "Adattamento piano in corso" : undefined} style={{ flex: 1, padding: "10px", background: adapting ? "#1E293B" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: adapting ? "wait" : "pointer", opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1 }}>
                 {adapting ? "⏳ Adatto il piano…" : "Applica modifica"}
               </button>
               <button onClick={() => { setAdaptOpen(false); setAdaptRequest(""); setAdaptError(null); }} disabled={adapting} style={{ padding: "10px 14px", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#94A3B8", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>Annulla</button>
@@ -742,8 +756,8 @@ export default function TrainingPlanView() {
                     })()}
                     {isPerfect && <span aria-label="Sessione completata" style={{ color: "#22C55E", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>✓ FATTA</span>}
                     {isPartial && <span aria-label="Sessione con variazione" style={{ color: "#F59E0B", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>⚠ VARIAZIONE</span>}
-                    {!isCompleted && isToday && <span style={{ color: "#E8553A", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
-                    {!isCompleted && !isToday && isPast && <span style={{ color: "#94A3B8", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>SALTATA</span>}
+                    {!isCompleted && isToday && <span aria-label="Sessione di oggi (ancora da fare)" style={{ color: "#E8553A", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
+                    {!isCompleted && !isToday && isPast && <span aria-label="Sessione saltata" style={{ color: "#94A3B8", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>SALTATA</span>}
                   </div>
                   {isPartial && completion && (
                     <div style={{ color: "#F59E0B", fontSize: "11px", marginBottom: "6px", fontWeight: 600 }}>

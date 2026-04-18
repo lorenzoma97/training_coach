@@ -49,6 +49,20 @@ button { min-height: 40px; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 @keyframes writing { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
 
+/* Rispetta la preferenza di sistema per ridurre motion (WCAG 2.3.3).
+   Utenti con disturbi vestibolari o sensibilità al movimento vedranno
+   versioni statiche senza translate/spin/pulse. Le opacity-only sono OK. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .spinner { animation: none !important; opacity: 0.6; }
+  .typing-dots::after { animation: none !important; opacity: 0.7; }
+}
+
 .spinner {
   display: inline-block; width: 14px; height: 14px;
   border: 2px solid rgba(255,255,255,0.15);
@@ -82,4 +96,22 @@ input[type=number] { -moz-appearance: textfield; }
 .page-pad-bottom {
   /* Bottom nav è ~72px + safe-area. 96px + safe-area = margine 24px sotto ultimo contenuto. */
   padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Reduced motion: disabilita animazioni/transizioni per utenti che le richiedono (a11y) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .spinner {
+    animation: none !important;
+    border-top-color: #E8553A;
+  }
+  .typing-dots::after {
+    animation: none !important;
+    opacity: 0.6;
+  }
 }

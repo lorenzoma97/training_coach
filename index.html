@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Fallback icona per iOS homescreen. Non ottimale (iOS preferisce PNG)
+         ma funziona su iOS >= 16 che accetta SVG come touch icon. Quando
+         verranno generati i PNG (vedi TODO in vite.config.ts), aggiungere qui
+         anche sizes specifici, es. <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png"/>. -->
+    <link rel="apple-touch-icon" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#0B0F1A" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

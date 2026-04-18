@@ -80,13 +80,63 @@ export const storage = {
       if (k && (!prefix || k.startsWith(prefix))) all.push(k);
     }
     return all;
-  }
+  },
+
+  /**
+   * Scansiona le chiavi (opzionalmente filtrate per prefisso) e logga quelle
+   * con JSON corrotto. NON rimuove nulla: l'utente/dev decide cosa fare.
+   * Utile per diagnosi da console in caso di problemi di parsing.
+   * Ritorna la lista delle chiavi corrotte trovate.
+   */
+  async cleanCorrupted(keyPrefix?: string): Promise<string[]> {
+    const corrupted: string[] = [];
+    const keys = await this.keys(keyPrefix);
+    for (const k of keys) {
+      const v = localStorage.getItem(k);
+      if (v === null) continue;
+      try { JSON.parse(v); } catch (e) {
+        corrupted.push(k);
+        console.warn(
+          `[storage.cleanCorrupted] Chiave corrotta: "${k}" ` +
+          `(size ~${v.length} chars). Parse error:`, e,
+          "\nPreview:", v.slice(0, 120) + (v.length > 120 ? "…" : ""),
+        );
+      }
+    }
+    if (corrupted.length === 0) {
+      console.info(
+        `[storage.cleanCorrupted] Nessuna chiave corrotta trovata` +
+        `${keyPrefix ? ` (prefix: "${keyPrefix}")` : ""}.`,
+      );
+    } else {
+      console.warn(
+        `[storage.cleanCorrupted] ${corrupted.length} chiave/i corrotta/e:`,
+        corrupted,
+      );
+    }
+    return corrupted;
+  },
 };
 
+/**
+ * Legge e deserializza JSON da storage. Errori di parsing NON sono propagati:
+ * una chiave corrotta non deve abbattere l'app (è un problema locale a quella
+ * chiave, la UI può degradare in modo elegante usando il fallback). Logghiamo
+ * un warning dettagliato così il dev può intervenire via `storage.cleanCorrupted`.
+ */
 export async function getJSON<T>(key: string, fallback: T): Promise<T> {
   const r = await storage.get(key);
   if (!r) return fallback;
-  try { return JSON.parse(r.value) as T; } catch { return fallback; }
+  try {
+    return JSON.parse(r.value) as T;
+  } catch (e) {
+    console.warn(
+      `[storage.getJSON] JSON corrotto per chiave "${key}" ` +
+      `(size ~${r.value.length} chars). Uso fallback. Parse error:`, e,
+      "\nPreview:", r.value.slice(0, 120) + (r.value.length > 120 ? "…" : ""),
+    );
+    return fallback;
+  }
 }
 
 /**
