@@ -191,7 +191,7 @@ function PainPicker({ label, value, onChange }: { label: string; value: number |
               tabIndex={i === firstFocusableIdx ? 0 : -1}
               onClick={() => onChange(p.v)}
               onKeyDown={e => onKeyDown(e, i)}
-              aria-label={`${p.v}: ${p.desc}`}
+              aria-label={`${label}, livello ${p.v} su 4: ${p.desc}`}
               style={{
                 width: "44px", height: "44px", borderRadius: "10px",
                 border: checked ? `2px solid ${p.color}` : "1px solid rgba(255,255,255,0.08)",
@@ -240,7 +240,7 @@ function NumberRadioPicker({ values, value, onChange, ariaLabel, colorFor }: {
             tabIndex={i === firstFocusableIdx ? 0 : -1}
             onClick={() => onChange(n)}
             onKeyDown={e => onKeyDown(e, i)}
-            aria-label={`${ariaLabel} ${n}`}
+            aria-label={`${ariaLabel}: ${n} su ${values[values.length - 1]}`}
             style={{
               width: "44px", height: "44px", borderRadius: "10px",
               background: checked ? colorFor(n) + "30" : "#1A1A2E",

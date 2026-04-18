@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { getJSON, setJSON } from "../lib/storage";
 import type { CoachFeedItem } from "../lib/types";
 import { events } from "../lib/events";
+import { colors, touch } from "../lib/designTokens";
 import RichText from "./RichText";
 
+// Colori dei border-left che indicano severity: derivati da design tokens
+// (prima vita: hardcoded #0891B2/#F59E0B/#EF4444 — ora unica fonte).
 const SEVERITY_STYLE: Record<string, React.CSSProperties> = {
-  info: { borderLeft: "3px solid #0891B2" },
-  warn: { borderLeft: "3px solid #F59E0B", background: "#F59E0B10" },
-  danger: { borderLeft: "3px solid #EF4444", background: "#EF444418" },
+  info: { borderLeft: `3px solid ${colors.info}` },
+  warn: { borderLeft: `3px solid ${colors.warning}`, background: colors.warningFaint },
+  danger: { borderLeft: `3px solid ${colors.danger}`, background: "#EF444418" },
 };
 
 const TYPE_LABELS: Record<string, { label: string; emoji: string }> = {
@@ -77,9 +80,9 @@ export default function CoachFeedList() {
                 onClick={() => dismiss(item.id)}
                 aria-label="Rimuovi feedback"
                 style={{
-                  background: "transparent", border: "none", color: "#94A3B8",
-                  cursor: "pointer", fontSize: "18px", lineHeight: 1,
-                  minWidth: "36px", minHeight: "36px",
+                  background: "transparent", border: "none", color: colors.textMuted,
+                  cursor: "pointer", fontSize: "20px", lineHeight: 1,
+                  minWidth: touch.min, minHeight: touch.min,
                   borderRadius: "8px",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}

@@ -1169,7 +1169,12 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
           )}
 
           {!plan && (
-            <button onClick={finish} style={ghostBtn}>Salta: userò solo il diario</button>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <button onClick={finish} style={ghostBtn}>Salta: userò solo il diario</button>
+              <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5 }}>
+                Se salti, il coach non genererà un piano ora. Potrai sempre chiederlo in un secondo momento dal tab Coach.
+              </div>
+            </div>
           )}
         </div>
       )}

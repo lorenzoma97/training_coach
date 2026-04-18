@@ -83,16 +83,28 @@ export default function App() {
   };
 
   useEffect(() => {
-    refreshUnread();
+    // Debounce su refreshUnread: events + polling + plan:updated possono
+    // triggerare molte chiamate ravvicinate (es. cross-tab save emette
+    // contemporaneamente "data:externalChange" E "plan:updated"). Un singolo
+    // setTimeout collassa le chiamate entro 200ms → una sola read storage.
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const refreshDebounced = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => { void refreshUnread(); }, 200);
+    };
+    void refreshUnread();
     // 15s fallback: il cross-tab polling via storage-event già copre le modifiche
     // live, ma alcuni browser droppano storage events in alcuni scenari (es. quota
     // eventi privacy). Questo interval è la safety net di ultima istanza.
-    const id = setInterval(refreshUnread, 15000);
-    const off = events.on("plan:updated", refreshUnread);
+    const id = setInterval(refreshDebounced, 15000);
+    const off = events.on("plan:updated", refreshDebounced);
     const offExt = events.on("data:externalChange", ({ key }) => {
-      if (key === "coach-feed" || key === "coach-feed-last-seen") refreshUnread();
+      if (key === "coach-feed" || key === "coach-feed-last-seen") refreshDebounced();
     });
-    return () => { clearInterval(id); off(); offExt(); };
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      clearInterval(id); off(); offExt();
+    };
   }, []);
 
   // Quando si apre il tab Coach, segna tutto come "letto"

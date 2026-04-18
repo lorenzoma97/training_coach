@@ -2,9 +2,17 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
+import { readFileSync } from "node:fs";
+
+// Estrae version da package.json — unica fonte di verità per backup payload
+// e UI "Versione app". Evita drift tra pkg.json (es. "0.1.0") e hardcoded "1.0".
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "package.json"), "utf-8")) as { version: string };
 
 export default defineConfig({
   base: process.env.VITE_BASE || "/",
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [
     react(),
     VitePWA({

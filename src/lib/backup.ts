@@ -74,7 +74,9 @@ export async function buildBackup(): Promise<BackupPayload> {
     schema: "training-coach-backup",
     version: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: "1.0",
+    // __APP_VERSION__ iniettato al build da vite.config.ts (da package.json).
+    // In test/SSR senza Vite, fallback a "dev" per evitare crash.
+    appVersion: typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev",
     data,
   };
 }
@@ -170,13 +172,43 @@ function validateNestedShape(payload: { data: Record<string, unknown> }): string
   return null;
 }
 
+/**
+ * Versione schema corrente. Se in futuro cambieremo la shape in modo breaking
+ * (es. rename chiavi, nuovi campi REQUIRED), incrementiamo a 2 e aggiungiamo
+ * un ramo in `migrateToLatest` per leggere v1 e trasformarla in v2.
+ */
+const CURRENT_SCHEMA_VERSION = 1;
+
+/**
+ * Migrator per backup più vecchi della versione corrente.
+ * Accetta un payload VALIDATO a livello base (schema, version, data) e lo
+ * promuove alla shape attesa dall'app. Per v1 è identità (no-op).
+ *
+ * Per futura v2: assumere che i nuovi campi opzionali (zone, fcMaxTested,
+ * painTrackingAreas) possano mancare da v1 → inizializzare a default.
+ * Esempio (non ancora necessario):
+ *   if (payload.version === 1) {
+ *     // Aggiungi defaults per campi v2 assenti...
+ *     payload.version = 2;
+ *   }
+ */
+function migrateToLatest(payload: BackupPayload): BackupPayload {
+  // v1 → v1: identity. Nessuna migration necessaria al momento.
+  // I campi recentemente aggiunti (zone in PlannedSession, fcMaxTested in
+  // UserProfile, painTrackingAreas) sono tutti OPTIONAL, quindi payload
+  // v1 storici continuano a funzionare senza trasformazione.
+  return payload;
+}
+
 /** Valida la struttura base del payload e ne estrae una versione sicura. */
 export function validateBackup(raw: unknown): { ok: true; payload: BackupPayload } | { ok: false; error: string } {
   if (!raw || typeof raw !== "object") return { ok: false, error: "File non valido (non è un oggetto)" };
   const p = raw as { schema?: unknown; version?: unknown; data?: unknown };
   if (p.schema !== "training-coach-backup") return { ok: false, error: "Schema non riconosciuto — non sembra un backup di Training Coach" };
   if (typeof p.version !== "number") return { ok: false, error: "Versione del backup mancante" };
-  if (p.version > 1) return { ok: false, error: `Versione backup ${p.version} non supportata (app supporta max v1)` };
+  if (p.version > CURRENT_SCHEMA_VERSION) {
+    return { ok: false, error: `Versione backup ${p.version} più recente di quella supportata (max v${CURRENT_SCHEMA_VERSION}). Aggiorna l'app prima di ripristinare.` };
+  }
   if (!p.data || typeof p.data !== "object") return { ok: false, error: "Payload 'data' mancante" };
   const data = p.data as Record<string, unknown>;
   if (!data.days || typeof data.days !== "object" || Array.isArray(data.days)) {
@@ -187,7 +219,9 @@ export function validateBackup(raw: unknown): { ok: true; payload: BackupPayload
   const nestedErr = validateNestedShape({ data });
   if (nestedErr) return { ok: false, error: `Struttura backup non valida: ${nestedErr}` };
 
-  return { ok: true, payload: p as unknown as BackupPayload };
+  // Migration hook: eventuali backup v1 in futuro verrebbero promossi qui.
+  const migrated = migrateToLatest(p as unknown as BackupPayload);
+  return { ok: true, payload: migrated };
 }
 
 export interface RestoreOptions {

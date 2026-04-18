@@ -50,9 +50,14 @@ export interface BuildContext {
 
 /**
  * Keyword-match euristico per decidere se includere il blocco nutrition guardrail (fix #7).
- * Match case-insensitive su: nutrition, nutrizione, kcal, calorie, peso, dimagri, ingrassa, dieta, macro, proteine, carb(oidrati), grassi.
+ * Match case-insensitive su termini legati a: nutrizione diretta (kcal, calorie,
+ * macro, proteine, carbo, grassi, dieta), peso corporeo (peso, dimagri, ingrassa,
+ * deficit), pasti (colazione, pranzo, cena, spuntino, pasto, mangi, cibo, fame,
+ * sazi), integratori, energia (energia, energetic, low energy, LEA), RED-S.
+ * Espanso vs v1 per catturare più contesti (fix keyword fatigue/stanchezza
+ * NON incluso: fatigue è sintomo overtraining, non primariamente nutrition).
  */
-const NUTRITION_KEYWORDS_RE = /\b(nutrition|nutrizion\w*|kcal|calori\w*|peso|dimagri\w*|ingrass\w*|diet\w*|macro\w*|proteine|carboidrat\w*|grassi|deficit)\b/i;
+const NUTRITION_KEYWORDS_RE = /\b(nutrition|nutrizion\w*|kcal|calori\w*|peso|dimagri\w*|ingrass\w*|diet\w*|macro\w*|proteine|carboidrat\w*|grassi|deficit|energia|energetic\w*|fame|sazi\w*|mangi\w*|cibo|pasto|spuntino|integrator\w*|colazione|pranzo|cena|red[- ]?s|low.energy|\bLEA\b)\b/i;
 
 function shouldIncludeNutritionGuardrail(ctx: BuildContext): boolean {
   if (ctx.includeNutritionGuardrail) return true;
