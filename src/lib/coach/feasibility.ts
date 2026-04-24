@@ -5,6 +5,31 @@ import { profileAsPrompt } from "../diaryContext";
 import type { UserProfile, FeasibilityCheck } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 
+// Cache module-level: goal+profile identici → stessa risposta per 7gg.
+// WHY: l'utente clicca "valuta fattibilità" ripetutamente (tweak goal testo,
+// torna indietro nel wizard, ecc). Senza cache bruciamo token inutilmente.
+// Storage in-memory: intenzionalmente NON persisted (un refresh pulisce la cache).
+interface CacheEntry { result: FeasibilityCheck; ts: number }
+const FEASIBILITY_CACHE = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 7 * 24 * 3600 * 1000;
+
+// FNV-1a 32-bit: stabile e rapido, sufficiente per chiavi cache non crittografiche.
+function fnv1a(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(36);
+}
+
+function feasibilityCacheKey(profile: UserProfile, goalDescription: string): string {
+  const profileKey = (profile as UserProfile & { id?: string }).id
+    || `${profile.age}|${profile.sex}|${profile.experience}`;
+  const goalKey = goalDescription.toLowerCase().trim();
+  return fnv1a(`${profileKey}::${goalKey}`);
+}
+
 const schema = z.object({
   realistic: z.boolean(),
   reasoning: z.string(),
@@ -43,6 +68,11 @@ export async function checkGoalFeasibility(
   profile: UserProfile,
   goalDescription: string,
 ): Promise<FeasibilityCheck> {
+  const cacheKey = feasibilityCacheKey(profile, goalDescription);
+  const cached = FEASIBILITY_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    return cached.result;
+  }
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
@@ -107,7 +137,8 @@ In caso di conflitto: "realistic: false" + counterProposal che preserva lo spiri
 
   const result = schema.safeParse(raw);
   if (!result.success) {
-    // Fallback graceful: ritorna una valutazione conservativa invece di crashare
+    // Fallback graceful: ritorna una valutazione conservativa invece di crashare.
+    // NON cacheiamo i fallback degradati (dall'LLM arriverà una risposta ok al retry).
     console.warn("[feasibility] Zod parse failed, fallback applied:", result.error.message);
     return {
       realistic: false,
@@ -118,5 +149,6 @@ In caso di conflitto: "realistic: false" + counterProposal che preserva lo spiri
       },
     };
   }
+  FEASIBILITY_CACHE.set(cacheKey, { result: result.data, ts: Date.now() });
   return result.data;
 }

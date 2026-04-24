@@ -11,33 +11,13 @@
 //    per input LLM non fidato è fragile (bypass noti via attributi SVG, data URI,
 //    mutation XSS) e non vale la superficie d'attacco.
 // 2. Se in futuro si aggiunge il rendering di link markdown `[text](url)`,
-//    il parser DEVE accettare solo i protocolli `http:`, `https:`, `mailto:`
-//    e rigettare/sostituire qualunque altro schema (in particolare `javascript:`,
-//    `data:`, `vbscript:`, `file:`) — vedi `isSafeUrl` sotto come riferimento.
+//    VALIDARE i protocolli con una whitelist (`http:`, `https:`, `mailto:`)
+//    tramite regex/`URL()` prima di passare `href` a un tag `<a>`. Rigettare
+//    qualunque altro schema (in particolare `javascript:`, `data:`,
+//    `vbscript:`, `file:`) — un URL non valido va reso come testo letterale.
 // 3. Mantenere il renderer a soli `text | **bold** | newline`: qualunque
 //    estensione va valutata contro il rischio XSS.
 import { Fragment } from "react";
-
-/**
- * Whitelist di protocolli accettabili per eventuali URL. Definita qui come
- * riferimento: se il renderer verrà esteso a link markdown, USARE questa
- * funzione prima di passare `href` a un tag `<a>`. Un URL che non supera il
- * check va reso come testo letterale (o sostituito con `about:blank`).
- *
- * Nota: attualmente NON utilizzata perché non renderizziamo link — lasciata
- * volutamente come API interna documentata.
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function isSafeUrl(raw: string): boolean {
-  try {
-    // URL relativi senza schema (es. "/foo", "./bar") sono sicuri.
-    if (!/^[a-z][a-z0-9+.-]*:/i.test(raw)) return true;
-    const u = new URL(raw);
-    return u.protocol === "http:" || u.protocol === "https:" || u.protocol === "mailto:";
-  } catch {
-    return false;
-  }
-}
 
 export default function RichText({ text }: { text: string }) {
   if (!text) return null;

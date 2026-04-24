@@ -16,7 +16,9 @@ export interface PlanValidationIssue {
     | "volume_spike_johansen"
     | "strength_excessive_for_master"
     | "strength_unsafe_elder"
-    | "subtype_out_of_catalog";
+    | "subtype_out_of_catalog"
+    | "strength_recovery_violation"
+    | "weekly_volume_exceeds_availability";
   message: string;
   severity: "warn" | "error";
   /** Categoria usata per metriche/raggruppamento (coincide con `type`). */
@@ -206,6 +208,10 @@ export function validatePlan(
       validateStrengthAgeTiered(s, week.weekNumber, profile.age, issues);
       validateSessionSubtype(s, week.weekNumber, issues);
     }
+
+    // Week-level checks: strength recovery 48h + volume vs availability.
+    validateStrengthRecovery(week, issues);
+    validateWeeklyVolume(week, profile, options.expectedDayLabels, issues);
   }
 
   const ok = issues.filter(i => i.severity === "error").length === 0;
@@ -342,6 +348,71 @@ function validateSessionSubtype(
       severity: "warn",
     });
   }
+}
+
+/**
+ * Fix — 48h recovery rule tra sessioni di forza.
+ * Muscle protein synthesis + tendon repair richiedono ~48h tra stimoli sullo stesso
+ * distretto (Schoenfeld 2016 freq metanalisi). Qui trattiamo forza_gambe/forza_upper
+ * come "stress neuromuscolare generale": ≥1 giorno di stacco tra QUALSIASI coppia
+ * di sessioni forza. Il pattern lun+mar di forza (anche split upper/lower) → warn.
+ */
+function validateStrengthRecovery(
+  week: PlanWeek,
+  issues: PlanValidationIssue[],
+): void {
+  const strengthDays: { day: string; idx: number; type: string }[] = [];
+  for (const s of week.sessions) {
+    const t = (s.type || "").toLowerCase();
+    if (t === "forza_gambe" || t === "forza_upper") {
+      const idx = DAY_ORDER.indexOf(s.day);
+      if (idx >= 0) strengthDays.push({ day: s.day, idx, type: t });
+    }
+  }
+  strengthDays.sort((a, b) => a.idx - b.idx);
+  for (let i = 1; i < strengthDays.length; i++) {
+    const gap = strengthDays[i].idx - strengthDays[i - 1].idx;
+    if (gap < 2) {
+      issues.push({
+        weekNumber: week.weekNumber,
+        type: "strength_recovery_violation",
+        category: "strength_recovery_violation",
+        message: `Settimana ${week.weekNumber}: forza ${strengthDays[i - 1].type} (${strengthDays[i - 1].day}) e ${strengthDays[i].type} (${strengthDays[i].day}) a distanza <48h — serve almeno 1 giorno di stacco tra sessioni di forza (Schoenfeld 2016).`,
+        severity: "warn",
+      });
+    }
+  }
+}
+
+/**
+ * Fix — weekly volume vs availability.
+ * Confronta somma duration_min della settimana con budget dichiarato
+ * (days × hoursPerSession × 60). Sforare il budget significa piano irrealistico:
+ * l'utente salterà sessioni. Tolleranza 20%: oltre è error (riscritto male), sotto warn.
+ */
+function validateWeeklyVolume(
+  week: PlanWeek,
+  profile: UserProfile,
+  expectedDayLabels: string[] | undefined,
+  issues: PlanValidationIssue[],
+): void {
+  const avail = profile.weekly_availability;
+  if (!avail || !avail.days || !avail.hoursPerSession) return;
+  const windowSize = expectedDayLabels?.length ?? 7;
+  // Budget scala con la finestra (es. rest-of-week 4gg su 7 → 4/7 del budget).
+  const budgetMin = Math.round(avail.days * avail.hoursPerSession * 60 * windowSize / 7);
+  if (budgetMin <= 0) return;
+  const totalMin = week.sessions.reduce((a, s) => a + (s.duration_min || 0), 0);
+  if (totalMin <= budgetMin) return;
+  const overPct = ((totalMin - budgetMin) / budgetMin) * 100;
+  const severity: "warn" | "error" = overPct > 20 ? "error" : "warn";
+  issues.push({
+    weekNumber: week.weekNumber,
+    type: "weekly_volume_exceeds_availability",
+    category: "weekly_volume_exceeds_availability",
+    message: `Settimana ${week.weekNumber}: ${totalMin}min pianificati vs budget ${budgetMin}min (${avail.days}gg × ${avail.hoursPerSession}h) = +${Math.round(overPct)}%. ${severity === "error" ? "Piano irrealistico, riduci volume." : "Al limite della disponibilità dichiarata."}`,
+    severity,
+  });
 }
 
 /**

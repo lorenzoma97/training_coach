@@ -7,10 +7,7 @@ import { getLastNDays } from "../lib/diaryContext";
 import { computeZones, timeInZones, polarizationCheck, type ZonesResult, type TimeInZone } from "../lib/coach/zones";
 import type { UserProfile } from "../lib/types";
 import { events } from "../lib/events";
-
-const ZONE_COLORS: Record<number, string> = {
-  1: "#10B981", 2: "#22C55E", 3: "#EAB308", 4: "#F97316", 5: "#EF4444",
-};
+import { colors, fonts, fontSize, radius, ZONE_COLORS } from "../lib/designTokens";
 
 type Period = 7 | 14 | 30 | 90;
 
@@ -69,45 +66,49 @@ export default function ZonesAnalytics() {
   const MIN_SESSIONS_FOR_POLAR = 4;
   const enoughForPolar = totalSessions >= MIN_SESSIONS_FOR_POLAR;
 
-  if (loading) return <div style={{ color: "#64748B", fontSize: "12px", padding: "8px 0" }}>Calcolo analytics…</div>;
+  if (loading) return <div style={{ color: colors.textDim, fontSize: fontSize.sm, padding: "8px 0" }}>Calcolo analytics…</div>;
   if (!zones) return null;
 
   const maxMin = Math.max(1, ...tiz.map(z => z.minutes));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-      <div style={{ display: "flex", gap: "6px", background: "#1A1A2E", padding: "4px", borderRadius: "10px" }}>
+      <div style={{ display: "flex", gap: "6px", background: colors.bgElevated, padding: "4px", borderRadius: radius.lg }}>
         {([7, 14, 30, 90] as Period[]).map(p => (
           <button key={p} onClick={() => setPeriod(p)} style={{
-            flex: 1, padding: "8px", borderRadius: "8px",
-            background: period === p ? "#16213E" : "transparent",
-            border: "none", color: period === p ? "#E2E8F0" : "#94A3B8",
-            fontSize: "12px", fontWeight: 700, cursor: "pointer",
+            flex: 1, padding: "8px", borderRadius: radius.md,
+            background: period === p ? colors.bgRaised : "transparent",
+            border: "none", color: period === p ? colors.textPrimary : colors.textMuted,
+            fontSize: fontSize.sm, fontWeight: 700, cursor: "pointer",
           }}>{p}gg</button>
         ))}
       </div>
 
       {totalMin === 0 ? (
-        <div style={{ color: "#94A3B8", fontSize: "13px", fontStyle: "italic", textAlign: "center", padding: "20px" }}>
-          Nessuna corsa con FC registrata negli ultimi {period} giorni. Registra le sessioni con fc_media per vedere il tempo per zona.
+        <div style={{ textAlign: "center", color: colors.textSecondary, padding: "40px 20px", fontSize: fontSize.base }}>
+          <div style={{ fontSize: "40px", marginBottom: "10px" }} aria-hidden="true">📈</div>
+          <div style={{ fontWeight: 600 }}>Nessuna corsa registrata.</div>
+          <div style={{ fontSize: fontSize.sm, color: colors.textMuted, marginTop: "6px", lineHeight: 1.5 }}>
+            Nessuna sessione con fc_media negli ultimi {period} giorni. Registra le corse con la frequenza cardiaca media per vedere la distribuzione tempo-per-zona e il check 80/20 polarizzato.
+          </div>
         </div>
       ) : (
         <>
-          <div style={{ background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "12px", padding: "14px" }}>
-            <div style={{ fontSize: "11px", color: "#94A3B8", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "10px", fontWeight: 600 }}>
+          <div style={{ background: colors.bgElevated, border: `1px solid ${colors.border}`, borderRadius: radius.xl, padding: "14px" }}>
+            <div style={{ fontSize: fontSize.xs, color: colors.textMuted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "10px", fontWeight: 600 }}>
               Tempo per zona — ultimi {period} giorni ({totalMin} min totali)
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {tiz.map(t => {
                 const pct = totalMin ? Math.round((t.minutes / totalMin) * 100) : 0;
                 const barW = maxMin ? (t.minutes / maxMin) * 100 : 0;
-                const color = ZONE_COLORS[t.zoneIndex];
+                const color = ZONE_COLORS[t.zoneIndex as 1 | 2 | 3 | 4 | 5].text;
                 return (
                   <div key={t.zoneIndex} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div style={{ minWidth: "28px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color, fontSize: "13px" }}>
+                    <div style={{ minWidth: "28px", fontFamily: fonts.mono, fontWeight: 700, color, fontSize: fontSize.base }}>
                       Z{t.zoneIndex}
                     </div>
-                    <div style={{ flex: 1, background: "#0F172A", borderRadius: "6px", height: "22px", position: "relative", overflow: "hidden" }}>
+                    <div style={{ flex: 1, background: "#0F172A", borderRadius: radius.sm, height: "22px", position: "relative", overflow: "hidden" }}>
                       <div style={{
                         width: `${barW}%`, height: "100%",
                         background: color, opacity: 0.7,
@@ -116,10 +117,10 @@ export default function ZonesAnalytics() {
                       <div style={{
                         position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
                         display: "flex", alignItems: "center", padding: "0 10px",
-                        fontSize: "11px", fontWeight: 700, color: "#E2E8F0",
+                        fontSize: fontSize.xs, fontWeight: 700, color: colors.textPrimary,
                       }}>
                         <span>{t.minutes} min</span>
-                        <span style={{ marginLeft: "auto", color: "#94A3B8" }}>{pct}% · {t.sessionCount} sess.</span>
+                        <span style={{ marginLeft: "auto", color: colors.textMuted }}>{pct}% · {t.sessionCount} sess.</span>
                       </div>
                     </div>
                   </div>
@@ -131,16 +132,16 @@ export default function ZonesAnalytics() {
           {enoughForPolar ? (
             <div style={{
               background: polar.isPolarized ? "#14532D20" : "#78350F20",
-              border: `1px solid ${polar.isPolarized ? "#22C55E66" : "#F59E0B66"}`,
-              borderRadius: "12px", padding: "14px",
+              border: `1px solid ${polar.isPolarized ? colors.successSoft : colors.warningSoft}`,
+              borderRadius: radius.xl, padding: "14px",
             }}>
-              <div style={{ fontSize: "11px", color: polar.isPolarized ? "#22C55E" : "#F59E0B", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "8px", fontWeight: 700 }}>
+              <div style={{ fontSize: fontSize.xs, color: polar.isPolarized ? colors.success : colors.warning, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "8px", fontWeight: 700 }}>
                 Distribuzione polarizzata (Seiler 80/20)
               </div>
-              <div style={{ fontSize: "22px", fontWeight: 800, color: "#E2E8F0", fontFamily: "'JetBrains Mono', monospace", marginBottom: "6px" }}>
+              <div style={{ fontSize: fontSize.huge, fontWeight: 800, color: colors.textPrimary, fontFamily: fonts.mono, marginBottom: "6px" }}>
                 {polar.lowPct}% / {polar.highPct}%
               </div>
-              <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>
+              <div style={{ fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 1.5 }}>
                 {polar.isPolarized
                   ? `✓ Distribuzione polarizzata ok. Passi ${polar.lowPct}% del tempo in Z1+Z2 (bassa intensità) e ${polar.highPct}% in Z3+Z4+Z5 (alta intensità). Il modello 80/20 è quello che massimizza i guadagni endurance (Seiler 2010, Stöggl/Sperlich 2014).`
                   : `⚠ Distribuzione sbilanciata: solo ${polar.lowPct}% in bassa intensità (target ≥75%). Probabilmente stai correndo troppo forte le sessioni "easy". Rallenta i fondi lenti: più volume a bassa intensità produce più miglioramento VO2max.`}
@@ -149,8 +150,8 @@ export default function ZonesAnalytics() {
           ) : (
             <div style={{
               background: "#1E293B40", border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: "12px", padding: "12px 14px",
-              fontSize: "12px", color: "#94A3B8", lineHeight: 1.5,
+              borderRadius: radius.xl, padding: "12px 14px",
+              fontSize: fontSize.sm, color: colors.textMuted, lineHeight: 1.5,
             }}>
               Distribuzione polarizzata non ancora calcolabile: servono almeno {MIN_SESSIONS_FOR_POLAR} sessioni di corsa con FC nell'intervallo (hai {totalSessions}). Con pochi campioni il rapporto Z1+Z2 vs Z3+Z4+Z5 è dominato da una singola corsa e non è indicativo.
             </div>
@@ -158,7 +159,7 @@ export default function ZonesAnalytics() {
         </>
       )}
 
-      <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.5, fontStyle: "italic" }}>
+      <div style={{ fontSize: fontSize.xs, color: colors.textDim, lineHeight: 1.5, fontStyle: "italic" }}>
         Limite noto: senza sample HR granulari (solo fc_media per sessione), ogni corsa è assegnata a UNA zona. Una Fartlek o interval session con FC media 145 bpm viene bucket in Z2/Z3 anche se i picchi erano in Z5 — leggi il dato come approssimazione.
       </div>
     </div>

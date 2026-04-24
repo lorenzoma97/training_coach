@@ -18,7 +18,9 @@
          verranno generati i PNG (vedi TODO in vite.config.ts), aggiungere qui
          anche sizes specifici, es. <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png"/>. -->
     <link rel="apple-touch-icon" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <!-- user-scalable rimosso: WCAG 2.1 SC 1.4.4 richiede che l'utente possa
+         zoomare il testo. iOS/Android useranno il pinch-zoom nativo. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0B0F1A" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

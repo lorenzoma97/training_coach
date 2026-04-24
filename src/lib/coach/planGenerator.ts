@@ -8,6 +8,30 @@ import { validatePlan, planStateHash, computePlanStartDate } from "./planValidat
 import { computeZonesContext } from "./zones";
 import { workoutSubtypesForPrompt, isCanonicalSubtype } from "../workoutCatalog";
 
+// WHY: appiattisce i giorni del diario nella shape attesa dal validator per
+// lo spike check Johansen (14gg). Senza questo i call-site passavano [] e lo
+// spike check era inerte.
+function flattenWorkoutsForValidator(
+  days: Array<{ date: string; daily: unknown; workouts: unknown[] }>,
+): Array<{ type?: string; fields?: { tipo?: string; durata_totale?: number | string; durata?: number | string }; date?: string }> {
+  const out: Array<{ type?: string; fields?: { tipo?: string; durata_totale?: number | string; durata?: number | string }; date?: string }> = [];
+  for (const d of days) {
+    for (const w of d.workouts || []) {
+      const ww = w as { type?: string; fields?: { tipo?: string; durata_totale?: number | string; durata?: number | string } };
+      out.push({ type: ww.type, fields: ww.fields, date: d.date });
+    }
+  }
+  return out;
+}
+
+// Iniettato nel userPrompt quando ci sono ≥2 goal attivi: il modello deve
+// esplicitare i trade-off anziché cercare di massimizzare tutti contemporaneamente
+// (es. dimagrimento + ipertrofia = conflitto energetico; endurance + potenza =
+// interferenza neuromuscolare).
+const GOAL_CONFLICT_HINT = `
+NOTA SU OBIETTIVI MULTIPLI: hai ≥2 goal attivi. Gli obiettivi possono essere conflittuali (es. dimagrimento+ipertrofia, endurance+potenza, volume+recupero). Nel campo "rationale" spiega esplicitamente come bilanci il conflitto, quale obiettivo ha PRIORITÀ questa settimana, o come alterni l'enfasi settimana-a-settimana. Non cercare di massimizzare tutti contemporaneamente.
+`.trim();
+
 const sessionSchema = z.object({
   day: z.enum(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]),
   type: z.enum(["corsa", "forza_gambe", "forza_upper", "sport", "mobilita"]),
@@ -117,69 +141,82 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
   const strDur = Math.min(maxDurMin, 30);
   const mobDur = Math.min(maxDurMin, 20);
 
+  // Injuries detection: keyword match lowercase sui campi dichiarati.
+  // Scelta conservativa: in dubbio riduciamo cardio + aumentiamo mobility (WHY:
+  // il fallback è cieco senza LLM, meglio sottostimare il volume che forzare un
+  // rientro aggressivo su strutture potenzialmente non guarite).
+  const injuriesBlob = (profile.injuries || []).join(" ").toLowerCase();
+  const hasCalfIssue = /polpaccio|calf/i.test(injuriesBlob);
+  const hasKneeIssue = /ginocchio|knee/i.test(injuriesBlob);
+
   // Template base 7 giorni: 3 corse Z2 + 1 forza + 1 mobilità + 2 riposi.
   // I giorni non scelti restano senza sessione (= riposo).
   type DayKey = "lun" | "mar" | "mer" | "gio" | "ven" | "sab" | "dom";
+
+  // Cardio session factory: rispetta injuries (calf → 2 corse + 1 mobility,
+  // knee → solo camminata).
+  const cardioSession = (day: DayKey, slot: "lun" | "gio" | "sab"): PlanWeek["sessions"][number] => {
+    if (hasKneeIssue) {
+      return {
+        day,
+        type: "mobilita",
+        subtype: "Camminata",
+        duration_min: Math.min(maxDurMin, 30),
+        details: "Camminata a passo sostenuto su superficie regolare. Evita salite/discese ripide finché il ginocchio non è asintomatico.",
+        rationale: "Aerobico a basso impatto: carico articolare minimo con ginocchio in fase di tutela.",
+      };
+    }
+    // Calf injury: il 3° slot (sab) diventa mobility, gli altri due restano corse.
+    if (hasCalfIssue && slot === "sab") {
+      return {
+        day,
+        type: "mobilita",
+        subtype: "Foam Rolling",
+        duration_min: Math.min(maxDurMin, 20),
+        details: "Foam rolling polpacci + soleo, stretching prolungato gastrocnemio, mobilità caviglia. Evita impact.",
+        rationale: "Sostituisce la 3a corsa per ridurre lo stress ripetuto sul polpaccio in fase di recupero.",
+      };
+    }
+    return {
+      day,
+      type: "corsa",
+      subtype: "Fondo Lento",
+      duration_min: runDur,
+      details: "Corsa conversazionale in Z2, passo libero e sostenibile. Se serve, cammina nei primi minuti per riscaldare.",
+      rationale: "Fondo aerobico: base di resistenza senza stress cardiovascolare eccessivo.",
+      zone: 2,
+    };
+  };
+
   const template: Array<{ day: DayKey; session: PlanWeek["sessions"][number] | null }> = [
-    {
-      day: "lun",
-      session: {
-        day: "lun",
-        type: "corsa",
-        subtype: "Fondo Lento",
-        duration_min: runDur,
-        details: "Corsa conversazionale in Z2, passo libero e sostenibile. Se serve, cammina nei primi minuti per riscaldare.",
-        rationale: "Fondo aerobico: base di resistenza senza stress cardiovascolare eccessivo.",
-        zone: 2,
-      },
-    },
+    { day: "lun", session: cardioSession("lun", "lun") },
     {
       day: "mar",
       session: {
         day: "mar",
         type: "forza_gambe",
-        subtype: "Base total-body",
+        // "Circuito Misto" è l'unico subtype del catalog forza_gambe che mappa
+        // semanticamente un total-body bodyweight (vedi workoutCatalog.ts).
+        subtype: "Circuito Misto",
         duration_min: strDur,
         details: "3 serie × 10 ripetizioni: squat a corpo libero, affondi, plank 30-45s, push-up (anche su ginocchia). Recupero 60-90s.",
         rationale: "Forza funzionale leggera: supporta corsa e previene infortuni (Rønnestad 2014).",
       },
     },
     { day: "mer", session: null }, // riposo
-    {
-      day: "gio",
-      session: {
-        day: "gio",
-        type: "corsa",
-        subtype: "Fondo Lento",
-        duration_min: runDur,
-        details: "Come lunedì: Z2 conversazionale. Se senti fatica dalla sessione forza, riduci il passo.",
-        rationale: "Seconda corsa aerobica: consolida l'adattamento senza sovraccarico.",
-        zone: 2,
-      },
-    },
+    { day: "gio", session: cardioSession("gio", "gio") },
     {
       day: "ven",
       session: {
         day: "ven",
         type: "mobilita",
-        subtype: "Mobilità & stretching",
+        subtype: "Mobilità Dinamica",
         duration_min: mobDur,
         details: "Mobilità anche/caviglie + stretching dinamico gambe + core leggero. Movimenti lenti e controllati.",
         rationale: "Recovery attivo: mantiene range di movimento e riduce il rischio infortuni.",
       },
     },
-    {
-      day: "sab",
-      session: {
-        day: "sab",
-        type: "corsa",
-        subtype: "Fondo Lento",
-        duration_min: runDur,
-        details: "Corsa Z2 lunga ma senza intensità. Rispetta il respiro: devi poter parlare.",
-        rationale: "Volume settimanale: costruzione aerobica con carico distribuito.",
-        zone: 2,
-      },
-    },
+    { day: "sab", session: cardioSession("sab", "sab") },
     { day: "dom", session: null }, // riposo
   ];
 
@@ -214,6 +251,11 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
   const validUntil = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
   const ageNote = isSenior ? " Durate ridotte per fascia età ≥65." : "";
   const begNote = isBeginner ? " Volume e intensità conservativi (beginner cap)." : "";
+  const injuryNote = hasKneeIssue
+    ? " Corse sostituite da camminata per tutela ginocchio."
+    : hasCalfIssue
+      ? " Ridotte a 2 corse + 1 mobility per tutela polpaccio."
+      : "";
   const goalNote = goals.length
     ? " Il piano si concentra su base aerobica e forza funzionale — gli obiettivi specifici saranno integrati quando il coach AI tornerà disponibile."
     : "";
@@ -235,7 +277,7 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
       `${sessions.filter(s => s.type === "corsa").length} corse in Z2, ` +
       `${sessions.filter(s => s.type === "forza_gambe").length} sessione forza e ` +
       `${sessions.filter(s => s.type === "mobilita").length} mobilità.` +
-      ageNote + begNote + goalNote +
+      ageNote + begNote + injuryNote + goalNote +
       " Puoi rigenerare un piano personalizzato dal pannello Coach appena il servizio risponde.",
   };
 }
@@ -248,13 +290,14 @@ export async function generateInitialPlan(
   // comunque per sicurezza (es. onboarding ripetuto con diario esistente).
   const recentDaysForZones = await getLastNDays(60).catch(() => []);
   const zonesCtxInit = computeZonesContext(profile, recentDaysForZones);
+  const goalConflictHint = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
 
 OBIETTIVI:
 ${goalsAsPrompt(goals)}
-
+${goalConflictHint}
 Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'utente verso gli obiettivi rispettando vincoli e sicurezza. La settimana successiva sarà rigenerata lunedì prossimo sulla base dei dati reali del diario, non anticiparla ora.
 `.trim();
 
@@ -306,7 +349,7 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
   };
   // Validator deterministico post-LLM: logga violazioni safety anche se il modello
   // le ha ignorate. Non ri-generiamo automaticamente (caro in token) — segnaliamo.
-  const validation = validatePlan(plan, profile);
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZones));
   if (!validation.ok) {
     console.warn("[planGenerator] Violazioni safety nel piano generato:",
       validation.issues.map(i => i.message).join(" | "));
@@ -359,25 +402,32 @@ export async function regenerateNextWeek(
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - todayIdx);
 
+  // Finestra ≤2 gg: la settimana è quasi finita. Meglio 1 sessione leggera
+  // che rincorrere volume a intensità alta in una window residua microscopica.
+  const minimalWindowGuard = mode === "rest-of-week" && remainingLabels.length <= 2
+    ? `\nFINESTRA RIDOTTA (${remainingLabels.length} giorni): preferire massimo 1 sessione leggera Z2 fino a 30min. NO Z4/Z5, NO ripetute, NO forza pesante. Usa gli altri giorni come riposo/mobilità breve.`
+    : "";
+
   const restOfWeekBlock = mode === "rest-of-week" ? `
 SCENARIO MID-WEEK — RIPARTI DA OGGI:
 OGGI è ${todayLabel} ${formatDateIT(now)}. La settimana è iniziata lun ${formatDateIT(weekStart)}.
 Genera sessioni SOLO per i giorni rimanenti: ${remainingLabels.join(", ")}.
 I giorni passati (${passedLabels.join(", ")}) sono CHIUSI — considerali come riposo,
-non includere sessioni per essi.
+non includere sessioni per essi.${minimalWindowGuard}
 ` : "";
 
   const modeInstruction = mode === "next-week"
     ? `Genera la NUOVA settimana (weekNumber=1, una sola) a partire dalla settimana prossima, adattando in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.\nSe rilevi red flag, proponi deload esplicito.`
     : `Genera la settimana corrente parziale (weekNumber=1, una sola) coprendo solo i ${remainingLabels.length} giorni rimanenti. Adatta volume/intensità in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.`;
 
+  const goalConflictHintRegen = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
 
 OBIETTIVI:
 ${goalsAsPrompt(goals)}
-
+${goalConflictHintRegen}
 PIANO CORRENTE:
 ${planAsPrompt(currentPlan)}
 
@@ -437,7 +487,7 @@ ${modeInstruction}
   // Per partial week passiamo expectedDayLabels al validator così non flagga
   // "insufficient_rest_days" su una finestra ridotta (es. gio-dom = 4 giorni).
   const expectedDayLabels = mode === "rest-of-week" ? remainingLabels.slice() : undefined;
-  const validation = validatePlan(plan, profile, [], { expectedDayLabels });
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesRegen), { expectedDayLabels });
   if (!validation.ok) {
     console.warn("[regenerateNextWeek] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
     plan.rationale = plan.rationale + "\n\n[Validator] Avvertenze: " + validation.issues.map(i => i.message).join(" ");
@@ -458,13 +508,14 @@ export async function adaptPlan(
   recentDaysText: string,
   userRequest: string,
 ): Promise<TrainingPlan> {
+  const goalConflictHintAdapt = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
 
 OBIETTIVI:
 ${goalsAsPrompt(goals)}
-
+${goalConflictHintAdapt}
 PIANO CORRENTE (da modificare):
 ${planAsPrompt(currentPlan)}
 
@@ -526,7 +577,7 @@ Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le
     weeks: coerceWeeks(parsed.weeks),
     rationale: parsed.rationale,
   };
-  const validation = validatePlan(plan, profile);
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesAdapt));
   if (!validation.ok) {
     console.warn("[adaptPlan] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
     plan.rationale = plan.rationale + "\n\n[Validator] Avvertenze: " + validation.issues.map(i => i.message).join(" ");

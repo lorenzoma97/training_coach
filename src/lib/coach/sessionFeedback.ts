@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
-import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt, formatDaysForLLM, extractBodyComp } from "../diaryContext";
+import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt, formatDaysForLLM, extractBodyComp, type Workout } from "../diaryContext";
 import type { SessionFeedback } from "../types";
 import { checkLocalRedFlags } from "./safetyRules";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext, type WorkoutTypeId } from "./promptBuilder";
@@ -25,10 +25,30 @@ const schemaHint = `
 }
 `.trim();
 
+// Type guard: valida shape minimo di Workout prima di inoltrarlo alla pipeline.
+// Meglio di `workout: any` — evita errori runtime indecifrabili quando chi chiama
+// passa oggetti parziali (es. draft non finalizzato) accedendo a `.fields.*` random.
+// Nota: `fields` nel tipo Workout ufficiale è optional — qui lo RICHIEDIAMO perché
+// analyzeSession non può fare nulla di utile senza (tutti i rami consultano fields).
+function isValidWorkout(w: unknown): w is Workout & { fields: Record<string, unknown> } {
+  if (!w || typeof w !== "object") return false;
+  const o = w as Record<string, unknown>;
+  if (typeof o.id !== "string" || !o.id) return false;
+  if (typeof o.type !== "string" || !o.type) return false;
+  if (!o.fields || typeof o.fields !== "object") return false;
+  return true;
+}
+
 export async function analyzeSession(params: {
   workoutDate: string;
-  workout: any;
+  workout: unknown;
 }): Promise<SessionFeedback> {
+  if (!isValidWorkout(params.workout)) {
+    throw new Error(
+      "Sessione non valida: mancano campi obbligatori (id, type, fields). Impossibile generare feedback."
+    );
+  }
+  const workout = params.workout;
   const ctx = await buildCoachContext({ daysBack: 7 });
 
   // Zone FC personalizzate (Tanaka/Karvonen/Empirica) + tempo-per-zona + polar.
@@ -40,7 +60,7 @@ export async function analyzeSession(params: {
 
   // Red flag locali (heuristics client-side — utili se la rete fallisce)
   const local = checkLocalRedFlags({
-    workout: params.workout,
+    workout,
     last7Days: ctx.recentDaysRaw,
     profile: ctx.profile ? { age: ctx.profile.age } : null,
     zoneZ2,
@@ -49,7 +69,7 @@ export async function analyzeSession(params: {
   const workoutLine = formatDaysForLLM([{
     date: params.workoutDate,
     daily: null,
-    workouts: [params.workout],
+    workouts: [workout],
   }]);
 
   const userPrompt = `
@@ -74,12 +94,12 @@ ${local.reasons.length ? local.reasons.map(r => `- ${r}`).join("\n") : "(nessuno
 Dai feedback strutturato. Se ci sono red flag locali, includili in redFlags e alza severity di conseguenza (danger se dolore ≥3 o segnali rossi, warn altrimenti).
 `.trim();
 
-  const rpeNum = Number(params.workout.rpe) || 0;
+  const rpeNum = Number(workout.rpe) || 0;
 
   // Guard esplicito: workoutType deve essere uno degli id enumerati
   const validTypes: WorkoutTypeId[] = ["corsa", "forza_gambe", "forza_upper", "sport", "mobilita"];
-  const wt: WorkoutTypeId | undefined = validTypes.includes(params.workout.type as WorkoutTypeId)
-    ? (params.workout.type as WorkoutTypeId)
+  const wt: WorkoutTypeId | undefined = validTypes.includes(workout.type as WorkoutTypeId)
+    ? (workout.type as WorkoutTypeId)
     : undefined;
 
   // Calcola giorni alla gara più vicina (da obiettivi con deadline parsable)
@@ -95,7 +115,7 @@ Dai feedback strutturato. Se ci sono red flag locali, includili in redFlags e al
     hasStrengthInPlan: !!ctx.plan?.weeks.some(w => w.sessions.some(s => s.type.startsWith("forza"))),
     daysToNearestRace,
     lastSessionIntensity: rpeNum >= 8 ? "hard" : rpeNum >= 5 ? "moderate" : "light",
-    currentCadence: params.workout.fields?.cadenza ? Number(params.workout.fields.cadenza) : null,
+    currentCadence: workout.fields?.cadenza ? Number(workout.fields.cadenza) : null,
     detectedConditions: extractConditionsFromProfile(ctx.profile),
     zones: zonesCtx?.zones ?? undefined,
     zonesTimeInZone: zonesCtx?.timeInZone,

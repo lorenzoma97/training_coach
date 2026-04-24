@@ -1,6 +1,8 @@
 // Wrapper localStorage che espone la stessa API di window.storage (usata da DiaryApp).
 // Usare sempre queste funzioni anziché localStorage direttamente.
 
+import type { ZodType } from "zod";
+
 type StorageResult = { value: string } | null;
 
 export class StorageQuotaError extends Error {
@@ -144,6 +146,68 @@ export async function getJSON<T>(key: string, fallback: T): Promise<T> {
     );
     return fallback;
   }
+}
+
+/**
+ * Variante di `getJSON` con validazione runtime Zod. Pensata per chiavi critiche
+ * (profile, plan, goals, onboarding) dove una shape corrotta/incompatibile può
+ * propagare errori a cascata nella UI.
+ *
+ * Comportamento:
+ *  - JSON.parse fallisce → warning + fallback (come getJSON).
+ *  - Zod schema.safeParse fallisce → warning dettagliato + fallback.
+ *  - In entrambi i casi NON rilancia: la UI deve degradare in modo elegante.
+ *
+ * NOTA: non sostituisce `getJSON` (retrocompat). Da adottare sui callsite
+ * critici in modo incrementale.
+ */
+export async function getValidatedJSON<T>(
+  key: string,
+  schema: ZodType<T>,
+  fallback: T,
+): Promise<T> {
+  const r = await storage.get(key);
+  if (!r) return fallback;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(r.value);
+  } catch (e) {
+    console.warn(
+      `[storage.getValidatedJSON] JSON corrotto per chiave "${key}" ` +
+      `(size ~${r.value.length} chars). Uso fallback. Parse error:`, e,
+      "\nPreview:", r.value.slice(0, 120) + (r.value.length > 120 ? "…" : ""),
+    );
+    return fallback;
+  }
+  const result = schema.safeParse(parsed);
+  if (!result.success) {
+    console.warn(
+      `[storage.getValidatedJSON] Schema non valido per chiave "${key}". ` +
+      `Uso fallback. Issues:`, result.error.issues,
+    );
+    return fallback;
+  }
+  return result.data;
+}
+
+/**
+ * Utility di coercizione boolean per valori che arrivano da fonti esterne
+ * (storage event da altra tab, localStorage corrotto, migrazioni).
+ * Accetta true/false nativi, "true"/"false" (case-insensitive), 1/0, "1"/"0".
+ * Tutto il resto (null, undefined, oggetti, stringhe arbitrarie) → false.
+ *
+ * Motivazione: `JSON.parse("true")` funziona, ma un tab esterno può scrivere
+ * la stringa letterale `true` (senza quote) o un boolean mal serializzato;
+ * fare `JSON.parse(e.newValue)` nel caller crasha su input non-JSON.
+ */
+export function safeBool(v: unknown): boolean {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s === "true" || s === "1";
+  }
+  return false;
 }
 
 /**

@@ -64,6 +64,17 @@ export async function retrieveRelevantChunks(params: {
     scored.sort((a, b) => b.score - a.score);
     const results = scored.slice(0, topK);
 
+    // Near-miss soft alert: top score in banda 0.50-0.60 (sotto minScore ma
+    // sopra soglia "random"). Significa che c'è un chunk plausibile ma non
+    // abbastanza pertinente da superare la soglia — il coach risponderà da
+    // conoscenza interna. Utile per capire quando RAG fallisce silenziosamente.
+    if (results.length === 0) {
+      const topAllScore = allScores.length > 0 ? Math.max(...allScores) : 0;
+      if (topAllScore >= 0.50 && topAllScore < 0.60) {
+        console.warn(`[RAG] Near-miss: top score ${topAllScore.toFixed(2)} su KB — coach userà conoscenza interna`);
+      }
+    }
+
     // Fix #8 — stale cache detection. Se i top-N candidati (o, se insufficienti,
     // tutti gli scores calcolati) hanno similarity < 0.2 (soglia molto bassa),
     // probabilmente la cache embeddings è stale / incompatibile. Graceful

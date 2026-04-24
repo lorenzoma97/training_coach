@@ -12,6 +12,38 @@ import { events } from "../events";
 export * from "./types";
 export { geminiAdapter, openaiAdapter, anthropicAdapter };
 
+/**
+ * Registry degli adapter LLM.
+ *
+ * NOTE — Lazy loading / bundle optimization (fix #1, versione MINIMA):
+ * Inizialmente avevamo tentato il lazy-load con `() => import()` per abilitare
+ * Vite code-splitting e ridurre il bundle di ~50KB (escludendo gli SDK dei
+ * provider non usati). Il refactor è stato ROLLED BACK perché:
+ *   - `ADAPTERS[provider]` è usato sync in 3 callsite React (OnboardingWizard,
+ *     SettingsPage, lib/gemini.ts legacy shim) — tutti leggono metadata tipo
+ *     `.defaultChatModel` durante il render iniziale.
+ *   - `getEmbeddingClient()` è chiamato sync da `knowledge/retriever.ts` e
+ *     `knowledge/embedder.ts` — il vincolo di retrocompat richiede firma sync.
+ *   - Passare tutti questi callsite ad async avrebbe richiesto ~8-10 file touched
+ *     fuori dai file autorizzati per questo patch.
+ *
+ * Strategia migliore per il futuro (fuori scope di questo patch):
+ *   - Split di ogni adapter in due file: `gemini-meta.ts` (solo metadata, no SDK)
+ *     + `gemini-client.ts` (factory pesante con SDK). ADAPTERS importa solo
+ *     il meta. `createClient` fa `import()` dinamico del file client.
+ *   - Oppure: eliminare completamente gli accessi sync a `ADAPTERS[p].defaultChatModel`
+ *     esponendo le costanti di default come export top-level (stringhe piatte).
+ *
+ * Model selection hint (pura doc, zero behavior change — fix #4):
+ * - gemini:    DEFAULT del progetto. `gemini-3.1-flash-lite-preview` per tutti
+ *              i task standard (plan, feedback, chat). "Lite" = più economico
+ *              per feedback brevi/weekly report senza perdita di qualità percepita.
+ *              Fallback automatico a `gemini-2.5-flash-lite` se 503.
+ * - openai:    `gpt-4o-mini` per la maggior parte dei task; `gpt-4o` solo su
+ *              planGeneration complessi (pianificazione multi-settimana).
+ * - anthropic: `claude-haiku-4-5` come default (veloce/economico). Sonnet solo
+ *              se serve reasoning esteso su weekly report con molto contesto.
+ */
 export const ADAPTERS: Record<ProviderId, ProviderAdapter> = {
   gemini: geminiAdapter,
   openai: openaiAdapter,

@@ -44,9 +44,13 @@ const PAYLOAD_VALIDATORS: Partial<Record<keyof EventMap, PayloadValidator>> = {
   "goals:updated": (p) =>
     !!p && typeof p === "object" && typeof (p as any).at === "string",
   "workout:saved": (p) =>
-    !!p && typeof p === "object" && typeof (p as any).date === "string",
+    !!p && typeof p === "object" &&
+    typeof (p as any).date === "string" &&
+    !!(p as any).workout && typeof (p as any).workout === "object",
   "daily:saved": (p) =>
-    !!p && typeof p === "object" && typeof (p as any).date === "string",
+    !!p && typeof p === "object" &&
+    typeof (p as any).date === "string" &&
+    !!(p as any).daily && typeof (p as any).daily === "object",
   "data:externalChange": (p) =>
     !!p && typeof p === "object" && typeof (p as any).key === "string",
   "chat:historyChanged": (p) =>
@@ -61,6 +65,18 @@ const PAYLOAD_VALIDATORS: Partial<Record<keyof EventMap, PayloadValidator>> = {
     typeof (p as any).fallback === "string",
   "nav:goto": (p) =>
     !!p && typeof p === "object" && typeof (p as any).tab === "string",
+  "diary:openAdd": (p) => {
+    if (!p || typeof p !== "object") return false;
+    const o = p as Record<string, unknown>;
+    // Tutti i campi sono opzionali: se presenti, devono rispettare il tipo.
+    if (o.type !== undefined && typeof o.type !== "string") return false;
+    if (o.date !== undefined && typeof o.date !== "string") return false;
+    if (o.notes !== undefined && typeof o.notes !== "string") return false;
+    if (o.prefill !== undefined && (typeof o.prefill !== "object" || o.prefill === null)) return false;
+    return true;
+  },
+  "onboarding:resume": (p) =>
+    !!p && typeof p === "object",
 };
 
 export const events = {

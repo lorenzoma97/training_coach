@@ -63,6 +63,21 @@ Evita imperativi rigidi ("devi", "dovresti"). Proponi opzioni, non ordini.
 Rinforza la competenza dell'utente citando i suoi dati di progresso.
 `.trim();
 
+// Composite constant: istruzioni comuni a TUTTI i prompt JSON-based.
+// Concatena COT + anti-hallucination + JSON constraint in una sola stringa,
+// così ogni PROMPTS.* non deve ripeterle (save ~200 token × 5 prompt = ~1000 token).
+export const COMMON_JSON_INSTRUCTIONS = `${COT_INSTRUCTIONS}
+
+${ANTI_HALLUCINATION}
+
+${JSON_CONSTRAINT}`;
+
+// Variante per prompt NON-JSON (chat / motivation): solo COT + anti-hallucination,
+// senza JSON constraint. Tone autonomy lasciato opzionale al singolo prompt.
+export const COMMON_TEXT_INSTRUCTIONS = `${COT_INSTRUCTIONS}
+
+${ANTI_HALLUCINATION}`;
+
 const SESSION_FEEDBACK_EXAMPLE = `
 ESEMPIO DI FEEDBACK BEN FORMATO (solo riferimento di stile, non copiare valori):
 {
@@ -98,11 +113,7 @@ Se realistic=false, formula una CONTROPROPOSTA SMART (Specifica, Misurabile, Acc
 
 Spiega sempre il PERCHÉ in 2-3 frasi, empatico e motivante.
 
-${COT_INSTRUCTIONS}
-
-${ANTI_HALLUCINATION}
-
-${JSON_CONSTRAINT}`,
+${COMMON_JSON_INSTRUCTIONS}`,
 
   planGeneration: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
@@ -118,9 +129,7 @@ Regole:
 - "type" deve essere uno tra: corsa, forza_gambe, forza_upper, sport, mobilita.
 Fornisci anche un "rationale" generale del piano come lista di 3 bullet points concisi (usa il formato "- punto"). Ogni punto deve spiegare una scelta chiave del piano in modo comprensibile.
 
-${COT_INSTRUCTIONS}
-
-${JSON_CONSTRAINT}`,
+${COMMON_JSON_INSTRUCTIONS}`,
 
   sessionFeedback: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
@@ -133,13 +142,9 @@ Struttura obbligatoria in 3 parti:
 Se ci sono red flag (dolore ≥2 da monitorare / ≥3 riduci / ≥4 STOP, RPE sproporzionato, combo sonno-stanchezza): segnalali in "redFlags" e alza "severity" a "warn" (≥2) o "danger" (≥4 o dolore in peggioramento).
 Tono sempre pedagogico: se critichi, spiega perché. Se incoraggi, cita un dato reale.
 
-${COT_INSTRUCTIONS}
+${COMMON_JSON_INSTRUCTIONS}
 
-${ANTI_HALLUCINATION}
-
-${SESSION_FEEDBACK_EXAMPLE}
-
-${JSON_CONSTRAINT}`,
+${SESSION_FEEDBACK_EXAMPLE}`,
 
   weeklyReport: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
@@ -161,9 +166,7 @@ Includi:
 
 Se ci sono red flag persistenti (dolore, RED-S, overtraining) proponi deload esplicito.
 
-${COT_INSTRUCTIONS}
-
-${JSON_CONSTRAINT}`,
+${COMMON_JSON_INSTRUCTIONS}`,
 
   chat: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
@@ -171,9 +174,7 @@ Il tuo compito: rispondere alle domande dell'utente in modo conversazionale, sem
 Se l'utente ti chiede cose fuori dal tuo ambito (nutrizione dettagliata, diagnosi medica): rimanda a un professionista ma dai comunque contesto generale.
 Massimo 200 parole per risposta. Niente elenchi infiniti.
 
-${COT_INSTRUCTIONS}
-
-${ANTI_HALLUCINATION}
+${COMMON_TEXT_INSTRUCTIONS}
 
 ${AUTONOMY_TONE}`,
 

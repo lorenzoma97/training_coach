@@ -26,7 +26,8 @@ const READY_THRESHOLD = 0.8;
 // v3 = espansione KB da 26 → 37 chunks (forza pratica, calcio, tennis/padel,
 //      weight loss, nutrizione pratica, DOMS, allergie, core/unilateral,
 //      stretching, readiness, return-to-run).
-const EMBEDDER_SCHEMA_VERSION = "v3";
+// v4 = polpaccio topic split + multi-sport chunk sec-36 + citation updates.
+const EMBEDDER_SCHEMA_VERSION = "v4";
 
 function computeVersion(): string {
   const sig = CHUNKS.map(c => c.id).join(",") + "|n=" + CHUNKS.length;

@@ -29,11 +29,6 @@ export function formatDDMMYYYY(iso: string): string {
   } catch { return iso; }
 }
 
-/** "2026-04-17" → "17/04/2026". Backward-compat alias di formatDDMMYYYY. */
-export function formatDayMonthYear(iso: string): string {
-  return formatDDMMYYYY(iso);
-}
-
 /** "2026-04-17" → "ven 17/04". Weekday + data compatta. */
 export function formatWeekdayDayMonth(iso: string): string {
   try {
@@ -41,20 +36,6 @@ export function formatWeekdayDayMonth(iso: string): string {
     const weekday = d.toLocaleDateString("it-IT", { weekday: "short" });
     return `${weekday} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
   } catch { return iso; }
-}
-
-/** "2026-04-17" → "ven 17/04/2026". Weekday + data piena. */
-export function formatWeekdayDDMMYYYY(iso: string): string {
-  try {
-    const d = parseISODateLocal(iso);
-    const weekday = d.toLocaleDateString("it-IT", { weekday: "short" });
-    return `${weekday} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-  } catch { return iso; }
-}
-
-/** Date object → "17/04/2026". */
-export function formatDateObjDDMMYYYY(d: Date): string {
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
 /** Mesi tra una ISO date e oggi (approssimazione 30gg/mese). */

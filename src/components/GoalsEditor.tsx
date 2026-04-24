@@ -157,7 +157,7 @@ export default function GoalsEditor() {
   };
 
   const removeGoal = async (id: string) => {
-    if (!confirm("Rimuovere questo obiettivo? L'azione è reversibile solo ricreandolo.")) return;
+    if (!confirm("Eliminare questo obiettivo? Potrai ricrearlo in seguito se cambi idea.")) return;
     await persistGoals(goals.filter(g => g.id !== id));
     if (editingId === id) cancelEdit();
   };

@@ -10,8 +10,66 @@ const WORKOUT_LABELS: Record<string, string> = {
   mobilita: "Mobilità / Recovery",
 };
 
-async function loadDay(date: string): Promise<any | null> {
-  return getJSON<any | null>(`day:${date}`, null);
+/**
+ * Shape permissiva del check quotidiano. Molti campi sono stringhe perché
+ * provengono da input HTML non-coercizzati (es. `"72"` invece di `72`).
+ * Usiamo `Record<string, unknown>` con campi noti facoltativi: tipizziamo
+ * quello che effettivamente leggiamo/scriviamo, senza forzare una shape
+ * chiusa che rigetti i valori legacy.
+ */
+export interface DailyCheck {
+  weight?: string | number;
+  sleep?: string | number;
+  sleepQ?: string;
+  fatigue?: number | null;
+  meds?: string;
+  bodyFat?: string | number;
+  muscleMass?: string | number;
+  bodyWater?: string | number;
+  morningHR?: string | number;
+  morningFreshness?: number | null;
+  cyclePhase?: string;
+  [key: string]: unknown;
+}
+
+/** Struttura minimale di un workout salvato a diario. Volutamente permissiva. */
+export interface Workout {
+  id: string;
+  type: string;
+  fields?: Record<string, unknown>;
+  rpe?: number | null;
+  pain?: Record<string, unknown>;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Giorno completo: check quotidiano + lista workout. `null` se giorno mai aperto. */
+export interface DiaryDay {
+  daily: DailyCheck | null;
+  workouts: Workout[];
+}
+
+/** Type guard: `v` è un oggetto (non-null, non-array). */
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** Normalizza un valore raw in `DiaryDay` | null. Accetta shape legacy/parziali. */
+function normalizeDay(raw: unknown): DiaryDay | null {
+  if (!isObject(raw)) return null;
+  const dailyRaw = raw["daily"];
+  const workoutsRaw = raw["workouts"];
+  const daily: DailyCheck | null = isObject(dailyRaw) ? (dailyRaw as DailyCheck) : null;
+  const workouts: Workout[] = Array.isArray(workoutsRaw)
+    ? (workoutsRaw.filter(isObject) as unknown as Workout[])
+    : [];
+  return { daily, workouts };
+}
+
+async function loadDay(date: string): Promise<DiaryDay | null> {
+  const raw = await getJSON<unknown>(`day:${date}`, null);
+  return normalizeDay(raw);
 }
 
 async function loadIndex(): Promise<string[]> {
@@ -19,11 +77,11 @@ async function loadIndex(): Promise<string[]> {
 }
 
 /** Estrae ultimi valori body composition da un array di giorni + trend 7 giorni. */
-export function extractBodyComp(days: Array<{ daily: any }>): {
+export function extractBodyComp(days: Array<{ daily: DailyCheck | null }>): {
   latest: { bodyFat?: number; muscleMass?: number; bodyWater?: number };
   trend7d: { bodyFat?: number; muscleMass?: number; bodyWater?: number };
 } {
-  const toNum = (v: any): number | undefined => {
+  const toNum = (v: unknown): number | undefined => {
     if (v === null || v === undefined || v === "") return undefined;
     const n = Number(v);
     return Number.isFinite(n) ? n : undefined;
@@ -36,15 +94,15 @@ export function extractBodyComp(days: Array<{ daily: any }>): {
     }
     return null;
   };
-  const findOlder = (field: string, beforeIdx: number) => {
+  const findOlder = (field: "bodyFat" | "muscleMass" | "bodyWater", beforeIdx: number) => {
     for (let i = beforeIdx - 1; i >= 0; i--) {
       const v = toNum(days[i]?.daily?.[field]);
       if (v !== undefined) return v;
     }
     return undefined;
   };
-  const latest = { bodyFat: undefined, muscleMass: undefined, bodyWater: undefined } as any;
-  const trend7d = { bodyFat: undefined, muscleMass: undefined, bodyWater: undefined } as any;
+  const latest: { bodyFat?: number; muscleMass?: number; bodyWater?: number } = {};
+  const trend7d: { bodyFat?: number; muscleMass?: number; bodyWater?: number } = {};
   (["bodyFat", "muscleMass", "bodyWater"] as const).forEach(f => {
     const l = findLatest(f);
     if (l) {
@@ -61,11 +119,11 @@ export function extractBodyComp(days: Array<{ daily: any }>): {
 // evitare picchi di parsing JSON che bloccano il main thread.
 const BATCH_SIZE = 60;
 
-async function loadDaysBatched(dates: string[]): Promise<Array<{ date: string; d: any }>> {
+async function loadDaysBatched(dates: string[]): Promise<Array<{ date: string; d: DiaryDay | null }>> {
   if (dates.length <= BATCH_SIZE) {
     return Promise.all(dates.map(date => loadDay(date).then(d => ({ date, d }))));
   }
-  const out: Array<{ date: string; d: any }> = [];
+  const out: Array<{ date: string; d: DiaryDay | null }> = [];
   for (let i = 0; i < dates.length; i += BATCH_SIZE) {
     const chunk = dates.slice(i, i + BATCH_SIZE);
     const loaded = await Promise.all(chunk.map(date => loadDay(date).then(d => ({ date, d }))));
@@ -78,28 +136,44 @@ async function loadDaysBatched(dates: string[]): Promise<Array<{ date: string; d
 }
 
 /** Ultimi N giorni ordinati crescente, con workouts e daily. */
-export async function getLastNDays(n: number): Promise<Array<{ date: string; daily: any; workouts: any[] }>> {
+export async function getLastNDays(
+  n: number,
+): Promise<Array<{ date: string; daily: DailyCheck | null; workouts: Workout[] }>> {
   const idx = await loadIndex();
   const sorted = idx.sort((a, b) => b.localeCompare(a)).slice(0, n).sort((a, b) => a.localeCompare(b));
   const loaded = await loadDaysBatched(sorted);
-  return loaded
-    .filter(({ d }) => d != null)
-    .map(({ date, d }) => ({ date, daily: d.daily, workouts: d.workouts || [] }));
+  const out: Array<{ date: string; daily: DailyCheck | null; workouts: Workout[] }> = [];
+  for (const { date, d } of loaded) {
+    if (d == null) continue;
+    out.push({ date, daily: d.daily, workouts: d.workouts });
+  }
+  return out;
 }
 
-export async function getAllDays() {
+export async function getAllDays(): Promise<Array<{ date: string; daily: DailyCheck | null; workouts: Workout[] }>> {
   const idx = await loadIndex();
   const sorted = idx.sort((a, b) => a.localeCompare(b));
   const loaded = await loadDaysBatched(sorted);
-  return loaded
-    .filter(({ d }) => d != null)
-    .map(({ date, d }) => ({ date, ...d }));
+  const out: Array<{ date: string; daily: DailyCheck | null; workouts: Workout[] }> = [];
+  for (const { date, d } of loaded) {
+    if (d == null) continue;
+    out.push({ date, daily: d.daily, workouts: d.workouts });
+  }
+  return out;
 }
 
 /** Formato testuale leggibile per l'LLM, riuso lo stile dell'export TXT originale. */
-export function formatDaysForLLM(days: Array<{ date: string; daily: any; workouts: any[] }>): string {
+export function formatDaysForLLM(
+  days: Array<{ date: string; daily: DailyCheck | null; workouts: Workout[] }>,
+): string {
   if (!days.length) return "(nessun giorno registrato)";
   const lines: string[] = [];
+  // Utility per stringify sicura di valori primitivi/scalari noti.
+  const asStr = (v: unknown): string | null => {
+    if (v === null || v === undefined || v === "") return null;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return String(v);
+    return null;
+  };
   for (const day of days) {
     const dt = new Date(day.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" });
     lines.push(`── ${dt} (${day.date}) ──`);
@@ -120,28 +194,36 @@ export function formatDaysForLLM(days: Array<{ date: string; daily: any; workout
     }
     for (const w of day.workouts || []) {
       const label = WORKOUT_LABELS[w.type] || w.type;
-      const f = w.fields || {};
+      const f: Record<string, unknown> = w.fields || {};
       const details: string[] = [];
-      if (f.durata_totale || f.durata) details.push(`${f.durata_totale || f.durata}min`);
-      if (f.tipo || f.sport) details.push(f.tipo || f.sport);
-      if (f.passo_medio) details.push(`passo ${f.passo_medio}`);
-      if (f.fc_media) details.push(`FC ${f.fc_media}bpm`);
-      if (f.fc_max) details.push(`FCmax ${f.fc_max}`);
-      if (f.carico) details.push(`carico ${f.carico}`);
-      if (f.kcal) details.push(`${f.kcal}kcal`);
+      const durata = asStr(f.durata_totale) ?? asStr(f.durata);
+      if (durata) details.push(`${durata}min`);
+      const tipo = asStr(f.tipo) ?? asStr(f.sport);
+      if (tipo) details.push(tipo);
+      const passo = asStr(f.passo_medio);
+      if (passo) details.push(`passo ${passo}`);
+      const fcMedia = asStr(f.fc_media);
+      if (fcMedia) details.push(`FC ${fcMedia}bpm`);
+      const fcMax = asStr(f.fc_max);
+      if (fcMax) details.push(`FCmax ${fcMax}`);
+      const carico = asStr(f.carico);
+      if (carico) details.push(`carico ${carico}`);
+      const kcal = asStr(f.kcal);
+      if (kcal) details.push(`${kcal}kcal`);
       lines.push(`  • ${label}: ${details.join(", ")}`);
       // Supporta entrambi i formati: legacy {pre,during,post} e nuovo {[area]:{pre,during,post}}
-      if (w.pain && typeof w.pain === "object") {
-        const isLegacy = "pre" in w.pain || "during" in w.pain || "post" in w.pain;
-        const entries: Array<[string, any]> = isLegacy
-          ? [["polpaccio", w.pain]]
-          : Object.entries(w.pain as Record<string, any>);
+      if (w.pain && isObject(w.pain)) {
+        const painObj = w.pain as Record<string, unknown>;
+        const isLegacy = "pre" in painObj || "during" in painObj || "post" in painObj;
+        const entries: Array<[string, unknown]> = isLegacy
+          ? [["polpaccio", painObj]]
+          : Object.entries(painObj);
         for (const [area, v] of entries) {
-          if (!v || typeof v !== "object") continue;
+          if (!isObject(v)) continue;
           const bits: string[] = [];
-          if (v.pre != null) bits.push(`pre ${v.pre}`);
-          if (v.during != null) bits.push(`dur ${v.during}`);
-          if (v.post != null) bits.push(`post ${v.post}`);
+          if (v.pre != null) bits.push(`pre ${String(v.pre)}`);
+          if (v.during != null) bits.push(`dur ${String(v.during)}`);
+          if (v.post != null) bits.push(`post ${String(v.post)}`);
           if (bits.length) lines.push(`    dolore ${area}: ${bits.join(" / ")}`);
         }
       }
@@ -158,7 +240,7 @@ export async function buildCoachContext(opts: { daysBack?: number } = {}): Promi
   goals: UserGoal[];
   plan: TrainingPlan | null;
   recentDaysText: string;
-  recentDaysRaw: Array<{ date: string; daily: any; workouts: any[] }>;
+  recentDaysRaw: Array<{ date: string; daily: DailyCheck | null; workouts: Workout[] }>;
 }> {
   const profile = await getJSON<UserProfile | null>("user-profile", null);
   const goals = await getJSON<UserGoal[]>("user-goals", []);

@@ -117,9 +117,10 @@ export default function CoachChat() {
       setError("Offline. Riconnettiti per parlare con il coach.");
       return;
     }
-    // Hard limit sul singolo messaggio: 100 KB. Previene paste accidentali
-    // di testi enormi che saturerebbero quota storage e token LLM.
-    const MAX_MESSAGE_CHARS = 100_000;
+    // Hard limit sul singolo messaggio: 20 KB. Previene paste accidentali
+    // e soprattutto l'esaurimento quota iOS Safari private mode (~2.5MB totali).
+    // Con 50 messaggi × 20KB max = 1MB chat history, margine safe.
+    const MAX_MESSAGE_CHARS = 20_000;
     if (text.length > MAX_MESSAGE_CHARS) {
       setError(`Messaggio troppo lungo (${Math.round(text.length / 1000)}KB). Massimo ${MAX_MESSAGE_CHARS / 1000}KB — accorcia e riprova.`);
       return;
@@ -249,7 +250,7 @@ DOMANDA UTENTE: ${text}
   };
 
   const clearChat = async () => {
-    if (!confirm("Cancellare tutta la conversazione? Non è reversibile.")) return;
+    if (!confirm("Eliminare tutta la conversazione? L'operazione è definitiva.")) return;
     abortRef.current?.abort();
     setMessages([]);
     await setJSON(HISTORY_KEY, []);
@@ -333,6 +334,11 @@ DOMANDA UTENTE: ${text}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={onKeyDown}
+          onFocus={() => {
+            // iOS keyboard copre ~40% dello schermo: scroll textarea in view
+            // con lieve delay (setTimeout 300ms) dopo che la tastiera è salita.
+            setTimeout(() => { taRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 300);
+          }}
           placeholder="Scrivi al coach…  (Enter per inviare, Shift+Enter per andare a capo)"
           disabled={loading}
           rows={1}

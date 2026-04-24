@@ -11,7 +11,10 @@
 // tree-shaking aggressivo), ma l'import garantisce che la class sia inclusa
 // nel bundle e che i future rename siano catturati da TypeScript.
 import { LLMTruncatedJSONError } from "./llm/_jsonParser";
+import { StorageQuotaError, StorageValueTooLargeError } from "./storage";
 const TRUNCATED_NAME = LLMTruncatedJSONError.name;
+const STORAGE_QUOTA_NAME = StorageQuotaError.name;
+const STORAGE_VALUE_TOO_LARGE_NAME = StorageValueTooLargeError.name;
 
 /**
  * Action hint opzionale allegato al messaggio di errore. Usabile dalla UI per
@@ -38,6 +41,9 @@ export interface TranslatedError {
     | "timeout"
     | "truncated"
     | "parse"
+    | "storage-quota"
+    | "storage-value-too-large"
+    | "indexeddb"
     | "unknown";
 }
 
@@ -49,6 +55,51 @@ export function translateGeminiErrorDetailed(err: unknown): TranslatedError {
   const raw = typeof err === "string" ? err : (err as any)?.message || String(err);
   const lower = raw.toLowerCase();
   const name = (err as any)?.name || "";
+
+  // --- Storage: payload troppo grande per localStorage ---
+  // Check PRIMA di tutto: il messaggio contiene spesso "limite/KB" che potrebbe
+  // matchare altre categorie generiche.
+  if (
+    name === STORAGE_VALUE_TOO_LARGE_NAME ||
+    err instanceof StorageValueTooLargeError ||
+    lower.includes("storagevaluetoolarge")
+  ) {
+    return {
+      message: "Dati troppo grandi per il salvataggio locale. Accorcia il contenuto (chat, note).",
+      category: "storage-value-too-large",
+    };
+  }
+
+  // --- Storage: quota localStorage esaurita ---
+  if (
+    name === STORAGE_QUOTA_NAME ||
+    err instanceof StorageQuotaError ||
+    lower.includes("storagequotaerror") ||
+    lower.includes("quotaexceedederror") ||
+    lower.includes("ns_error_dom_quota_reached")
+  ) {
+    return {
+      message: "Spazio di salvataggio esaurito. Elimina vecchi allenamenti o esporta un backup e resetta.",
+      action: { label: "Esporta backup", hint: "Impostazioni → Backup & Dati" },
+      category: "storage-quota",
+    };
+  }
+
+  // --- IndexedDB: errore generico del database locale ---
+  // Match su name (es. "IDBDatabaseError", "InvalidStateError" quando proviene
+  // da IDB) o su messaggi che contengono "indexeddb".
+  if (
+    name.includes("IDB") ||
+    lower.includes("indexeddb") ||
+    lower.includes("idbdatabase") ||
+    lower.includes("idbobjectstore") ||
+    lower.includes("idbtransaction")
+  ) {
+    return {
+      message: "Errore database locale. Prova a ricaricare la pagina.",
+      category: "indexeddb",
+    };
+  }
 
   // --- Chiave mancante (nessuna config) ---
   // Questo caso è distinto da "chiave rifiutata dal provider": qui l'utente
@@ -122,7 +173,7 @@ export function translateGeminiErrorDetailed(err: unknown): TranslatedError {
   // del client, mentre il 503 è il server che rifiuta subito dicendo "busy".
   if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("deadline") || lower.includes("etimedout")) {
     return {
-      message: "La richiesta è andata in timeout (il modello sta impiegando troppo). Riprova; se persiste, prova un modello più veloce (es. flash-lite) in Impostazioni.",
+      message: "La richiesta è andata in timeout (il modello sta impiegando troppo). Riprova; se persiste, seleziona un modello più leggero in Impostazioni (cerca un nome con 'lite' o 'mini').",
       action: { label: "Cambia modello", hint: "Impostazioni → Modello" },
       category: "timeout",
     };
@@ -140,7 +191,7 @@ export function translateGeminiErrorDetailed(err: unknown): TranslatedError {
     lower.includes("service is currently unavailable")
   ) {
     return {
-      message: "Il modello è momentaneamente sovraccarico (tipico dei modelli preview). Cambia provider in Impostazioni, oppure seleziona un modello alternativo (es. gemini-2.5-flash-lite).",
+      message: "Il modello è momentaneamente sovraccarico (tipico dei modelli preview). Cambia provider in Impostazioni, oppure seleziona un modello più leggero (cerca 'lite' o 'mini' nel menu Modello).",
       action: { label: "Cambia provider in Impostazioni", hint: "Impostazioni → Provider LLM → scegli un altro provider/modello" },
       category: "overload",
     };

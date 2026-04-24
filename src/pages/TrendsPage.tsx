@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { getAllDays } from "../lib/diaryContext";
 import { events } from "../lib/events";
 import Sparkline, { type SparklinePoint } from "../components/Sparkline";
-import ZonesCard from "../components/ZonesCard";
 
 type Period = 7 | 14 | 30 | 90;
 
@@ -432,11 +431,8 @@ export default function TrendsPage() {
 
           <div style={{ fontSize: "11px", color: "#64748B", textAlign: "center", padding: "8px 0 20px" }}>
             Trend calcolati localmente dal diario. Periodo: ultimi {period} giorni.
-          </div>
-
-          {/* Zone FC in fondo: riferimento mentre si consultano i trend */}
-          <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "16px" }}>
-            <ZonesCard />
+            <br />
+            Le tue Zone FC sono nel tab <b>Coach → Zone FC</b>.
           </div>
         </div>
       )}

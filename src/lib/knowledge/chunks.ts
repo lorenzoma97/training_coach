@@ -55,7 +55,7 @@ Implicazione per il coach: ACWR può essere integrato in v2 come metrica descrit
 Evidenza: Tanaka, Monahan e Seals (J Am Coll Cardiol, 2001) hanno validato la formula 208 - 0.7 × età su meta-analisi di 351 studi più test di laboratorio su 514 soggetti; l'errore standard è circa ±10 bpm e il bias è inferiore rispetto alla vecchia 220-età. Shargal et al. (2015) confermano la superiorità di Tanaka su popolazione mista. Mahon et al. (Int J Exerc Sci, 2020) con analisi Bland-Altman mostrano bias minimo simile tra Fox, Gellish e Tanaka su popolazione generale. Shookster et al. (2016) indicano Tanaka come miglior trade-off multi-popolazione.
 
 Implicazione per il coach: usare Tanaka come stima ragionevole ma esprimersi sempre in range (±10 bpm), non come valore assoluto. La soglia "Z2 ≤ 75% FCmax" è coerente con Seiler e il training polarizzato. Warning: l'errore individuale è ampio (±10 bpm); combinare la FC con RPE per decisioni su intensità. Per soggetti anziani altamente allenati (master), alcune evidenze suggeriscono formule leggermente diverse ma Tanaka resta il default più affidabile.`,
-    primaryCitation: "Tanaka 2001 (J Am Coll Cardiol)",
+    primaryCitation: "Tanaka 2001 (validazione) + Mahon 2020 (confirmation multi-etnica)",
     links: [
       "https://www.jacc.org/doi/10.1016/S0735-1097(00)01054-8",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC7523886/"
@@ -162,7 +162,7 @@ Implicazione per il coach: la soglia è stata aggiornata da "≤6h × 2gg" a "<7
     id: "sec-7-pain-monitoring",
     sectionNumber: 7,
     title: "Dolore come guida al carico — modello Silbernagel",
-    topics: ["dolore", "tendinopatia", "polpaccio", "Silbernagel", "pain-monitoring", "return to sport"],
+    topics: ["dolore", "tendinopatia", "Silbernagel", "pain-monitoring", "scala 0-4", "return to sport monitoring"],
     content: `Il diario raccoglie dolore su scala 0-4+ (pre, durante, post sessione), configurabile per area corporea. La regola hardcoded del coach è allineata alla semantica della scala: ≥4 (a spillo) = STOP immediato, =3 (localizzato) = riduci intensità, =2 (avvertibile) = monitora trend.
 
 Evidenza: Silbernagel et al. (Am J Sports Med, 2007) è il paper di riferimento sulla tendinopatia achillea: l'attività può continuare se il dolore resta ≤5/10, non aumenta significativamente durante, e torna a baseline entro il giorno dopo; nessun effetto negativo rispetto al riposo completo. Silbernagel e Crossley (JOSPT, 2015) definiscono un framework di ritorno allo sport basato su pain-monitoring e Borg-RPE con livelli light/medium/high e giorni di recupero crescenti. Alfredson et al. (1998) hanno consolidato il protocollo eccentrico del polpaccio come trattamento per tendinopatia achillea. Rio et al. (2015) forniscono la base neurofisiologica dell'analgesia indotta da esercizio isometrico.
@@ -232,8 +232,10 @@ Implicazione per il coach: il disclaimer attuale è corretto ma generico. In v2 
 
 Evidenza: Ratamess et al. (ACSM Position Stand, Med Sci Sports Exerc, 2009) è il riferimento internazionale — novizi 1-3 set, 8-12 rep, 60-70% 1RM, 2-3x/sett; intermedi 3-6 set, 1-12 rep, 70-85% 1RM, 3-4x/sett; avanzati con periodizzazione. Importanza di contrazioni concentriche/eccentriche/isometriche, esercizi mono e multi-articolari, bilaterali e unilaterali. L'update ACSM 2025 (Overview of Reviews) conferma i principi del 2009 con raccomandazioni aggiornate su volume settimanale. Schoenfeld et al. (J Sports Sci, 2017) con meta-analisi dose-risposta: ≥10 set per muscolo per settimana massimizzano ipertrofia, con curva curvilineare. Grgic et al. (Sports Med, 2018): a parità di volume, frequenza 2-3x/settimana per gruppo muscolare supera 1x/settimana.
 
-Implicazione per il coach: il prompt di planGenerator dovrebbe iniettare i range ACSM per livello di esperienza. Schema operativo: forza massimale 1-5 rep, 85-100% 1RM; esplosiva 3-5 rep, 30-60% a velocità alta; ipertrofia 6-12 rep, 65-80%; resistenza muscolare 15+ rep, <65%. Warning: non prescrivere carichi assoluti; ragionare in %1RM o in RIR (reps in reserve).`,
-    primaryCitation: "Ratamess ACSM 2009",
+Implicazione per il coach: il prompt di planGenerator dovrebbe iniettare i range ACSM per livello di esperienza. Schema operativo: forza massimale 1-5 rep, 85-100% 1RM; esplosiva 3-5 rep, 30-60% a velocità alta; ipertrofia 6-12 rep, 65-80%; resistenza muscolare 15+ rep, <65%. Warning: non prescrivere carichi assoluti; ragionare in %1RM o in RIR (reps in reserve).
+
+Confermato ACSM position stand update 2021 senza revisioni sostanziali dei principi.`,
+    primaryCitation: "Ratamess 2009 (ACSM)",
     links: [
       "https://pubmed.ncbi.nlm.nih.gov/19204579/",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/"
@@ -497,7 +499,7 @@ Implicazione per il coach: prescrivere almeno 1 sessione/settimana con 2 eserciz
     id: "sec-27-return-to-run-calf",
     sectionNumber: 27,
     title: "Return-to-run post-infortunio polpaccio — protocollo progressivo",
-    topics: ["return to run", "polpaccio", "microlesione", "strain grado 1", "Silbernagel", "Alfredson", "heavy slow resistance", "Kongsgaard", "eccentrico", "walk-jog-run", "recidiva", "calf raise"],
+    topics: ["return to run", "polpaccio acuto", "microlesione", "strain grado 1", "gastrocnemio", "soleo", "Silbernagel", "Alfredson", "heavy slow resistance", "Kongsgaard", "eccentrico", "walk-jog-run", "recidiva", "calf raise"],
     content: `Per l'utente che ha subito una microlesione del polpaccio (tipicamente gastrocnemio, grado I), il coach applica un protocollo di ritorno progressivo distinto dal pain-monitoring Silbernagel (chunk 7) che resta regola durante tutte le fasi.
 
 Heavy Slow Resistance vs eccentrico puro (Kongsgaard et al., Scand J Med Sci Sports, 2009; Beyer et al., Am J Sports Med, 2015): per tendinopatie e strain muscolari in fase riabilitativa, protocollo HSR (3 × 15 rip a 70-85% 1RM, tempo 3-6s concentrico + 3-6s eccentrico) produce risultati clinici equivalenti a eccentrico Alfredson puro MA con migliore aderenza (1 sessione 3x/settimana vs 2 sessioni/die Alfredson). Per calf specifico: standing calf raise + seated calf raise (bersaglia soleo che è 80% del volume polpaccio).
@@ -506,8 +508,10 @@ Walk-jog-run progression (MacAuley, Physician & Sports Med, 2014; Beach et al., 
 
 Prevenzione recidiva (Maffulli et al., Br Med Bull, 2003; Silbernagel et al. 2007): calf eccentric 3 × 15 rip, 2x/settimana come maintenance indefinito. Riduce recidiva strain grado I del 30-50% a 6-12 mesi.
 
-Implicazione per il coach: se l'utente ha in profile.injuries una microlesione polpaccio recente (≤8 settimane), il coach deve proporre piani con corsa in fase 2-3 anche se l'utente vuole tornare in fase 4 subito, includere sempre 1 sessione forza eccentrica polpaccio/settimana per 6 settimane, monitorare pain 0-4 ogni corsa, stop immediato se dolore sale a ≥3 durante o ≥2 residuo 24h dopo. Warning: recidiva polpaccio in primi 3 mesi è ~30% — la cautela è più importante dell'ambizione.`,
-    primaryCitation: "Kongsgaard 2009 (Scand J Med Sci Sports) — HSR",
+Implicazione per il coach: se l'utente ha in profile.injuries una microlesione polpaccio recente (≤8 settimane), il coach deve proporre piani con corsa in fase 2-3 anche se l'utente vuole tornare in fase 4 subito, includere sempre 1 sessione forza eccentrica polpaccio/settimana per 6 settimane, monitorare pain 0-4 ogni corsa, stop immediato se dolore sale a ≥3 durante o ≥2 residuo 24h dopo. Warning: recidiva polpaccio in primi 3 mesi è ~30% — la cautela è più importante dell'ambizione.
+
+Nessun major update post-Beyer 2015; HSR resta standard per rehab tendini/muscolo polpaccio.`,
+    primaryCitation: "Kongsgaard 2009 (HSR) + MacAuley 2014 (return-to-run)",
     links: [
       "https://pubmed.ncbi.nlm.nih.gov/19793213/",
       "https://pubmed.ncbi.nlm.nih.gov/26362436/",
@@ -518,7 +522,7 @@ Implicazione per il coach: se l'utente ha in profile.injuries una microlesione p
     id: "sec-28-football-amateur",
     sectionNumber: 28,
     title: "Calcio amatoriale — richiesta metabolica, prevenzione FIFA 11+, return to play",
-    topics: ["calcio", "football", "recreational football", "partita", "Krustrup", "Yo-Yo IR", "30-15 IFT", "FIFA 11+", "Soligard", "prevenzione infortuni calcio", "return to play", "Ekstrand", "sprint repeatability"],
+    topics: ["calcio", "football", "recreational football", "partita", "Krustrup", "Yo-Yo IR", "30-15 IFT", "FIFA 11+", "Soligard", "prevenzione infortuni calcio", "return to play", "Ekstrand", "sprint repeatability", "strain", "calcio polpaccio strain specifico"],
     content: `Per l'utente che gioca calcio a 11 amatoriale e deve prepararsi a una partita specifica, il coach applica evidenza specifica sul calcio.
 
 Richiesta metabolica calcio ricreativo (Krustrup et al., Br J Sports Med, 2010, su 2000+ amatori): partita 60-90min richiede distanza 8-12km con 1200-1500m ad alta intensità (>14 km/h), 40-60 sprint brevi (1-3s), 700-1000 cambi di direzione. Carico interno: FC media 85% FCmax, picchi 95%. Perdita fluidi 1.5-3L. VO2max correlazione r=0.60 con qualità prestazione.
@@ -722,6 +726,38 @@ Implicazione per il coach: il campo freshness 1-10 dell'utente è un segnale val
       "https://pubmed.ncbi.nlm.nih.gov/26701923/",
       "https://pubmed.ncbi.nlm.nih.gov/27629813/",
       "https://pubmed.ncbi.nlm.nih.gov/24353105/"
+    ]
+  },
+  {
+    id: "sec-36-multisport-periodization",
+    sectionNumber: 36,
+    title: "Multi-sport periodizzazione — runner + calcio + tennis amatore",
+    topics: ["multi-sport", "concurrent training", "calcio running tennis", "periodizzazione", "priority setting", "interferenza cardio-forza", "Jeffreys", "Ross concurrent"],
+    content: `Per l'utente che combina corsa, calcio amatoriale e tennis/padel con 1-2 sessioni forza/settimana, il coach applica principi di periodizzazione concurrent per bilanciare stimoli conflittuali senza compromettere l'adattamento di nessuna qualità.
+
+Concurrent training interference (Wilson et al., J Strength Cond Res, 2012, meta-analisi 21 studi): combinare endurance + strength nella stessa settimana riduce guadagni di forza/ipertrofia mediamente del 30% rispetto alla forza isolata, mentre l'endurance NON è compromesso. L'interferenza è dose-dipendente: >3 sessioni endurance/settimana o endurance ad alto volume (>70min) amplifica l'effetto. Modalità matters: cycling interferisce meno del running (minor danno muscolare eccentrico). Separazione temporale ≥6h tra endurance e strength mitiga l'effetto (Robineau 2016).
+
+Periodizzazione concurrent per amatore multi-sport (Jeffreys, Strength Cond J, 2002; Issurin 2010 block periodization review): priority setting giornaliero. Il sistema neuromuscolare ha una capacità di recupero limitata: non si possono massimizzare tutte le qualità lo stesso giorno. Regola: una qualità primaria per sessione, qualità secondarie in modalità tecnica/mantenimento.
+
+Settimana tipo per runner (priorità corsa) + calcio amatoriale 1x + tennis 1x + 2 sessioni forza:
+- LUN: Forza gambe (split inferiore, 45-60min, focus Bulgarian + calf eccentric). Stimolo pesante, 48h recupero prima corsa qualità.
+- MAR: Corsa Z2 fondo lento 40-50min. Bassa intensità, compatibile con DOMS residuo.
+- MER: Tennis/padel 60-90min + warm-up dynamic. Qualità neuromuscolare laterale, agility.
+- GIO: Corsa Z4 qualità (intervalli o tempo run) 30-40min + mobility 10min.
+- VEN: Forza upper + core (30-40min, Pallof, bird-dog, pull). Lontana da gambe, no interferenza.
+- SAB: Calcio partita 60-90min. Sessione neuromuscolare high-load, più sprint/cambi direzione.
+- DOM: Corsa Z2 lunga 50-70min OPPURE riposo attivo (camminata, mobility) se DOMS severo post-calcio.
+
+Priority setting quando c'è conflitto (Ross & Leveritt, Sports Med, 2001; Jeffreys 2002): se match calcio o torneo tennis entro 7 giorni, declassare forza heavy a "mantenimento" (1 sessione leggera RIR 3-4 invece di 2 sessioni pesanti). Se gara corsa entro 14 giorni, tagliare tennis/calcio a 1x/settimana o saltare per rispettare il taper.
+
+Regola di sovrapposizione eccentrica: sessioni con alto carico eccentrico (corsa lunga in discesa, Bulgarian, calcio con molti sprint/direzione) producono DOMS 48-72h. NON programmare due sessioni high-eccentric su gambe consecutive (lun calcio + mar forza gambe = rischio strain). Distanziare ≥48h o alternare emisfero corpo (gambe/upper).
+
+Implicazione per il coach: quando l'utente dichiara multi-sport (>1 sport oltre corsa + forza), il planGenerator deve valutare volume totale settimanale (non singole sessioni) e identificare giorni "a rischio cumulativo". Nei feedback, segnalare quando 3+ sessioni high-load gambe sono programmate in 7 giorni. Warning: amatore multi-sport ambizioso ("tutto in settimana") spesso plateau dopo 4-6 settimane da overreaching cronico non riconosciuto — il coach deve proporre micro-cicli con una qualità dominante a rotazione mensile.`,
+    primaryCitation: "Wilson 2012 (J Strength Cond Res) + Jeffreys 2002",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/22002517/",
+      "https://pubmed.ncbi.nlm.nih.gov/11310548/",
+      "https://pubmed.ncbi.nlm.nih.gov/26816209/"
     ]
   }
 ];

@@ -6,7 +6,7 @@ import OnboardingWizard from "./pages/OnboardingWizard";
 import TrendsPage from "./pages/TrendsPage";
 import ProactiveFeedback from "./components/ProactiveFeedback";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { getJSON, setJSON } from "./lib/storage";
+import { getJSON, setJSON, safeBool } from "./lib/storage";
 import { maybeRunWeeklyReport } from "./lib/scheduler";
 import type { CoachFeedItem } from "./lib/types";
 import { useOnline } from "./lib/useOnline";
@@ -152,8 +152,12 @@ export default function App() {
         events.emit("goals:updated", { at: new Date().toISOString() });
       } else if (e.key === "onboarding-completed") {
         // Aggiorna stato onboarded (se altra tab completa/reset)
-        const done = e.newValue ? JSON.parse(e.newValue) : false;
-        setOnboarded(done === true);
+        // safeBool gestisce valori non-JSON (es. stringa "true" letterale da
+        // tab esterno) senza crashare. JSON.parse diretto qui rompeva App
+        // all'arrivo di un valore inatteso cross-tab.
+        let done: unknown = false;
+        try { done = e.newValue ? JSON.parse(e.newValue) : false; } catch { done = e.newValue; }
+        setOnboarded(safeBool(done));
       }
     };
     window.addEventListener("storage", onStorage);
