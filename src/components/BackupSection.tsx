@@ -276,7 +276,7 @@ export default function BackupSection() {
           </div>
           <div style={{ marginBottom: "10px", color: "#CBD5E1" }}>
             Backup del{" "}
-            <b>{new Date(confirmState.after.exportedAt).toLocaleString("it-IT")}</b>.
+            <b>{(() => { const d = new Date(confirmState.after.exportedAt); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; })()}</b>.
             <br />
             Tutti i dati attuali verranno <b>sostituiti</b> in modo atomico.
           </div>

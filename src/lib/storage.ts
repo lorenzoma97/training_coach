@@ -30,6 +30,13 @@ export class StorageValueTooLargeError extends Error {
 /** Limite hard per singolo valore serializzato (1MB in bytes UTF-16 approssimati). */
 export const MAX_VALUE_BYTES = 1024 * 1024;
 
+/**
+ * Allowlist di chiavi che possono superare MAX_VALUE_BYTES (limite alzato).
+ * Vuoto: gli embeddings RAG sono ora in IndexedDB (vedi src/lib/ragStorage.ts),
+ * non più in localStorage. Manteniamo lo scaffold per future eccezioni.
+ */
+const OVERSIZE_KEY_LIMITS: Record<string, number> = {};
+
 function isQuotaError(e: unknown): boolean {
   if (!e || typeof e !== "object") return false;
   const err = e as { name?: string; code?: number };
@@ -150,10 +157,13 @@ export async function setJSON<T>(key: string, value: T): Promise<void> {
   // Stima bytes UTF-16 (2 bytes/char)
   const sizeBytes = serialized.length * 2;
 
-  if (sizeBytes > MAX_VALUE_BYTES) {
+  // Limite per chiave: alcune chiavi (es. RAG embeddings) sono nella allowlist
+  // e possono superare 1MB fino a un limite specifico più alto.
+  const effectiveLimit = OVERSIZE_KEY_LIMITS[key] ?? MAX_VALUE_BYTES;
+  if (sizeBytes > effectiveLimit) {
     console.warn(
       `[storage.setJSON] Payload rifiutato per chiave "${key}": ` +
-      `~${Math.round(sizeBytes / 1024)} KB supera il limite hard di ${Math.round(MAX_VALUE_BYTES / 1024)} KB.`,
+      `~${Math.round(sizeBytes / 1024)} KB supera il limite ${Math.round(effectiveLimit / 1024)} KB.`,
     );
     throw new StorageValueTooLargeError(key, sizeBytes);
   }

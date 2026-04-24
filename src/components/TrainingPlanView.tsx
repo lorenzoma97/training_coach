@@ -344,12 +344,13 @@ export default function TrainingPlanView() {
     return `Il piano ha avuto le seguenti deviazioni:\n${parts.join("\n")}\n\nAdatta le sessioni future del piano in base a ciò che è stato realmente fatto (evita carichi duplicati, aggiungi recovery se sessioni autonome erano intense, mantieni il percorso verso gli obiettivi).`;
   };
 
-  const handleRegenerate = async () => {
+  // Picker stato: null = chiuso, "show" = aperto in attesa di scelta utente.
+  // Le 2 modalità vengono passate a regenerateNextWeek.
+  const [regenPickerOpen, setRegenPickerOpen] = useState(false);
+
+  const handleRegenerate = async (mode: "rest-of-week" | "next-week" = "next-week") => {
     if (regenerating) return;
-    const msg = plan
-      ? "Rigenerare il piano integrando i dati del diario degli ultimi 14 giorni?"
-      : "Generare un nuovo piano basato su profilo e obiettivi?";
-    if (!confirm(msg)) return;
+    setRegenPickerOpen(false);
     setRegenerating(true);
     setRegenError(null);
     try {
@@ -360,8 +361,10 @@ export default function TrainingPlanView() {
       let title: string;
       if (plan) {
         const ctx = await buildCoachContext({ daysBack: 14 });
-        next = await regenerateNextWeek(profile, goals, plan, ctx.recentDaysText);
-        title = "✓ Piano rigenerato con i dati recenti";
+        next = await regenerateNextWeek(profile, goals, plan, ctx.recentDaysText, mode);
+        title = mode === "rest-of-week"
+          ? "✓ Piano riavviato dai giorni rimanenti di questa settimana"
+          : "✓ Piano per la prossima settimana generato";
       } else {
         next = await generateInitialPlan(profile, goals);
         title = "✓ Piano iniziale generato";
@@ -411,7 +414,7 @@ export default function TrainingPlanView() {
 
   const regenerateBtn = (
     <button
-      onClick={handleRegenerate}
+      onClick={() => handleRegenerate("next-week")}
       disabled={regenerating}
       aria-busy={regenerating || undefined}
       role={regenerating ? "status" : undefined}
@@ -567,7 +570,7 @@ export default function TrainingPlanView() {
           </div>
           {isExpired && (
             <button
-              onClick={handleRegenerate}
+              onClick={() => handleRegenerate("next-week")}
               disabled={regenerating}
               aria-busy={regenerating || undefined}
               role={regenerating ? "status" : undefined}
@@ -607,15 +610,72 @@ export default function TrainingPlanView() {
           Modifica piano
         </div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); }} disabled={adapting || regenerating} style={{ flex: "1 1 140px", padding: "10px 14px", background: adaptOpen ? "#E8553A22" : "#1A1A2E", border: adaptOpen ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#E8553A" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
+          <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); setRegenPickerOpen(false); }} disabled={adapting || regenerating} style={{ flex: "1 1 140px", padding: "10px 14px", background: adaptOpen ? "#E8553A22" : "#1A1A2E", border: adaptOpen ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#E8553A" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
             ✏ Adatta con richiesta
           </button>
-          <button onClick={handleRegenerate} disabled={regenerating || adapting} aria-busy={regenerating || undefined} role={regenerating ? "status" : undefined} aria-label={regenerating ? "Rigenerazione piano in corso" : undefined} style={{ flex: "1 1 140px", padding: "10px 14px", background: regenerating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: regenerating ? "wait" : "pointer", opacity: regenerating ? 0.5 : 1 }}>
+          <button onClick={() => { setRegenPickerOpen(o => !o); setAdaptOpen(false); }} disabled={regenerating || adapting} aria-busy={regenerating || undefined} role={regenerating ? "status" : undefined} aria-label={regenerating ? "Rigenerazione piano in corso" : undefined} style={{ flex: "1 1 140px", padding: "10px 14px", background: regenerating ? "#1E293B" : regenPickerOpen ? "#0891B222" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border: regenPickerOpen ? "1px solid #0891B2" : "none", borderRadius: "10px", color: regenPickerOpen ? "#0891B2" : "#FFF", fontSize: "13px", fontWeight: 700, cursor: regenerating ? "wait" : "pointer", opacity: regenerating ? 0.5 : 1 }}>
             {regenerating
               ? <span role="progressbar" aria-label={`Rigenerazione in corso — ${llmElapsedSec} secondi`} aria-busy="true">⏳ Rigenerazione… {llmElapsedSec}s</span>
-              : "🔁 Rigenera con dati recenti"}
+              : "🔁 Rigenera piano"}
           </button>
         </div>
+
+        {regenPickerOpen && !regenerating && (() => {
+          const today = new Date();
+          const dow = today.getDay(); // 0=dom..6=sab
+          const todayIdx = (dow + 6) % 7; // 0=lun..6=dom
+          const labels = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+          const todayLabel = labels[todayIdx];
+          const remaining = labels.slice(todayIdx);
+          // Mostra "rest-of-week" solo da martedì a sabato (esclude lun che copre già
+          // tutta la settimana, esclude domenica che lascerebbe solo 1 giorno).
+          const showRestOfWeek = todayIdx >= 1 && todayIdx <= 5;
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600 }}>Come vuoi rigenerare?</div>
+              {showRestOfWeek && (
+                <button
+                  onClick={() => handleRegenerate("rest-of-week")}
+                  style={{
+                    textAlign: "left", padding: "12px 14px",
+                    background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: "10px", color: "#E2E8F0", cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: "13px", color: "#0891B2", marginBottom: "3px" }}>
+                    ▶ Riparti da oggi
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
+                    Genera {remaining.length} sessioni per {remaining.join(", ")}. I giorni passati restano chiusi.
+                  </div>
+                </button>
+              )}
+              <button
+                onClick={() => handleRegenerate("next-week")}
+                style={{
+                  textAlign: "left", padding: "12px 14px",
+                  background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: "10px", color: "#E2E8F0", cursor: "pointer",
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: "13px", color: "#0891B2", marginBottom: "3px" }}>
+                  ▶ Pianifica settimana prossima
+                </div>
+                <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
+                  Genera 7 giorni lun–dom prossimi.{!showRestOfWeek ? ` (Oggi è ${todayLabel}, l'opzione "riparti" non è disponibile.)` : ""}
+                </div>
+              </button>
+              <button
+                onClick={() => setRegenPickerOpen(false)}
+                style={{
+                  alignSelf: "flex-start", padding: "8px 14px",
+                  background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: "10px", color: "#94A3B8", fontSize: "12px", fontWeight: 600, cursor: "pointer",
+                }}
+              >Annulla</button>
+            </div>
+          );
+        })()}
         {adaptOpen && (
           <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
             <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>Dimmi cosa vuoi cambiare. Il coach rispetterà comunque le regole di sicurezza.</div>
@@ -729,7 +789,7 @@ export default function TrainingPlanView() {
                         <span style={{ color: "#60A5FA", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>🔸 AUTONOMO</span>
                       </div>
                       <div style={{ color: "#CBD5E1", fontSize: "12px", marginTop: "2px", lineHeight: 1.4 }}>
-                        Allenamento non pianificato — registrato il {new Date(e.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}
+                        Allenamento non pianificato — registrato il {(() => { const d = new Date(e.date + "T12:00:00"); const w = d.toLocaleDateString("it-IT", { weekday: "short" }); return `${w} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; })()}
                       </div>
                       {e.workout.notes && (
                         <div style={{ color: "#94A3B8", fontSize: "11px", fontStyle: "italic", marginTop: "4px", lineHeight: 1.4 }}>
@@ -809,12 +869,12 @@ export default function TrainingPlanView() {
                       {completion.actualType
                         ? <>Hai fatto <b>{completion.actualType}</b>{completion.actualSubtype ? ` · ${completion.actualSubtype}` : ""} invece di <b>{s.type}</b>{s.subtype ? ` · ${s.subtype}` : ""}</>
                         : <>Hai fatto {completion.actualSubtype ? `"${completion.actualSubtype}"` : "una variazione"} invece di "{s.subtype || s.type}"</>}
-                      {!completion.sameDay && ` · il ${new Date(completion.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}`}
+                      {!completion.sameDay && ` · il ${(() => { const d = new Date(completion.date + "T12:00:00"); const w = d.toLocaleDateString("it-IT", { weekday: "short" }); return `${w} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; })()}`}
                     </div>
                   )}
                   {isPerfect && completion && !completion.sameDay && (
                     <div style={{ color: "#22C55E", fontSize: "11px", marginBottom: "6px", fontWeight: 600 }}>
-                      Fatto il {new Date(completion.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })} invece del giorno pianificato
+                      Fatto il {(() => { const d = new Date(completion.date + "T12:00:00"); const w = d.toLocaleDateString("it-IT", { weekday: "short" }); return `${w} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; })()} invece del giorno pianificato
                     </div>
                   )}
                   <div style={{ color: "#CBD5E1", lineHeight: 1.5 }}>{stripInlineHRRange(s.details)}</div>
@@ -924,7 +984,7 @@ export default function TrainingPlanView() {
       )}
 
       <div style={{ fontSize: "11px", color: "#94A3B8", textAlign: "center" }}>
-        Generato {new Date(plan.generatedAt).toLocaleDateString("it-IT")} — Valido fino al {new Date(plan.validUntil).toLocaleDateString("it-IT")}
+        Generato {(() => { const d = new Date(plan.generatedAt); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; })()} — Valido fino al {(() => { const d = new Date(plan.validUntil); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; })()}
       </div>
     </div>
   );

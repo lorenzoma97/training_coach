@@ -4,11 +4,13 @@ import {
   ADAPTERS, getLLMConfig, setLLMConfig, type LLMConfig, type LLMModel, type ProviderId,
 } from "../lib/llm";
 import { storage, getJSON } from "../lib/storage";
-import { CHUNKS, clearEmbeddings, ensureEmbeddings, getCacheStatus, CACHE_KEY, type CacheStatus, type EmbeddingCache } from "../lib/knowledge";
+import { CHUNKS, clearEmbeddings, ensureEmbeddings, getCacheStatus, type CacheStatus, type EmbeddingCache } from "../lib/knowledge";
+import { getRagCache } from "../lib/ragStorage";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { events } from "../lib/events";
 import BackupSection from "../components/BackupSection";
 import GoalsEditor from "../components/GoalsEditor";
+import ProfileEditor from "../components/ProfileEditor";
 
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   gemini: "Google Gemini (consigliato)",
@@ -57,7 +59,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   async function refreshKbStatus() {
     const s = await getCacheStatus();
     setKbStatus(s);
-    const cache = await getJSON<EmbeddingCache | null>(CACHE_KEY, null);
+    const cache = await getRagCache<EmbeddingCache>();
     if (cache) {
       setKbCreatedAt(cache.createdAt);
       setKbCount(Object.keys(cache.vectors || {}).length);
@@ -83,13 +85,25 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
 
   useEffect(() => { loadConfig(); }, []);
 
-  // Cross-tab sync
+  // Cross-tab sync. Nota: gli embeddings RAG sono in IndexedDB (vedi
+  // ragStorage.ts) — IndexedDB NON emette storage events cross-tab. Se l'utente
+  // rigenera la KB in un'altra tab, questa NON viene notificata. Trade-off
+  // accettato: cambio raro e non critico per il consumer (status UI).
+  // Manteniamo il listener per llm-config (chiave/modello) che resta in localStorage.
   useEffect(() => {
     const off = events.on("data:externalChange", ({ key }) => {
       if (key === "llm-config" || key === "gemini-api-key") loadConfig();
-      else if (key === "rag-embeddings-v1") refreshKbStatus();
     });
     return off;
+  }, []);
+
+  // Refresh status KB ogni volta che il tab Settings torna in foreground —
+  // così se l'utente ha rigenerato la KB in un'altra tab e torna qui, vede
+  // lo stato aggiornato senza polling continuo.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === "visible") refreshKbStatus(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
   // Se cambio provider, azzero modello e lista (andrà ri-scoperta).
@@ -360,7 +374,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
               {(kbStatus === "ready" || kbStatus === "stale") && kbCount > 0 && (
                 <span style={{ color: "#94A3B8", fontSize: "12px" }}>
                   {kbCount}/{CHUNKS.length} chunks
-                  {kbCreatedAt && ` · ${new Date(kbCreatedAt).toLocaleDateString("it-IT")}`}
+                  {kbCreatedAt && (() => { const d = new Date(kbCreatedAt); return ` · ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; })()}
                 </span>
               )}
             </div>
@@ -412,6 +426,16 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
             >
               {kbBusy ? "Rigenerazione in corso…" : "Rigenera knowledge base"}
             </button>
+          </div>
+
+          <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "20px" }}>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "12px" }}>
+              Profilo atleta
+            </div>
+            <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "14px", lineHeight: 1.5 }}>
+              Aggiorna lo stato di salute corrente: infortuni guariti, nuovi farmaci/integratori, zone di dolore da monitorare. Età/peso/altezza si modificano dal Reset coach.
+            </div>
+            <ProfileEditor />
           </div>
 
           <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "20px" }}>

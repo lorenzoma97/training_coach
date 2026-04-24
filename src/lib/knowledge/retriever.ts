@@ -1,6 +1,6 @@
 import { CHUNKS, type KnowledgeChunk } from "./chunks";
-import { embedQuery, getCacheStatus, CACHE_KEY } from "./embedder";
-import { getJSON } from "../storage";
+import { embedQuery, getCacheStatus } from "./embedder";
+import { getRagCache } from "../ragStorage";
 import { hasApiKey } from "../gemini";
 import { getEmbeddingClient } from "../llm";
 import type { EmbeddingCache } from "./embedder";
@@ -42,7 +42,7 @@ export async function retrieveRelevantChunks(params: {
   if (status !== "ready") return [];
 
   try {
-    const cache = await getJSON<EmbeddingCache | null>(CACHE_KEY, null);
+    const cache = await getRagCache<EmbeddingCache>();
     if (!cache) return [];
     const qVec = await embedQuery(query);
     const scored: RetrievalResult[] = [];

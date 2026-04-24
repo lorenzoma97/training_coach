@@ -14,25 +14,47 @@ export function todayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** "2026-04-17" → "17 apr". */
+/** "2026-04-17" → "17 apr". Compatto, per assi sparkline e badge. */
 export function formatDayMonth(iso: string): string {
   try {
     return parseISODateLocal(iso).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
   } catch { return iso; }
 }
 
-/** "2026-04-17" → "17 apr 2026". */
-export function formatDayMonthYear(iso: string): string {
+/** "2026-04-17" → "17/04/2026". Formato canonico IT per date piene. */
+export function formatDDMMYYYY(iso: string): string {
   try {
-    return parseISODateLocal(iso).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" });
+    const d = parseISODateLocal(iso);
+    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
   } catch { return iso; }
 }
 
-/** "2026-04-17" → "ven 17 apr". */
+/** "2026-04-17" → "17/04/2026". Backward-compat alias di formatDDMMYYYY. */
+export function formatDayMonthYear(iso: string): string {
+  return formatDDMMYYYY(iso);
+}
+
+/** "2026-04-17" → "ven 17/04". Weekday + data compatta. */
 export function formatWeekdayDayMonth(iso: string): string {
   try {
-    return parseISODateLocal(iso).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" });
+    const d = parseISODateLocal(iso);
+    const weekday = d.toLocaleDateString("it-IT", { weekday: "short" });
+    return `${weekday} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
   } catch { return iso; }
+}
+
+/** "2026-04-17" → "ven 17/04/2026". Weekday + data piena. */
+export function formatWeekdayDDMMYYYY(iso: string): string {
+  try {
+    const d = parseISODateLocal(iso);
+    const weekday = d.toLocaleDateString("it-IT", { weekday: "short" });
+    return `${weekday} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  } catch { return iso; }
+}
+
+/** Date object → "17/04/2026". */
+export function formatDateObjDDMMYYYY(d: Date): string {
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
 /** Mesi tra una ISO date e oggi (approssimazione 30gg/mese). */

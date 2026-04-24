@@ -45,9 +45,10 @@ const DAY_ORDER = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
  * nessuna sessione pianificata. Note che il modello talvolta non popola un giorno
  * e basta per contarlo come riposo.
  */
-function restDaysInWeek(week: PlanWeek): number {
+function restDaysInWeek(week: PlanWeek, expectedDays?: string[]): number {
   const days = new Set(week.sessions.map(s => s.day));
-  return DAY_ORDER.filter(d => !days.has(d)).length;
+  const window = expectedDays && expectedDays.length > 0 ? expectedDays : DAY_ORDER;
+  return window.filter(d => !days.has(d)).length;
 }
 
 /** Giorni consecutivi di allenamento (max streak) nella settimana. */
@@ -130,13 +131,31 @@ function historyMediansByType(
  *   per lo spike check Johansen (fix #2). Se vuoto il check viene saltato.
  *   Firma retrocompatibile: i call-site esistenti continuano a funzionare.
  */
+/**
+ * Opzioni avanzate del validator.
+ * - expectedDayLabels: se presente, restringe il check "rest days" alla finestra
+ *   indicata (es. ["gio","ven","sab","dom"] per settimana parziale rest-of-week).
+ *   Senza questo parametro, il validator assume settimana piena 7gg.
+ */
+export interface ValidatePlanOptions {
+  expectedDayLabels?: string[];
+}
+
 export function validatePlan(
   plan: TrainingPlan,
   profile: UserProfile,
   recentWorkouts: RecentWorkoutForValidator[] = [],
+  options: ValidatePlanOptions = {},
 ): PlanValidationResult {
   const issues: PlanValidationIssue[] = [];
-  const minRest = restDaysMinForAge(profile.age);
+  // Se la finestra è parziale (rest-of-week con N<7 giorni), scaliamo il
+  // requisito di rest proporzionalmente. Esempio: 3 rest/sett canonica → 1
+  // rest su finestra 4gg. Floor + min 1 per finestre ≥3 giorni.
+  const fullWeekMinRest = restDaysMinForAge(profile.age);
+  const windowSize = options.expectedDayLabels?.length ?? 7;
+  const minRest = windowSize < 7
+    ? Math.max(0, Math.floor(fullWeekMinRest * windowSize / 7))
+    : fullWeekMinRest;
   const isSenior = profile.age >= 65;
   const isBeginner = profile.experience === "sedentary";
 
@@ -145,7 +164,7 @@ export function validatePlan(
   const hasHistory = Object.keys(mediansByType).length > 0;
 
   for (const week of plan.weeks) {
-    const rest = restDaysInWeek(week);
+    const rest = restDaysInWeek(week, options.expectedDayLabels);
     if (rest < minRest) {
       issues.push({
         weekNumber: week.weekNumber,

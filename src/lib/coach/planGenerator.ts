@@ -317,13 +317,60 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
   return plan;
 }
 
-/** Rigenera il piano per la settimana successiva integrando i dati reali. */
+/**
+ * Modalità di rigenerazione del piano:
+ * - "next-week" (default, comportamento storico): genera la settimana che inizia
+ *   il prossimo lunedì. Usato a fine settimana o se l'utente è on-track.
+ * - "rest-of-week": genera SOLO i giorni rimanenti della settimana corrente
+ *   (da oggi a domenica). Usato quando l'utente ha saltato giorni passati e
+ *   vuole "ricominciare" senza aspettare lunedì prossimo.
+ */
+export type RegenerateMode = "next-week" | "rest-of-week";
+
+const DAY_LABELS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const;
+
+/** Da Date locale → label canonica della settimana ("lun"..."dom"). */
+function dayLabelFromDate(d: Date): string {
+  // JS getDay(): 0=dom, 1=lun, ..., 6=sab. Mappa a indice 0-6 lun-based.
+  const dow = d.getDay();
+  return DAY_LABELS[(dow + 6) % 7];
+}
+
+function formatDateIT(d: Date): string {
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
+/** Rigenera il piano. Vedi RegenerateMode per le due modalità. */
 export async function regenerateNextWeek(
   profile: UserProfile,
   goals: UserGoal[],
   currentPlan: TrainingPlan | null,
   recentDaysText: string,
+  mode: RegenerateMode = "next-week",
 ): Promise<TrainingPlan> {
+  // Per "rest-of-week" calcoliamo oggi, lunedì-corrente, giorni rimanenti.
+  // Il piano avrà startDate = lunedì-corrente (canonical) ma sessioni solo
+  // per i giorni rimanenti. Il matching piano↔diario continua a funzionare.
+  const now = new Date();
+  const todayLabel = dayLabelFromDate(now);
+  const todayIdx = DAY_LABELS.indexOf(todayLabel as typeof DAY_LABELS[number]);
+  const remainingLabels = DAY_LABELS.slice(todayIdx); // es. ["gio","ven","sab","dom"]
+  const passedLabels = DAY_LABELS.slice(0, todayIdx); // es. ["lun","mar","mer"]
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - todayIdx);
+
+  const restOfWeekBlock = mode === "rest-of-week" ? `
+SCENARIO MID-WEEK — RIPARTI DA OGGI:
+OGGI è ${todayLabel} ${formatDateIT(now)}. La settimana è iniziata lun ${formatDateIT(weekStart)}.
+Genera sessioni SOLO per i giorni rimanenti: ${remainingLabels.join(", ")}.
+I giorni passati (${passedLabels.join(", ")}) sono CHIUSI — considerali come riposo,
+non includere sessioni per essi.
+` : "";
+
+  const modeInstruction = mode === "next-week"
+    ? `Genera la NUOVA settimana (weekNumber=1, una sola) a partire dalla settimana prossima, adattando in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.\nSe rilevi red flag, proponi deload esplicito.`
+    : `Genera la settimana corrente parziale (weekNumber=1, una sola) coprendo solo i ${remainingLabels.length} giorni rimanenti. Adatta volume/intensità in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.`;
+
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
@@ -336,9 +383,8 @@ ${planAsPrompt(currentPlan)}
 
 ULTIMI 14 GIORNI REALI DAL DIARIO:
 ${recentDaysText}
-
-Genera la NUOVA settimana (weekNumber=1, una sola) a partire dalla settimana prossima, adattando in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.
-Se rilevi red flag, proponi deload esplicito.
+${restOfWeekBlock}
+${modeInstruction}
 `.trim();
 
   const recentDaysForZonesRegen = await getLastNDays(60).catch(() => []);
@@ -369,16 +415,29 @@ Se rilevi red flag, proponi deload esplicito.
     throw new Error("Il coach non è riuscito a generare un piano strutturato. Riprova tra qualche secondo.");
   }
   const parsed = parseResult.data;
-  const now = new Date();
+  const planStart = computePlanStartDate(now);
+  // "rest-of-week": startDate = lunedì corrente (i day labels delle sessioni
+  //                  rimanenti mappano correttamente).
+  // "next-week": startDate = lunedì PROSSIMO (la nuova settimana inizia dopo).
+  let startDate = planStart;
+  if (mode === "next-week") {
+    const nextMonday = new Date(now);
+    const todayIdxLocal = (now.getDay() + 6) % 7; // 0=lun..6=dom
+    nextMonday.setDate(now.getDate() + (7 - todayIdxLocal));
+    startDate = `${nextMonday.getFullYear()}-${String(nextMonday.getMonth() + 1).padStart(2, "0")}-${String(nextMonday.getDate()).padStart(2, "0")}`;
+  }
   const plan: TrainingPlan = {
     generatedAt: now.toISOString(),
     validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
-    startDate: computePlanStartDate(now),
+    startDate,
     profileHash: planStateHash(profile, goals),
     weeks: coerceWeeks(parsed.weeks),
     rationale: parsed.rationale,
   };
-  const validation = validatePlan(plan, profile);
+  // Per partial week passiamo expectedDayLabels al validator così non flagga
+  // "insufficient_rest_days" su una finestra ridotta (es. gio-dom = 4 giorni).
+  const expectedDayLabels = mode === "rest-of-week" ? remainingLabels.slice() : undefined;
+  const validation = validatePlan(plan, profile, [], { expectedDayLabels });
   if (!validation.ok) {
     console.warn("[regenerateNextWeek] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
     plan.rationale = plan.rationale + "\n\n[Validator] Avvertenze: " + validation.issues.map(i => i.message).join(" ");

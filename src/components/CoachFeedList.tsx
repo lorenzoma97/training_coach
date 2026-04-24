@@ -74,7 +74,7 @@ export default function CoachFeedList() {
               <span style={{ fontSize: "16px", lineHeight: 1 }}>{t.emoji}</span>
               <div style={{ fontSize: "11px", fontWeight: 700, color: "#CBD5E1", letterSpacing: "0.1em", textTransform: "uppercase" }}>{item.title || t.label}</div>
               <span style={{ marginLeft: "auto", fontSize: "11px", color: "#94A3B8", whiteSpace: "nowrap" }}>
-                {new Date(item.date).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                {(() => { const d = new Date(item.date); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; })()}
               </span>
               <button
                 onClick={() => dismiss(item.id)}

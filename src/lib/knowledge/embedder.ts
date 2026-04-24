@@ -1,7 +1,10 @@
 import { getEmbeddingClient, hasLLMConfig, LLMKeyMissingError, getCurrentConfigSync } from "../llm";
-import { getJSON, setJSON, storage } from "../storage";
+import { getRagCache, setRagCache, deleteRagCache } from "../ragStorage";
 import { CHUNKS } from "./chunks";
 
+// Mantenuto per retrocompatibilità con consumer che lo importano (es. SettingsPage).
+// La chiave fisica ora è in IndexedDB sotto "embeddings-v1" — questo è
+// l'identificatore "logico" usato dai consumer e dagli eventi cross-tab legacy.
 export const CACHE_KEY = "rag-embeddings-v1";
 
 export interface EmbeddingCache {
@@ -48,7 +51,7 @@ function getEmbedder() {
 export async function ensureEmbeddings(onProgress?: (done: number, total: number) => void): Promise<EmbeddingCache> {
   const client = getEmbedder();
   const expected = computeVersion();
-  let cache = await getJSON<EmbeddingCache | null>(CACHE_KEY, null);
+  let cache = await getRagCache<EmbeddingCache>();
   if (!cache || cache.version !== expected) {
     cache = { version: expected, vectors: {}, createdAt: new Date().toISOString() };
   }
@@ -62,7 +65,7 @@ export async function ensureEmbeddings(onProgress?: (done: number, total: number
       if (!vec || vec.length === 0) throw new Error("vector vuoto dal provider");
       cache.vectors[chunk.id] = vec;
       if ((i + 1) % 5 === 0 || i === missing.length - 1) {
-        await setJSON(CACHE_KEY, cache);
+        await setRagCache(cache);
       }
     } catch (e) {
       failures++;
@@ -73,7 +76,7 @@ export async function ensureEmbeddings(onProgress?: (done: number, total: number
   }
   cache.lastFailures = failures;
   cache.lastFailureMessage = lastError;
-  await setJSON(CACHE_KEY, cache);
+  await setRagCache(cache);
 
   // Se tutti hanno fallito → errore leggibile per la UI.
   if (missing.length > 0 && failures === missing.length) {
@@ -92,7 +95,7 @@ export async function embedQuery(text: string): Promise<number[]> {
 }
 
 export async function clearEmbeddings(): Promise<void> {
-  await storage.delete(CACHE_KEY);
+  await deleteRagCache();
 }
 
 export type CacheStatus = "ready" | "stale" | "missing" | "no-key" | "unsupported";
@@ -105,7 +108,7 @@ export async function getCacheStatus(): Promise<CacheStatus> {
     const client = getEmbeddingClient();
     if (!client || !client.embedContent) return "unsupported";
   }
-  const cache = await getJSON<EmbeddingCache | null>(CACHE_KEY, null);
+  const cache = await getRagCache<EmbeddingCache>();
   if (!cache) return "missing";
   if (cache.version !== computeVersion()) return "stale";
   // Tolleriamo fino al 20% di chunk mancanti: considera "ready" se ≥80% presenti.

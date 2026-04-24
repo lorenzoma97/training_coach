@@ -20,7 +20,7 @@ function todayISO(): string {
 function formatDateIT(iso: string): string {
   try {
     const [y, m, d] = iso.split("-").map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" });
+    return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
   } catch { return iso; }
 }
 

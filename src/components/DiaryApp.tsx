@@ -81,8 +81,18 @@ const today = () => {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 };
-const fmtDate = (d: string) => { const dt = new Date(d + "T12:00:00"); return dt.toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" }); };
-const fmtDateFull = (d: string) => { const dt = new Date(d + "T12:00:00"); return dt.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" }); };
+// Date IT in formato gg/mm/aaaa (canonical) ovunque sia mostrata data piena.
+// Fmt compatto omette l'anno (badge in lista); full include l'anno (detail header).
+const fmtDate = (d: string) => {
+  const dt = new Date(d + "T12:00:00");
+  const wd = dt.toLocaleDateString("it-IT", { weekday: "short" });
+  return `${wd} ${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}`;
+};
+const fmtDateFull = (d: string) => {
+  const dt = new Date(d + "T12:00:00");
+  const wd = dt.toLocaleDateString("it-IT", { weekday: "long" });
+  return `${wd} ${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}/${dt.getFullYear()}`;
+};
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 const inputStyle: React.CSSProperties = {
