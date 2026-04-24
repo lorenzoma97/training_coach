@@ -446,5 +446,282 @@ Implicazione per il coach: in v2 aggiungere al diario un campo opzionale "condiz
       "https://www.khsaa.org/sportsmedicine/heat/exerciseandfluidreplacement.pdf",
       "https://acsm.org/education-resources/pronouncements-scientific-communications/position-stands/"
     ]
+  },
+  {
+    id: "sec-25-strength-programming-practical",
+    sectionNumber: 25,
+    title: "Forza — programmazione pratica (set, rep, rest, RIR, dose-response)",
+    topics: ["set rep rest", "RIR", "reps in reserve", "Zourdos", "rest interval", "ipertrofia dose-response", "volume hypertrophy", "Schoenfeld", "1RM stimato", "Brzycki Epley", "autoregolazione", "carichi palestra", "manubri"],
+    content: `Per sessioni di forza a casa o in palestra, il coach applica la programmazione ACSM Ratamess 2009 (chunk 11) con parametri pratici aggiuntivi qui dettagliati.
+
+Rest tra serie (Schoenfeld et al., J Strength Cond Res, 2016, RCT su 21 uomini allenati): riposi lunghi 3 min producono maggiori guadagni di ipertrofia e forza rispetto a 1 min, a parità di volume. Implicazione: ipertrofia → 60-120s, forza massimale → 3-5 min, resistenza muscolare → 30-60s. Recuperi brevi NON offrono vantaggi di ipertrofia come spesso affermato nella cultura fitness.
+
+Volume dose-response per ipertrofia (Schoenfeld, Ogborn, Krieger, J Sports Sci, 2017, meta-analisi 15 studi): set settimanali per gruppo muscolare e aumento massa muscolare mostrano dose-response con plateau intorno a 10-20 set/settimana; sotto 10 set effetto sub-ottimale, sopra 20-22 set diminishing returns e rischio di overreaching. Sweet spot pratico per hobbyist: 10-12 set/settimana per gruppo muscolare principale.
+
+RIR / Reps In Reserve (Zourdos et al., J Strength Cond Res, 2016): scala soggettiva 0-10 in cui l'utente stima quante ripetizioni avrebbe potuto fare in più prima del cedimento. Correlazione alta con %1RM in utenti allenati. Per ipertrofia: RIR 1-3 ottimale. Per forza massimale: RIR 0-2. Evita training a cedimento tecnico costante (RIR 0) — Helms 2018 review conferma risultati simili a RIR 1-2 con meno fatica sistemica.
+
+1RM stimato senza test massimale (Brzycki 1993, Epley 1985): formula pratica Brzycki 1RM = peso / (1.0278 − 0.0278 × reps). Precisione ±5% per reps 4-10, degrada oltre 12 reps. Per manubri componibili a casa: fare 8-10 rip con RIR 2-3, calcolare, sapere che è stima.
+
+Implicazione per il coach: quando l'utente registra una sessione forza, chiedere RIR (non solo RPE) per dare feedback preciso. Se durata eccessiva (>60min) e RIR sempre 0, segnalare overreaching imminente. Proporre rest timer basato sull'obiettivo (ipertrofia vs massimale). Warning: non spingere al cedimento tecnico per esercizi complessi (squat, affondi) — rischio compensazioni e infortuni.`,
+    primaryCitation: "Schoenfeld 2017 (J Sports Sci, meta-analisi volume)",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/27433992/",
+      "https://pubmed.ncbi.nlm.nih.gov/27102172/",
+      "https://pubmed.ncbi.nlm.nih.gov/26605807/"
+    ]
+  },
+  {
+    id: "sec-26-core-unilateral-training",
+    sectionNumber: 26,
+    title: "Core stability & unilateral training — prevenzione asimmetrie",
+    topics: ["core", "anti-rotazione", "McGill big three", "bird-dog", "side plank", "curl-up", "unilateral", "split squat", "Bulgarian", "affondi", "asimmetrie", "single-leg", "stabilità"],
+    content: `Il coach suggerisce esercizi di core e unilaterali nei piani forza, specialmente post-infortunio e per sport con cambi di direzione (calcio, tennis).
+
+Core stability (McGill, Spine, 2010 + Low Back Disorders libro 2015): "Big Three" validati per stabilità lombare — curl-up, side plank, bird-dog. Preferire contrazione ISOMETRICA e integrità spinale a high-volume sit-ups (che producono stress compressivo su L4-L5). Isolated core NON correla direttamente con prevenzione dolore lombare (Cochrane review Saragiotto 2016), ma supporta performance atletica integrando la catena cinetica (Willardson 2007).
+
+Anti-rotazione (Behm & Colado, IJSM 2012): esercizi dove il core resiste a momento rotazionale esterno (Pallof press, one-arm carry, renegade row) reclutano obliqui + transverso in modo ecologico. Più specifici per sport che prevedono rotazioni (tennis serve, calcio cross) rispetto a sit-up classici.
+
+Unilateral training (McCurdy et al., J Strength Cond Res, 2005; McCurdy & O'Kelley 2020): single-leg squat, Bulgarian split squat, affondi laterali. Vantaggi vs bilateral: (1) riduce asimmetrie forza arti 10-15% tipiche in runner; (2) carica ridotta sul rachide (metà del peso per gamba); (3) migliora stabilità anca/ginocchio — fondamentale post-infortunio muscolare o legamentoso. Carichi: partire con corpo libero, progredire a manubri 6-10kg/mano.
+
+Bulgarian split squat specifico: piede posteriore elevato (20-30cm), 3 serie × 8-10 rip per gamba, RIR 2. Attiva più gluteo vs squat classico (Ebben 2009), utile per imbalance quadricipiti > glutei frequente in runner.
+
+Implicazione per il coach: prescrivere almeno 1 sessione/settimana con 2 esercizi core (1 anti-rotazione + 1 stability) e almeno 1 esercizio unilaterale in sessioni forza gambe. Post-infortunio asymmetrico (es. polpaccio monolaterale): unilaterale prioritario per 4-6 settimane per riequilibrare. Warning: Bulgarian con carico pesante richiede stabilità; partire senza manubri.`,
+    primaryCitation: "McGill 2010 (Spine) — core big three",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/20139764/",
+      "https://pubmed.ncbi.nlm.nih.gov/16503684/",
+      "https://www.backfitpro.com/"
+    ]
+  },
+  {
+    id: "sec-27-return-to-run-calf",
+    sectionNumber: 27,
+    title: "Return-to-run post-infortunio polpaccio — protocollo progressivo",
+    topics: ["return to run", "polpaccio", "microlesione", "strain grado 1", "Silbernagel", "Alfredson", "heavy slow resistance", "Kongsgaard", "eccentrico", "walk-jog-run", "recidiva", "calf raise"],
+    content: `Per l'utente che ha subito una microlesione del polpaccio (tipicamente gastrocnemio, grado I), il coach applica un protocollo di ritorno progressivo distinto dal pain-monitoring Silbernagel (chunk 7) che resta regola durante tutte le fasi.
+
+Heavy Slow Resistance vs eccentrico puro (Kongsgaard et al., Scand J Med Sci Sports, 2009; Beyer et al., Am J Sports Med, 2015): per tendinopatie e strain muscolari in fase riabilitativa, protocollo HSR (3 × 15 rip a 70-85% 1RM, tempo 3-6s concentrico + 3-6s eccentrico) produce risultati clinici equivalenti a eccentrico Alfredson puro MA con migliore aderenza (1 sessione 3x/settimana vs 2 sessioni/die Alfredson). Per calf specifico: standing calf raise + seated calf raise (bersaglia soleo che è 80% del volume polpaccio).
+
+Walk-jog-run progression (MacAuley, Physician & Sports Med, 2014; Beach et al., Int J Sports Phys Ther, 2019): dopo 2-3 settimane di riposo + riabilitazione HSR, progressione graduale in 4-6 settimane. Fase 1 (settimana 1-2): cammino 30min, pain ≤2/10. Fase 2 (settimana 3): walk-jog intermittente 1min jog / 2min walk × 10 in Z1. Fase 3 (settimana 4): 3min jog / 1min walk × 8 in Z2 bassa. Fase 4 (settimana 5): corsa continua 20min in Z2. Fase 5 (settimana 6+): progressione volume +10-15%/settimana fino a baseline pre-infortunio.
+
+Prevenzione recidiva (Maffulli et al., Br Med Bull, 2003; Silbernagel et al. 2007): calf eccentric 3 × 15 rip, 2x/settimana come maintenance indefinito. Riduce recidiva strain grado I del 30-50% a 6-12 mesi.
+
+Implicazione per il coach: se l'utente ha in profile.injuries una microlesione polpaccio recente (≤8 settimane), il coach deve proporre piani con corsa in fase 2-3 anche se l'utente vuole tornare in fase 4 subito, includere sempre 1 sessione forza eccentrica polpaccio/settimana per 6 settimane, monitorare pain 0-4 ogni corsa, stop immediato se dolore sale a ≥3 durante o ≥2 residuo 24h dopo. Warning: recidiva polpaccio in primi 3 mesi è ~30% — la cautela è più importante dell'ambizione.`,
+    primaryCitation: "Kongsgaard 2009 (Scand J Med Sci Sports) — HSR",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/19793213/",
+      "https://pubmed.ncbi.nlm.nih.gov/26362436/",
+      "https://pubmed.ncbi.nlm.nih.gov/17485496/"
+    ]
+  },
+  {
+    id: "sec-28-football-amateur",
+    sectionNumber: 28,
+    title: "Calcio amatoriale — richiesta metabolica, prevenzione FIFA 11+, return to play",
+    topics: ["calcio", "football", "recreational football", "partita", "Krustrup", "Yo-Yo IR", "30-15 IFT", "FIFA 11+", "Soligard", "prevenzione infortuni calcio", "return to play", "Ekstrand", "sprint repeatability"],
+    content: `Per l'utente che gioca calcio a 11 amatoriale e deve prepararsi a una partita specifica, il coach applica evidenza specifica sul calcio.
+
+Richiesta metabolica calcio ricreativo (Krustrup et al., Br J Sports Med, 2010, su 2000+ amatori): partita 60-90min richiede distanza 8-12km con 1200-1500m ad alta intensità (>14 km/h), 40-60 sprint brevi (1-3s), 700-1000 cambi di direzione. Carico interno: FC media 85% FCmax, picchi 95%. Perdita fluidi 1.5-3L. VO2max correlazione r=0.60 con qualità prestazione.
+
+Yo-Yo Intermittent Recovery Test 1 (Bangsbo 2008): predictor validato di performance calcistica. Benchmark amatoriale adulto: 1200-1800m (bassi-medi), 1800-2400m (buoni), >2400m (livello semi-pro).
+
+FIFA 11+ warm-up (Soligard et al., BMJ, 2008, RCT cluster su 1892 calciatrici 13-17 anni): programma di 20min in 3 parti (corsa lenta, forza/equilibrio/pliometria, corsa con calcio) pre-allenamento 2-3x/settimana riduce infortuni -35%, infortuni gravi -50%. Valido anche per maschi adulti (Silvers-Granelli 2017 JSCR). Include esercizi chiave: Nordic hamstring, single-leg balance, plank laterale, squat con salto controllato.
+
+Nordic hamstring specifico (Al Attar et al., Sports Med, 2017, meta-analisi): 3 serie × 5-10 rip eccentriche, 1-2x/settimana riduce strain ischiocrurali -51%. Obbligatorio per amatori calcio senza esperienza strutturata di forza.
+
+Return to play post-infortunio polpaccio (Ekstrand et al., Br J Sports Med, 2011; consensus UEFA): strain grado I tipicamente 14-21 giorni. Protocollo minimo: pain-free camminato, corsa lineare Z2 senza dolore ≥20min, accelerazioni/decelerazioni submassimali, cambi direzione 45°→90° progressivi, sprint sub-max 90%, contatto e partita simulata. Ogni fase 2-3 sedute distanziate 48h. Tempo minimo totale 7-10 giorni dopo walk-to-run.
+
+Implicazione per il coach: con partita programmata, proporre 4-8 settimane di preparazione con 2 corse/settimana (1 fondo Z2 + 1 sprint-repeat o intervalli alta intensità), 1 sessione forza gambe + Nordic hamstring, 1 FIFA 11+ come warm-up standalone. Tapering ultima settimana: -40% volume mantenendo intensità. Se l'utente ha infortunio recente, rispettare progression return-to-play anche se conflitta con calendario partita. Warning: 60min di partita richiedono fitness specifico — amatori "solo runner" spesso cedono muscolarmente al minuto 50-60.`,
+    primaryCitation: "Soligard 2008 (BMJ) — FIFA 11+",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/19066168/",
+      "https://pubmed.ncbi.nlm.nih.gov/20861097/",
+      "https://pubmed.ncbi.nlm.nih.gov/28500081/"
+    ]
+  },
+  {
+    id: "sec-29-tennis-padel",
+    sectionNumber: 29,
+    title: "Tennis & padel — physiology, conditioning rotazionale, overuse spalla",
+    topics: ["tennis", "padel", "racquet sport", "Kovacs", "rotational power", "lateral agility", "shoulder overuse", "infraspinato", "wrist", "work rest ratio", "pronazione"],
+    content: `Per l'utente che gioca tennis e padel 2-3 volte/settimana, il coach applica evidenza specifica per sport di racchetta.
+
+Physiology tennis (Kovacs, Sports Med, 2007; Fernandez-Fernandez et al., Strength Cond J, 2009): gioco intermittente con rally medi 5-10s lavoro / 10-25s recupero, ratio work:rest 1:2-1:5. Match 60-120min totali. FC media 70-85% FCmax con picchi 95% nei punti lunghi. Domanda energetica mista aerobica (60-70% recupero tra punti), anaerobica alattacida (sprint esplosivi), forza eccentrica rotazionale (servizio).
+
+Lateral agility (Kovacs 2006): test 5-10-5 shuttle e hexagon test come benchmark per tennis. Migliora con plyometrics laterali (lateral bound, skater jumps 3 × 10) + foot speed drills (agility ladder) 1-2x/settimana.
+
+Rotational power / medicine ball training (Barcelos et al., J Strength Cond Res, 2015): medicine ball rotational throw 3 × 6-8 rip/lato, 2x/settimana, correlato con velocità servizio e colpi fondamentali. Peso raccomandato 2-4kg. Combina con cable woodchopper per resistenza eccentrica anti-rotazione.
+
+Shoulder/elbow overuse (Cools et al., Br J Sports Med, 2015; Reinold 2009): incidenza tendinopatia cuffia rotatori in tennis player ~50% lifetime. Prevenzione: infraspinato e teres minor con banda elastica (external rotation 3 × 15 rip/braccio, 3x/settimana), Y-T-W prone. Gomito: tennis elbow (epicondilite laterale) da overuse rovescio bimanuale o backhand a una mano con tecnica scorretta — wrist extensor eccentric (Tyler twist) protocollo efficace.
+
+Padel — letteratura emergente (Muñoz et al., Int J Environ Res Public Health, 2022; García-Fernández 2019): match 60-90min, intensità media 75% FCmax. Meno stress spalla vs tennis (nessun servizio full-overhead sostenuto) MA più stress polso in pronazione ripetuta (vibora, bandeja). Infortuni comuni: tennis elbow, strain polpaccio (partenze esplosive su campo corto).
+
+Implicazione per il coach: se l'utente fa tennis/padel ≥2x/settimana, inserire nel piano 1 sessione prevenzione spalla-polso (esterni rotatori + wrist extensor/flexor) e 1 drill agility laterale con pliometria leggera. Durata 15-20min, stand-alone o warm-up pre-sessione sport. Warning: incrementare volume tennis senza preparazione agility → strain gastrocnemio/quadricipite frequentissimi nei "runner che riprendono il tennis".`,
+    primaryCitation: "Kovacs 2007 (Sports Med) — tennis physiology",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/17326697/",
+      "https://pubmed.ncbi.nlm.nih.gov/25708136/",
+      "https://pubmed.ncbi.nlm.nih.gov/35681969/"
+    ]
+  },
+  {
+    id: "sec-30-weight-loss-sustainable",
+    sectionNumber: 30,
+    title: "Weight loss sustainable — rate, deficit, preservazione massa magra",
+    topics: ["weight loss", "perdita peso", "dimagrimento", "cut", "deficit calorico", "Garthe", "Helms", "ACSM Donnelly", "preservazione lean mass", "protein cut", "metabolic adaptation", "plateau", "diet break", "refeed"],
+    content: `Per l'utente con goal di perdita peso (es. 5kg in 3 mesi), il coach applica evidenza su cal deficit sostenibile e preservazione massa magra.
+
+Rate sicuro (ACSM Donnelly et al., Med Sci Sports Exerc, 2009, position stand): 0.5-1.0 kg/settimana è sostenibile con deficit 500-1000 kcal/die. Sopra questa soglia: maggior perdita lean mass, più rebound, peggio aderenza. Per atleti/sportivi più attivi: Garthe et al. (Int J Sport Nutr Exerc Metab, 2011), RCT su atleti d'élite, 0.7% body weight/settimana preserva performance e lean mass vs 1.4% che riduce entrambi.
+
+Per utente 80kg che vuole perdere 5kg in 3 mesi = 0.42 kg/settimana = 0.52%/settimana. Rientra nel target safe-sustainable.
+
+Preservazione lean mass in deficit (Helms et al., J Int Soc Sports Nutr, 2014, review protein requirements natural bodybuilders): durante cut aggressivo, proteine 2.3-3.1 g/kg massa magra (≈1.8-2.4 g/kg peso corporeo). In utente 80kg → 145-195g proteine/die. Evidenze Longland 2016 (Am J Clin Nutr): 2.4 g/kg + resistance training in deficit = +1.2kg lean mass (gain in deficit!) vs 1.2 g/kg perdita netta massa magra.
+
+Protein distribution (Mamerow et al., J Nutr, 2014, RCT crossover): stesso totale 90g proteine distribuito 30g × 3 pasti vs 10-15-65g unbolo, il pattern distribuito aumenta MPS del 25%. Schoenfeld & Aragon, J Int Soc Sports Nutr, 2018: 0.4-0.55 g/kg per pasto × 4 pasti optimal. Per utente 80kg: 32-44g proteine × 4 pasti.
+
+Cardio + strength vs solo cardio (Willis et al., J Appl Physiol, 2012, STRRIDE AT/RT trial): 8 mesi, overweight adulti. Solo aerobic -1.8kg fat, -0.1kg lean. Solo resistance +1.1kg lean, +0.8kg fat. Combinato -1.6kg fat, +1.0kg lean. Messaggio: cardio dimagrisce, ma combinare con forza preserva/costruisce lean mass.
+
+Metabolic adaptation & plateau (Trexler et al., J Int Soc Sports Nutr, 2014): dopo 4-6 settimane deficit aggressivo, RMR scende del 5-15% (oltre la quota attesa). Strategie: diet break 1-2 settimane a maintenance ogni 8-10 settimane, refeed carb a 5-8 g/kg 1x/settimana ripristina leptina + TSH (Dirlewanger 2000 JCEM), mantenere volume allenamento forza costante anche in deficit.
+
+Implicazione per il coach: se obiettivo peso è dichiarato, proporre target -0.5 kg/settimana calcolato, protein intake 1.8-2.2 g/kg distribuito su 3-4 pasti, mantenere 2 sessioni forza/settimana anche se volume cardio aumenta, pianificare diet break ogni 8 settimane come NORMA non come sconfitta. Warning: <1.6 g/kg proteine in deficit = perdita lean mass accelerata, sabota long-term metabolic health.`,
+    primaryCitation: "Helms 2014 (JISSN) + Garthe 2011 (IJSNEM)",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/24864135/",
+      "https://pubmed.ncbi.nlm.nih.gov/21558571/",
+      "https://pubmed.ncbi.nlm.nih.gov/22644898/"
+    ]
+  },
+  {
+    id: "sec-31-nutrition-practical-timing",
+    sectionNumber: 31,
+    title: "Nutrizione pratica — timing pre/post-workout, caffeina, creatina",
+    topics: ["nutrition timing", "pre workout", "post workout", "Burke", "anabolic window", "Schoenfeld", "caffeina", "Goldstein ISSN", "creatina", "Kreider", "Sawka idratazione", "alcohol MPS"],
+    content: `Oltre al chunk 13 (limiti del coach su nutrizione), questo chunk fornisce evidenza pratica per timing specifico.
+
+Pre-workout carbs (Burke et al., J Sports Sci, 2011): per endurance ≥60min, 1-4 g/kg carbs 1-4h prima. Per utente 80kg: 80-320g carbs 1-4h pre. Per corsa <60min o forza, 0.5-1 g/kg 30-60min prima è sufficiente. Preferire carbs low-to-medium GI per durate >90min, higher GI per <60min.
+
+Post-workout anabolic window (Schoenfeld et al., J Int Soc Sports Nutr, 2013, narrative review; Aragón & Schoenfeld 2013): il mito della finestra 30-60min è stato smontato. Per persone che hanno consumato proteine 1-2h pre-workout, timing post-workout è largamente irrilevante. Per digiuno pre-workout, finestra estesa 4-6h post. Implicazione pratica: il pasto che conta è quello nelle 24h, non i 60min post-session.
+
+Idratazione durante esercizio (Sawka et al., ACSM Position Stand, 2007): 400-800 mL/h in base a sudorazione. Test pratico: pesarsi pre/post sessione, ogni kg perso ≈ 1L fluidi. Elettroliti (Na+ 300-700 mg/h) necessari solo per durate >90min o caldo >28°C. Iperidratazione (bere troppo in eventi endurance) → iponatremia sintomatica, rischio documentato (Almond 2005 NEJM su maratoneti).
+
+Caffeina ergogenica (Goldstein et al., ISSN position stand, J Int Soc Sports Nutr, 2010; Grgic 2018 meta): 3-6 mg/kg 30-60min prima di endurance o team sport produce miglioramento performance 2-5%, strength 5-7%. Utente 80kg: 240-480mg (3-6 tazzine espresso). Tolleranza sviluppa in 4-7 giorni di uso cronico. Cautela: sensibilità individuale, sconsigliata >400mg/die (FDA safety), evitare <6h pre-sleep (disrupts sleep architecture).
+
+Creatina monoidrato (Kreider et al., ISSN position stand, J Int Soc Sports Nutr, 2017): 3-5 g/die costante, NO loading necessario (satura muscolo in 3-4 settimane comunque). Benefici validati: +5-15% forza e potenza, +1-2kg lean mass per saturazione intracellulare. Safe: oltre 20 anni di evidenza in sani, no effetti renali dannosi. Mito acqua "ritenzione": è intracellulare (muscolo), non sottocutanea.
+
+Alcohol post-workout (Parr et al., PLOS ONE, 2014): 1.5 g/kg alcol post-resistance training riduce MPS -37% per 24h nonostante intake proteico adeguato. 1 birra (500ml al 5%) ≈ 20g alcol (0.25 g/kg per utente 80kg) = riduzione modesta. 4+ birre = effetto significativo. Timing: preferire 24-36h di distanza da sessione chiave (gara, test).
+
+Implicazione per il coach: in risposte chat su domande nutrizione/timing, usare questi range concreti. Evitare di spingere supplementazione (creatina/caffeina sono efficaci ma opzionali). Warning: ogni raccomandazione nutrizionale specifica deve accompagnarsi a "queste sono linee guida da evidenza; consulta nutrizionista sportivo per piano personalizzato".`,
+    primaryCitation: "Burke 2011 (JSS) + Schoenfeld 2013 (JISSN) + Kreider 2017 (JISSN)",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/21660839/",
+      "https://pubmed.ncbi.nlm.nih.gov/23360586/",
+      "https://pubmed.ncbi.nlm.nih.gov/28615996/"
+    ]
+  },
+  {
+    id: "sec-32-doms-management",
+    sectionNumber: 32,
+    title: "DOMS — meccanismo, gestione, repeated bout effect",
+    topics: ["DOMS", "muscle soreness", "indolenzimento", "Proske", "Chen", "eccentric", "repeated bout effect", "Hortobagyi", "allenarsi con DOMS", "distinzione infortunio"],
+    content: `DOMS (delayed onset muscle soreness) appare 24-72h dopo attività non abituale (tipicamente eccentrica). Il coach aiuta l'utente a distinguerlo da infortunio e a gestirlo.
+
+Meccanismo (Proske & Morgan, J Physiol, 2001; Nosaka 2002): microtrauma strutturale a livello sarcomerico (z-disk disruption) da contrazioni eccentriche → risposta infiammatoria locale + sensibilizzazione nocicettori → dolore ritardato. Picco 48-72h, risolto entro 5-7 giorni. NON è acido lattico (mito sfatato anni '80).
+
+Allenarsi con DOMS (Chen et al., Eur J Appl Physiol, 2009): DOMS lieve (<3/10 dolore) NON aumenta rischio infortunio in sessione successiva. Performance ridotta ~5-10% ma non pericolosa. DOMS severo (>5/10) con riduzione ROM >20%: raccomandato riposo o solo cardio leggero in Z1 (non eccentrico). Warning clinico: se dolore localizzato puntiforme (vs diffuso muscolare), gonfiore visibile, o calore cutaneo → NON è DOMS, è probabile infortunio (strain).
+
+Repeated bout effect (McHugh, Scand J Med Sci Sports, 2003): primo stimolo eccentrico produce DOMS forte; stesso stimolo ripetuto dopo 1-2 settimane produce DOMS molto ridotto (-50-80%). Adattamento neurologico + strutturale + rimodellamento cytoskeletal. Pratico: prima sessione di un nuovo movimento sarà peggio; persevera 2-3 sessioni distanziate 5-7gg e il DOMS scompare.
+
+Distinzione DOMS vs infortunio. DOMS: dolore diffuso bilaterale (o nel muscolo allenato), rigidità al movimento, ROM ridotto ma migliora con warm-up. Infortunio strain: dolore puntiforme, spesso unilaterale, compare durante/subito dopo esercizio, peggiora con movimento specifico, possibile gonfiore/ecchimosi. Tendinopatia: dolore focale su inserzione tendine, peggiora a freddo (caffè del mattino), migliora con warm-up, peggiora di nuovo dopo sessione.
+
+Strategie gestione (Dupuy et al., Front Physiol, 2018, meta-analisi 99 studi): massaggio effect size 0.54 su DOMS (migliore), foam rolling 0.34, cold water immersion 0.30, stretching post-exercise effect trascurabile (0.12). Sonno adeguato (7-9h) e proteine 1.6+ g/kg accelerano recupero. NSAID routinari sconsigliati (Schoenfeld 2012: bloccano adattamento proteosintetico).
+
+Implicazione per il coach: quando l'utente riporta RPE alto + soreness il giorno dopo una sessione, il coach non deve allarmarsi se è la prima sessione di un nuovo stimolo. Se DOMS persiste >5 giorni o dolore localizzato puntiforme: sospetto infortunio, sospendere e valutare. In piani: distribuire sessioni eccentriche (forza polpaccio, discese) con almeno 48-72h tra stimoli sullo stesso muscolo. Warning: primo mese di un nuovo programma forza → DOMS normale, non scoraggiarsi; dopo 3-4 settimane si attenua.`,
+    primaryCitation: "Proske 2001 (J Physiol) + Chen 2009 (EJAP)",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/11731588/",
+      "https://pubmed.ncbi.nlm.nih.gov/19050918/",
+      "https://pubmed.ncbi.nlm.nih.gov/29713282/"
+    ]
+  },
+  {
+    id: "sec-33-allergie-esercizio",
+    sectionNumber: 33,
+    title: "Allergie stagionali e antistaminici — impatto su training",
+    topics: ["allergie", "rinite allergica", "antistaminici", "EIB", "exercise-induced bronchoconstriction", "cetirizina", "loratadina", "performance VO2", "cortisolo"],
+    content: `Per l'utente che soffre di allergie stagionali e usa antistaminici (es. cetirizina, loratadina), il coach considera l'impatto su performance e recupero.
+
+Rinite allergica e endurance (Katelaris et al., Curr Allergy Asthma Rep, 2013; Surda et al. 2017): congestione nasale → aumento work of breathing + shift a respirazione orale che riduce heat exchange e filtrazione allergeni, peggiorando ulteriormente i sintomi. Studi su atleti cross-country: VO2max ridotto 5-10% durante fase sintomatica acuta. Recupero post-sforzo rallentato (più stress cortisolo).
+
+Exercise-induced bronchoconstriction / EIB (Parsons et al., Am J Respir Crit Care Med, 2013 ATS guideline): spasmo bronchiale post-esercizio intenso, prevalenza atleti endurance 30-50%, generale 10-20%. Sintomi: dispnea, tosse, wheezing nei 5-15min post-esercizio. Fattori triggering: aria fredda/secca, inquinanti, pollini. Diagnosi richiede medico (test broncoprovocazione). Se sospetto: evitare Z5 VO2max in giornate con alta concentrazione allergeni.
+
+Antistaminici H1 di seconda generazione (cetirizina, loratadina, fexofenadina, desloratadina): non sedativi, non impattano significativamente performance cognitive o fisiche. Loratadina e fexofenadina hanno evidenza di neutralità assoluta su VO2max e tempo reazione (Tashiro 2008 review). Cetirizina: mild sedation in minoranza di utenti — monitorare.
+
+Antistaminici H1 di prima generazione (difenidramina, clorfenamina): SEDATIVI, riducono tempo reazione 15-30%, peggiorano performance in sport che richiedono agilità/decisioni (tennis, calcio). Da EVITARE in sessioni tecniche.
+
+Timing assunzione vs allenamento (Scadding et al., Clin Exp Allergy, 2008 guidelines): seconda generazione → effetto pieno 1-3h post-assunzione, durata 24h. Assumere al mattino copre allenamenti pomeridiani-serali. Se picco pollinico mattutino (ore 5-10), pre-dose sera prima migliora controllo sintomi.
+
+Cortisonici topici nasali (budesonide, mometasone): NON hanno effetto performance. Cortisonici sistemici (prednisone per allergia severa): sì, impatto catabolico muscolare a dosi >20mg/die per >1 settimana — segnalare al coach se in corso.
+
+Implicazione per il coach: se l'utente dichiara uso antistaminici in giorni sintomatici, il coach accetta che RPE potrebbe essere aumentato di 1-2 punti a parità di carico e VO2 apparente ridotto 5-10%. NON interpretare questo come overtraining. Sessioni Z5 VO2max: consigliare di spostarle a giorni meno sintomatici. Warning: sintomi respiratori nuovi/peggiorati durante esercizio in utente con allergie → NON normalizzare, consigliare valutazione pneumologica per EIB.`,
+    primaryCitation: "Tashiro 2008 (review antistaminici & performance) + Parsons 2013 (ATS EIB)",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/18315547/",
+      "https://pubmed.ncbi.nlm.nih.gov/23634861/",
+      "https://pubmed.ncbi.nlm.nih.gov/28460296/"
+    ]
+  },
+  {
+    id: "sec-34-stretching-mobility",
+    sectionNumber: 34,
+    title: "Stretching & mobility — dinamico pre, statico post, PNF, foam rolling",
+    topics: ["stretching", "mobility", "static", "dynamic", "PNF", "Behm", "foam rolling", "self-myofascial release", "Wiewelhove", "warm-up", "cool down"],
+    content: `Il coach suggerisce stretching e mobility in modo evidence-based, distinguendo pre/post sessione e obiettivi.
+
+Static stretching PRIMA di esercizio esplosivo (Behm et al., Appl Physiol Nutr Metab, 2016, review 125 studi): static stretching >60s pre-exercise riduce forza massimale 4-8%, potenza 2-5%, velocità sprint 1-3%. Effetto transitorio (20-30min). Static stretching <45s pre-exercise ha effetto trascurabile. Conclusione: per sport di forza/potenza/sprint, evitare static stretch >60s immediato pre-session.
+
+Dynamic stretching pre (Behm 2016 + Opplert & Babault, Sports Med, 2018): dynamic stretching (swing arti controllato, leg swings, walking lunges 10-20 rip) migliora performance 2-5% su forza-velocità + aumenta ROM senza penalty. Raccomandato come warm-up attivo in sostituzione del static classico. Combinare 5min cardio leggero + 5-10min dynamic drills.
+
+Static stretching POST-exercise o in sessione dedicata: se obiettivo è aumento ROM, 3-5 rip × 30-60s × 3-5x/settimana produce gain 5-15° ROM in 4 settimane (Medeiros 2016 meta). Sicuro e senza downside di performance (eseguito lontano da performance).
+
+PNF (proprioceptive neuromuscular facilitation), contract-relax e hold-relax: effetti simili o lievemente superiori a static per ROM (Hindle 2012 review). Richiede partner o set-up specifico — meno pratico.
+
+Foam rolling / self-myofascial release (Wiewelhove et al., Front Physiol, 2019, meta-analisi 21 studi): pre-exercise migliora flessibilità transitoria SENZA penalty di performance (vantaggio vs static). Post-exercise: riduce DOMS (effect size 0.34), accelera recupero percepito. Claims su rilascio fasciale vero (collagene) NON supportati dalla scienza — meccanismo è probabilmente inibizione neurale + aumento flusso. Pratica: 30-60s per area tesa, pre o post sessione.
+
+Stretching e prevenzione infortuni (Small et al., Res Sports Med, 2008 meta + Lauersen 2014 Br J Sports Med): static stretching generale NON riduce incidence infortuni (unlike opinion comune). Strength training eccentrico sì (-48% injuries). Implicazione: dedicare i 10min pre-session a dynamic drills + 10min post-session a static mirato NON è prevention per infortuni, è maintenance di ROM.
+
+Implicazione per il coach: nei piani, proporre warm-up 10min dynamic (leg swings, carioca, skip, lunges) prima di corsa/forza. Post-session: 5-10min static stretching dei muscoli principali lavorati. Sessione mobility dedicata 1x/settimana se l'utente riporta rigidità. Warning: se utente dichiara "allungo sempre prima di correre" con static prolungati, suggerire switch a dynamic — performance immediata migliorerà.`,
+    primaryCitation: "Behm 2016 (Appl Physiol Nutr Metab, stretching review)",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/26642915/",
+      "https://pubmed.ncbi.nlm.nih.gov/29589749/",
+      "https://pubmed.ncbi.nlm.nih.gov/31164822/"
+    ]
+  },
+  {
+    id: "sec-35-readiness-cmj",
+    sectionNumber: 35,
+    title: "Readiness scoring — wellness questionnaire, CMJ, freshness scientifica",
+    topics: ["readiness", "freshness", "wellness questionnaire", "Saw", "McLean", "RESTQ", "CMJ", "counter-movement jump", "Claudino", "neuromuscular fatigue", "Hooper"],
+    content: `L'app traccia freshness 1-10 nel check giornaliero. Questo chunk fornisce la base scientifica.
+
+Wellness questionnaire validity (Saw et al., Br J Sports Med, 2016, systematic review su 56 studi): questionari soggettivi (sleep quality, fatigue, muscle soreness, mood, stress) rispondono prima e più chiaramente a variazioni training load rispetto a misure oggettive (HR, HRV, cortisolo). Versione breve 5-item validata. Implicazione: freshness soggettiva non è inferiore a HRV o morning HR come proxy readiness.
+
+Hooper index (Hooper & Mackinnon, Sports Med, 1995; still validated Foster 2017): somma di 4 score 1-7 (sleep quality, fatigue, stress, DOMS). Score >20 su 28 → stato overreaching probabile, suggerire deload. Score 8-14 → ottimale. Formato semplice, alta compliance.
+
+CMJ (counter-movement jump) come proxy fatica neuromuscolare (Claudino et al., Scand J Med Sci Sports, 2017, meta-analisi 27 studi): drop in altezza CMJ >10% vs baseline individuale = fatica neuromuscolare significativa; 5-10% = monitoring; <5% = normale. Misurazione: salto con rincorsa libera, misurato con smartphone app o cronometro tempo volo. Frequenza: pre-sessione dura, 2x/settimana.
+
+Morning HR (RHR) come proxy (Buchheit, Front Physiol, 2014): elevazione RHR >5 bpm vs baseline per ≥3 giorni consecutivi suggerisce stress accumulato (simpatico dominant) o malattia imminente. RHR basso può indicare parasympathetic rebound post-overreaching (less reliable sign).
+
+HRV (heart rate variability) (Plews et al., Int J Sports Physiol Perform, 2013): RMSSD mattutino può guidare intensità training session-to-session. Trend >7 giorni più affidabile di daily reading (day-to-day variance 10-15% normale). Richiede device dedicato (strap polare, Whoop, Oura): non sempre pratico.
+
+Jack Daniels VDOT come proxy performance: correla pace a VO2max. Cambia negli stati di affaticamento vs baseline, ma meno sensibile di CMJ per cambi giorno-a-giorno.
+
+Implicazione per il coach: il campo freshness 1-10 dell'utente è un segnale valido. Integrare con sleep quality e fatigue per score composito. Trigger di deload: freshness ≤3 per 3+ giorni, o morning HR +5bpm per 3+ giorni, o CMJ drop >10% se l'utente tracker. Nel feedback, NON sovrascrivere la percezione soggettiva con dati oggettivi opposti — sono complementari. Warning: readiness score scarso + mood depresso + calo performance >14 giorni → red flag overtraining, suggerire riposo 1-2 settimane e consulto.`,
+    primaryCitation: "Saw 2016 (Br J Sports Med) + Claudino 2017 (SJMSS)",
+    links: [
+      "https://pubmed.ncbi.nlm.nih.gov/26701923/",
+      "https://pubmed.ncbi.nlm.nih.gov/27629813/",
+      "https://pubmed.ncbi.nlm.nih.gov/24353105/"
+    ]
   }
 ];

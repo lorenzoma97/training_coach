@@ -29,7 +29,11 @@ export async function retrieveRelevantChunks(params: {
   topK?: number;
   minScore?: number;
 }): Promise<RetrievalResult[]> {
-  const { query, topK = 3, minScore = 0.55 } = params;
+  // minScore alzato da 0.55 → 0.60 con la KB v3 (37 chunks): più chunks
+  // significa maggior rischio di false-positive match tangenziali. Soglia
+  // più selettiva mantiene precisione a scapito di recall (preferibile: se
+  // nessun chunk passa, il coach risponde da conoscenza interna — spesso ok).
+  const { query, topK = 3, minScore = 0.60 } = params;
   if (!query.trim()) return [];
   if (!hasApiKey()) return [];
   // Se il provider corrente non supporta embeddings, salta RAG silenziosamente.
