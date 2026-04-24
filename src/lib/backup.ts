@@ -115,14 +115,20 @@ function validateNestedShape(payload: { data: Record<string, unknown> }): string
         return `Giorno "${date}": non è un oggetto valido.`;
       }
       const day = dayData as Record<string, unknown>;
-      if (day.workouts !== undefined && !Array.isArray(day.workouts)) {
+      if (day.workouts !== undefined && day.workouts !== null && !Array.isArray(day.workouts)) {
         return `Giorno "${date}": campo "workouts" deve essere un array.`;
       }
+      // day.daily: null è SEMANTICAMENTE EQUIVALENTE a "non presente" (l'utente
+      // non ha compilato il check giornaliero) — il codice dell'app produce
+      // legittimamente `daily: null` quando si salva un workout su un giorno
+      // senza check daily. Tolleriamo null/undefined indifferentemente;
+      // rifiutiamo solo tipi realmente sbagliati (stringa, array, numero).
       if (
         day.daily !== undefined &&
-        (day.daily === null || typeof day.daily !== "object" || Array.isArray(day.daily))
+        day.daily !== null &&
+        (typeof day.daily !== "object" || Array.isArray(day.daily))
       ) {
-        return `Giorno "${date}": campo "daily" deve essere un oggetto.`;
+        return `Giorno "${date}": campo "daily" deve essere un oggetto o null.`;
       }
     }
   }
