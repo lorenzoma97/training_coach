@@ -203,11 +203,18 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   };
 
   const wipeDiary = async () => {
-    if (!confirm("Cancellare TUTTI i dati del diario (sessioni + check giornalieri)? Operazione irreversibile.")) return;
-    const keys = await storage.keys("day:");
-    for (const k of keys) await storage.delete(k);
+    // Typed-confirm: cancellazione totale è irreversibile. Prompt nativo non
+    // basta (troppo facile click accidentale). Richiede digitazione esplicita.
+    const dayKeys = await storage.keys("day:");
+    const count = dayKeys.length;
+    const input = prompt(
+      `Stai per eliminare ${count} giorni di diario (sessioni + check). L'operazione è DEFINITIVA.\n\n` +
+      `Per confermare, scrivi esattamente: CONFERMO`
+    );
+    if (input?.trim() !== "CONFERMO") return;
+    for (const k of dayKeys) await storage.delete(k);
     await storage.delete("diary-index");
-    alert("Diario cancellato.");
+    alert(`✓ Diario cancellato (${count} giorni rimossi).`);
   };
 
   const labelStyle: React.CSSProperties = { fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" };

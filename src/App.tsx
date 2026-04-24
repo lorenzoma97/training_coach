@@ -6,6 +6,7 @@ import OnboardingWizard from "./pages/OnboardingWizard";
 import TrendsPage from "./pages/TrendsPage";
 import ProactiveFeedback from "./components/ProactiveFeedback";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { NotificationHost, useNotify } from "./components/Notification";
 import { getJSON, setJSON, safeBool } from "./lib/storage";
 import { maybeRunWeeklyReport } from "./lib/scheduler";
 import type { CoachFeedItem } from "./lib/types";
@@ -16,33 +17,43 @@ import { checkPendingRestore, clearPendingRestoreFlag } from "./lib/backup";
 type Tab = "diary" | "trends" | "coach" | "settings";
 const LAST_SEEN_KEY = "coach-feed-last-seen";
 
-interface GlobalToast { id: string; tone: "info" | "warn"; text: string; ts: number }
-
+// Wrapper top-level: NotificationHost fornisce il context per tutti i
+// componenti che usano useNotify(). Tenere qui (e non dentro AppShell)
+// evita che la rimozione di toast causi re-mount dei children.
 export default function App() {
+  return (
+    <NotificationHost>
+      <AppShell />
+    </NotificationHost>
+  );
+}
+
+function AppShell() {
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("diary");
   const [unreadCoach, setUnreadCoach] = useState(0);
-  const [toasts, setToasts] = useState<GlobalToast[]>([]);
   const online = useOnline();
+  const { notify } = useNotify();
 
-  // Toast globali per eventi di sistema (migrazione modello, fallback LLM, quota).
-  // Ascolta bus eventi e rimuove automaticamente dopo 8 secondi.
+  // Toast globali per eventi di sistema (migrazione modello, fallback LLM).
+  // Usa NotificationHost unificato invece di stack bespoke.
   useEffect(() => {
-    const pushToast = (tone: "info" | "warn", text: string) => {
-      const t: GlobalToast = { id: Math.random().toString(36).slice(2, 9), tone, text, ts: Date.now() };
-      setToasts(prev => [...prev, t]);
-      setTimeout(() => setToasts(prev => prev.filter(x => x.id !== t.id)), 8000);
-    };
     const offMig = events.on("llm:migrated", p => {
-      pushToast("info", `Modello ${p.fromModelId} deprecato: migrato automaticamente a ${p.toModelId}.`);
+      notify({
+        tone: "info",
+        title: "Modello migrato",
+        message: `Modello ${p.fromModelId} deprecato: migrato automaticamente a ${p.toModelId}.`,
+      });
     });
     const offFb = events.on("llm:fallbackActivated", p => {
-      pushToast("warn", `Modello ${p.primary} momentaneamente occupato — uso ${p.fallback}.`);
+      notify({
+        tone: "warning",
+        title: "Fallback attivato",
+        message: `Modello ${p.primary} momentaneamente occupato — uso ${p.fallback}.`,
+      });
     });
     return () => { offMig(); offFb(); };
-  }, []);
-
-  const dismissToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
+  }, [notify]);
 
   useEffect(() => {
     (async () => {
@@ -164,33 +175,6 @@ export default function App() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const toastStack = toasts.length > 0 && (
-    <div style={{
-      position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)",
-      zIndex: 80, display: "flex", flexDirection: "column", gap: "8px",
-      maxWidth: "92vw", width: "420px",
-    }} role="region" aria-label="Notifiche di sistema">
-      {toasts.map(t => (
-        <div key={t.id} role="status" style={{
-          background: t.tone === "warn" ? "#78350F" : "#1E3A5F",
-          color: t.tone === "warn" ? "#FEF3C7" : "#CBD5E1",
-          border: `1px solid ${t.tone === "warn" ? "#92400E" : "#3B82F680"}`,
-          borderRadius: "10px", padding: "10px 12px",
-          fontSize: "13px", lineHeight: 1.4,
-          display: "flex", alignItems: "flex-start", gap: "10px",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
-          animation: "slideDown 0.2s ease",
-        }}>
-          <span style={{ flex: 1 }}>{t.text}</span>
-          <button onClick={() => dismissToast(t.id)} aria-label="Chiudi" style={{
-            background: "transparent", border: "none", color: "inherit",
-            cursor: "pointer", fontSize: "16px", padding: "0 4px", lineHeight: 1,
-          }}>×</button>
-        </div>
-      ))}
-    </div>
-  );
-
   if (onboarded === null) {
     return <div style={{ padding: "40px", textAlign: "center", color: "#94A3B8" }}>Caricamento…</div>;
   }
@@ -199,7 +183,6 @@ export default function App() {
     return (
       <>
         <ProactiveFeedback />
-        {toastStack}
         <OnboardingWizard onDone={() => setOnboarded(true)} />
       </>
     );
@@ -208,7 +191,6 @@ export default function App() {
   return (
     <>
       <ProactiveFeedback />
-      {toastStack}
 
       {/* Banner offline globale */}
       {!online && (
