@@ -15,12 +15,20 @@ const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2
 
 const HISTORY_KEY = "coach-chat-history";
 
+// 10 scenari "starter" coprono il maggior cluster di domande tipiche.
+// Raggruppati mentalmente: 1-3 stato/aderenza · 4-5 dolore/recovery ·
+// 6-7 zone/intensità · 8-9 trend/progressi · 10 strategia evento.
 const QUICK_PROMPTS = [
   "Come sta andando la settimana?",
   "Devo riposare domani?",
-  "Analizza la corsa di oggi",
+  "Analizza l'ultimo allenamento",
+  "Come gestire la stanchezza di oggi?",
   "Come sta il polpaccio?",
-  "Proponimi la sessione di domani",
+  "Spiegami le mie zone FC",
+  "Posso aumentare il carico settimanale?",
+  "Sto migliorando? Mostrami i progressi",
+  "Cosa dicono i dati di sonno e recupero?",
+  "Strategia per la prossima gara o torneo",
 ];
 
 export default function CoachChat() {
@@ -326,14 +334,23 @@ DOMANDA UTENTE: ${text}
       )}
 
       {messages.length === 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
-          {QUICK_PROMPTS.map(p => (
-            <button key={p} onClick={() => send(p)} style={{
-              background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: "999px", padding: "8px 14px", fontSize: "12px",
-              color: "#CBD5E1", cursor: "pointer", minHeight: "36px",
-            }}>{p}</button>
-          ))}
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{
+            fontSize: "11px", color: "#94A3B8",
+            letterSpacing: "0.12em", textTransform: "uppercase",
+            fontWeight: 700, marginBottom: "8px",
+          }}>
+            💡 Suggerimenti per iniziare
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {QUICK_PROMPTS.map(p => (
+              <button key={p} onClick={() => send(p)} style={{
+                background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: "999px", padding: "8px 14px", fontSize: "12px",
+                color: "#CBD5E1", cursor: "pointer", minHeight: "36px",
+              }}>{p}</button>
+            ))}
+          </div>
         </div>
       )}
 
