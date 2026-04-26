@@ -86,6 +86,25 @@ export default function TrendsPage() {
     const bodyFat = fieldSeries(d => toNum(d?.daily?.bodyFat));
     const muscleMass = fieldSeries(d => toNum(d?.daily?.muscleMass));
     const bodyWater = fieldSeries(d => toNum(d?.daily?.bodyWater));
+    // Recovery markers: FC mattino + freschezza percepita (Saw 2016: questionari
+    // soggettivi validi quanto HRV per overtraining detection).
+    const morningHR = fieldSeries(d => toNum(d?.daily?.morningHR));
+    const morningFreshness = fieldSeries(d => toNum(d?.daily?.morningFreshness));
+
+    // FC mattino baseline: media degli ultimi 30 giorni (full window). Alert se
+    // la media degli ultimi 7gg supera baseline +5bpm cronicamente (Plews 2014:
+    // segnale di accumulo fatigue / overreaching). Solo se ≥10 punti baseline.
+    let morningHRAlert: { baseline: number; recent: number; deltaBpm: number } | null = null;
+    {
+      const allHR = morningHR.map(p => p.value).filter((v): v is number => v != null);
+      const recentHR = morningHR.slice(-7).map(p => p.value).filter((v): v is number => v != null);
+      if (allHR.length >= 10 && recentHR.length >= 4) {
+        const baseline = allHR.reduce((a, b) => a + b, 0) / allHR.length;
+        const recent = recentHR.reduce((a, b) => a + b, 0) / recentHR.length;
+        const deltaBpm = recent - baseline;
+        if (deltaBpm >= 5) morningHRAlert = { baseline: Math.round(baseline), recent: Math.round(recent), deltaBpm: Math.round(deltaBpm * 10) / 10 };
+      }
+    }
 
     // Volume per giorno (totale minuti di tutti i workouts)
     const dailyVolume = fieldSeries(d => {
@@ -201,14 +220,44 @@ export default function TrendsPage() {
       }
     }
 
+    // Delta vs periodo precedente: confronta gli ultimi N gg con i precedenti N gg.
+    // Aiuta l'utente a vedere "sto migliorando o peggiorando vs prima?".
+    // Skip se non ci sono dati nel periodo precedente (delta = null → no badge).
+    const prevPeriodStart = new Date(today);
+    prevPeriodStart.setDate(today.getDate() - period * 2 + 1);
+    const prevPeriodEnd = new Date(today);
+    prevPeriodEnd.setDate(today.getDate() - period);
+    const fmtKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const prevStartKey = fmtKey(prevPeriodStart);
+    const prevEndKey = fmtKey(prevPeriodEnd);
+    const prevDays = allDays.filter(d => d.date >= prevStartKey && d.date <= prevEndKey);
+    let prevSessions = 0, prevTotalMin = 0;
+    for (const d of prevDays) {
+      prevSessions += d.workouts?.length || 0;
+      for (const w of d.workouts || []) {
+        const m = Number(w.fields?.durata_totale || w.fields?.durata || 0);
+        if (Number.isFinite(m)) prevTotalMin += m;
+      }
+    }
+    const computeDelta = (cur: number, prev: number): number | null => {
+      if (prev <= 0) return null; // niente baseline → no badge
+      return Math.round(((cur - prev) / prev) * 100);
+    };
+    const deltas = {
+      sessions: computeDelta(sessions, prevSessions),
+      totalMin: computeDelta(totalMin, prevTotalMin),
+    };
+
     return {
       weight, sleep, fatigue,
       bodyFat, muscleMass, bodyWater,
+      morningHR, morningFreshness, morningHRAlert,
       dailyVolume, dailyRpeAvg,
       painByArea,
       runPaceSeries, runHRSeries, runCadenceSeries, runEfSeries, runDurationSeries,
       hasRunningData,
       stats: { sessions, totalMin, checkins, periodDays: period, days: days.length },
+      deltas,
       typeCount,
       error: null as string | null,
     };
@@ -218,12 +267,14 @@ export default function TrendsPage() {
     return {
       weight: empty, sleep: empty, fatigue: empty,
       bodyFat: empty, muscleMass: empty, bodyWater: empty,
+      morningHR: empty, morningFreshness: empty, morningHRAlert: null as null | { baseline: number; recent: number; deltaBpm: number },
       dailyVolume: empty, dailyRpeAvg: empty,
       painByArea: [] as Array<{ area: string; series: SparklinePoint[] }>,
       runPaceSeries: empty, runHRSeries: empty, runCadenceSeries: empty,
       runEfSeries: empty, runDurationSeries: empty,
       hasRunningData: false,
       stats: { sessions: 0, totalMin: 0, checkins: 0, periodDays: period, days: 0 },
+      deltas: { sessions: null as number | null, totalMin: null as number | null },
       typeCount: {} as Record<string, number>,
       error: String(e?.message || e),
     };
@@ -277,10 +328,10 @@ export default function TrendsPage() {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          {/* Stats summary */}
+          {/* Stats summary con delta vs periodo precedente (stessa lunghezza). */}
           <div style={{ ...cardStyle, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
-            <Stat label="Sessioni" value={series.stats.sessions} />
-            <Stat label="Minuti totali" value={series.stats.totalMin} />
+            <Stat label="Sessioni" value={series.stats.sessions} delta={series.deltas.sessions} />
+            <Stat label="Minuti totali" value={series.stats.totalMin} delta={series.deltas.totalMin} />
             <Stat label="Dati biometrici" value={`${series.stats.checkins}/${series.stats.days}`} />
           </div>
 
@@ -409,6 +460,31 @@ export default function TrendsPage() {
             <Sparkline points={series.fatigue} width={width - 32} color="#EF4444" yMin={0} yMax={10} />
           </div>
 
+          {/* FC mattino + alert overreaching: Plews 2014 (HRV/RHR markers).
+              Nascondi card se zero punti (campo opzionale, non tutti lo registrano). */}
+          {series.morningHR.some(p => p.value != null) && (
+            <div style={cardStyle}>
+              <SectionHeader title="FC mattino (a riposo)" hint="bpm — più bassa = miglior recovery" color="#DC2626" />
+              <Sparkline points={series.morningHR} width={width - 32} color="#DC2626" unit=" bpm" />
+              {series.morningHRAlert && (
+                <div role="alert" style={{
+                  marginTop: "10px", padding: "10px 12px",
+                  background: "#7F1D1D40", border: "1px solid #EF444466",
+                  borderRadius: "8px", fontSize: "12px", color: "#FCA5A5", lineHeight: 1.5,
+                }}>
+                  ⚠ <b>FC riposo elevata</b> — media ultimi 7gg {series.morningHRAlert.recent} bpm vs baseline {series.morningHRAlert.baseline} bpm (+{series.morningHRAlert.deltaBpm}). Possibile accumulo di fatica o stress: valuta una settimana di scarico, sonno e idratazione.
+                </div>
+              )}
+            </div>
+          )}
+
+          {series.morningFreshness.some(p => p.value != null) && (
+            <div style={cardStyle}>
+              <SectionHeader title="Freschezza percepita al risveglio" hint="1-10, più alta = meglio" color="#22C55E" />
+              <Sparkline points={series.morningFreshness} width={width - 32} color="#22C55E" yMin={0} yMax={10} />
+            </div>
+          )}
+
           {/* Body comp (solo se dati) */}
           {series.bodyFat.some((p: any) => p.value != null) && (
             <div style={cardStyle}>
@@ -440,11 +516,24 @@ export default function TrendsPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number | string }) {
+function Stat({ label, value, delta }: { label: string; value: number | string; delta?: number | null }) {
+  // Delta badge: ↑ verde se positivo, ↓ rosso se negativo, nascosto se null o 0.
+  // Soglia ±2% per evitare jitter su micro-variazioni (es. 30 → 31 sessioni = 3.3%).
+  const showDelta = delta !== undefined && delta !== null && Math.abs(delta) >= 2;
+  const isPositive = (delta ?? 0) > 0;
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ fontSize: "20px", fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>{value}</div>
       <div style={{ fontSize: "10px", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "2px" }}>{label}</div>
+      {showDelta && (
+        <div title="Variazione vs periodo precedente di pari durata" style={{
+          fontSize: "10px", marginTop: "3px",
+          color: isPositive ? "#22C55E" : "#F87171",
+          fontFamily: "'JetBrains Mono', monospace", fontWeight: 700,
+        }}>
+          {isPositive ? "↑" : "↓"} {Math.abs(delta!)}%
+        </div>
+      )}
     </div>
   );
 }
