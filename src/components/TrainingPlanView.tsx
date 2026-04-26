@@ -11,6 +11,7 @@ import { savePlanWithHistory, getPlanHistory } from "../lib/coach/planHistory";
 import ZonesCard from "./ZonesCard";
 import { computeZonesContext, inferSessionZone, stripInlineHRRange, type ZonesResult } from "../lib/coach/zones";
 import type { PlannedSession } from "../lib/types";
+import { useNotify } from "./Notification";
 
 const ADAPT_QUICK_PROMPTS = [
   "Più intenso",
@@ -55,17 +56,37 @@ export default function TrainingPlanView() {
     };
   }, [regenerating, adapting]);
 
-  // Notifica successo post-update
-  const [successMsg, setSuccessMsg] = useState<{ title: string; rationale: string } | null>(null);
-  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (successTimerRef.current) clearTimeout(successTimerRef.current);
-  }, []);
+  // Notifica successo post-update: popup modale persistente (X + click-outside + Esc).
+  // Scartato l'auto-dismiss banner: l'utente non ha tempo di leggere il rationale
+  // (spesso 2-3 frasi) prima che scompaia. Popup forza dismiss esplicito.
+  const { notify } = useNotify();
+
+  // Split il rationale in bullet per la UI. L'LLM spesso produce paragrafi
+  // densi; spezzettare per frase aumenta scanability (audit UI: rationale
+  // era un blob di testo difficile da leggere a colpo d'occhio).
+  // 1° tentativo: split su newline (LLM recenti usano newline esplicite).
+  // 2° tentativo: split su periodo + spazio (rationale tradizionali).
+  const rationaleToBullets = (text: string): string[] => {
+    if (!text) return [];
+    const byNewline = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
+    if (byNewline.length > 1) return byNewline;
+    const bySentence = text.split(/(?<=[.!?])\s+(?=[A-ZÀÈÉÌÒÙ])/).map(s => s.trim()).filter(Boolean);
+    return bySentence.length > 1 ? bySentence : [text];
+  };
 
   const showSuccess = (title: string, rationale: string) => {
-    setSuccessMsg({ title, rationale });
-    if (successTimerRef.current) clearTimeout(successTimerRef.current);
-    successTimerRef.current = setTimeout(() => setSuccessMsg(null), 12000);
+    const bullets = rationaleToBullets(rationale);
+    // Popup message con bullet visuali ("• ") — PopupCard renderizza con pre-wrap.
+    const formattedMessage = bullets.length > 1
+      ? bullets.map(b => `• ${b}`).join("\n")
+      : rationale;
+    notify({
+      mode: "popup",
+      tone: "success",
+      title,
+      message: formattedMessage,
+      duration: null, // persistente, dismiss manuale
+    });
   };
 
   // isMounted guard: protegge da setState dopo unmount (tab switch veloce,
@@ -350,6 +371,12 @@ export default function TrainingPlanView() {
 
   const handleRegenerate = async (mode: "rest-of-week" | "next-week" = "next-week") => {
     if (regenerating) return;
+    // Guard offline: la generazione richiede LLM cloud. Evita errore network
+    // criptico dopo 10s di loading — messaggio immediato.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setRegenError("Offline. Riconnettiti per rigenerare il piano.");
+      return;
+    }
     setRegenPickerOpen(false);
     setRegenerating(true);
     setRegenError(null);
@@ -388,6 +415,10 @@ export default function TrainingPlanView() {
   const handleAdapt = async (requestText?: string) => {
     const req = (requestText ?? adaptRequest).trim();
     if (!req || adapting || !plan) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setAdaptError("Offline. Riconnettiti per adattare il piano.");
+      return;
+    }
     setAdapting(true);
     setAdaptError(null);
     try {
@@ -483,6 +514,24 @@ export default function TrainingPlanView() {
     return Math.floor(diffDays / 7) + 1; // 1-based
   })();
 
+  // "Chiedi al coach": emette chat:openWith con un prompt contestuale e naviga
+  // al tab Coach. Il listener in CoachChat precompila l'input (non auto-invia:
+  // l'utente può ancora editare).
+  const askCoachAboutSession = (s: PlannedSession, weekNumber: number) => {
+    const zoneStr = (() => {
+      const chip = zoneChipFor(s);
+      return chip ? ` (Z${chip.idx}, ${chip.low}-${chip.high} bpm)` : "";
+    })();
+    const prompt = [
+      `Parlami della sessione pianificata per ${s.day} (settimana ${weekNumber}):`,
+      `${s.type}${s.subtype ? ` · ${s.subtype}` : ""}, ${s.duration_min} minuti${zoneStr}.`,
+      s.details ? `Dettagli: ${stripInlineHRRange(s.details)}` : "",
+      `Cosa mi stai chiedendo esattamente? Come dovrei sentirmi durante/dopo? Come si collega ai miei obiettivi?`,
+    ].filter(Boolean).join("\n");
+    events.emit("chat:openWith", { prompt });
+    events.emit("nav:goto", { tab: "coach" });
+  };
+
   // Apre il diario in modalità "nuovo allenamento" pre-compilato con durata,
   // subtype (mappato al campo "tipo" del workout type) e note dal coach.
   // La data è calcolata dal piano (startDate + weekOffset + dayIndex).
@@ -525,35 +574,43 @@ export default function TrainingPlanView() {
   const isExpiringSoon = daysLeft <= 3;
   const isExpired = daysLeft === 0;
 
+  const rationaleBullets = rationaleToBullets(plan.rationale);
+  const isMultiBullet = rationaleBullets.length > 1;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-      {/* Banner notifica post-update */}
-      {successMsg && (
-        <div style={{
-          background: "#14532D", border: "1px solid #22C55E66",
-          borderRadius: "12px", padding: "14px 16px",
-          animation: "slideUp 0.25s ease",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-            <div style={{ fontSize: "13px", fontWeight: 700, color: "#22C55E", flex: 1 }}>{successMsg.title}</div>
-            <button onClick={() => setSuccessMsg(null)} aria-label="Chiudi" style={{
-              background: "transparent", border: "none", color: "#94A3B8",
-              cursor: "pointer", fontSize: "18px", lineHeight: 1, padding: "0 4px",
-            }}>×</button>
-          </div>
-          <div style={{ fontSize: "12px", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", fontWeight: 600 }}>
-            Cosa è cambiato
-          </div>
-          <div style={{ fontSize: "14px", color: "#E2E8F0", lineHeight: 1.5 }}>{successMsg.rationale}</div>
-        </div>
-      )}
+      {/* Banner success → ora via NotificationHost popup (vedi showSuccess) */}
 
       {/* Z2 in cima per avere il range bpm sempre visibile */}
       <ZonesCard compact highlightZone={2} />
 
-      <div style={{ background: "#16213E", borderRadius: "14px", padding: "16px 18px", borderLeft: "3px solid #E8553A" }}>
-        <div style={{ fontSize: "11px", color: "#94A3B8", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "6px", fontWeight: 600 }}>Razionale del piano</div>
-        <div style={{ fontSize: "14px", lineHeight: 1.5 }}>{plan.rationale}</div>
+      {/* Razionale piano: graphic distinta (icon + bullet list) vs prima (blob testo).
+          Ogni frase diventa un bullet con check-dot — più scannable in 2s. */}
+      <div style={{ background: "linear-gradient(135deg, #16213E 0%, #1A2B4E 100%)", borderRadius: "14px", padding: "18px 20px", border: "1px solid rgba(232, 85, 58, 0.25)", boxShadow: "0 4px 14px rgba(0,0,0,0.15)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+          <div aria-hidden="true" style={{
+            width: "28px", height: "28px", borderRadius: "8px",
+            background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: "15px", flexShrink: 0, boxShadow: "0 2px 6px rgba(232, 85, 58, 0.3)",
+          }}>🎯</div>
+          <div style={{ fontSize: "11px", color: "#E8553A", letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 800 }}>Razionale del piano</div>
+        </div>
+        {isMultiBullet ? (
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "8px" }}>
+            {rationaleBullets.map((b, i) => (
+              <li key={i} style={{ display: "flex", gap: "10px", alignItems: "flex-start", fontSize: "14px", lineHeight: 1.5, color: "#E2E8F0" }}>
+                <span aria-hidden="true" style={{
+                  width: "6px", height: "6px", borderRadius: "999px",
+                  background: "#E8553A", marginTop: "8px", flexShrink: 0,
+                }} />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div style={{ fontSize: "14px", lineHeight: 1.55, color: "#E2E8F0" }}>{plan.rationale}</div>
+        )}
       </div>
 
       {(isExpiringSoon || isExpired) && (
@@ -604,11 +661,52 @@ export default function TrainingPlanView() {
         </div>
       )}
 
-      {/* Sezione modifica piano — in alto, prima delle sessioni */}
+      {/* Sezione modifica piano — in alto, prima delle sessioni.
+          Contiene: Adatta con richiesta, Rigenera piano, e (se ci sono deviazioni)
+          CTA "Adatta alle deviazioni" integrato nella stessa card (prima era
+          una card separata → audit UI: duplicazione concetto "modifica piano"). */}
       <div style={{ background: "#16213E", borderRadius: "14px", padding: "16px 18px", border: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", gap: "10px" }}>
         <div style={{ fontSize: "11px", color: "#94A3B8", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600 }}>
           Modifica piano
         </div>
+
+        {/* CTA deviazioni: solo se ce ne sono. Integrato qui (prima era card esterna). */}
+        {!isExpired && hasDeviations && (
+          <div style={{
+            background: "#78350F20", border: "1px solid #F59E0B66",
+            borderRadius: "10px", padding: "10px 12px",
+            display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+          }}>
+            <div style={{ flex: 1, minWidth: "160px" }}>
+              <div style={{ fontSize: "12px", fontWeight: 700, color: "#F59E0B", marginBottom: "3px" }}>
+                Il piano si è discostato dalla realtà
+              </div>
+              <div style={{ fontSize: "11px", color: "#CBD5E1", lineHeight: 1.4 }}>
+                {[
+                  deviationCount.skipped > 0 ? `${deviationCount.skipped} sessioni saltate` : "",
+                  deviationCount.partial > 0 ? `${deviationCount.partial} con variazione` : "",
+                  deviationCount.extras > 0 ? `${deviationCount.extras} allenamenti autonomi` : "",
+                ].filter(Boolean).join(" · ")}. Riallinea il resto del piano a ciò che hai fatto.
+              </div>
+            </div>
+            <button
+              onClick={() => handleAdapt(buildDeviationRequest())}
+              disabled={adapting || regenerating}
+              style={{
+                padding: "9px 13px",
+                background: adapting ? "#1E293B" : "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)",
+                border: "none", borderRadius: "9px", color: "#FFF",
+                fontSize: "12px", fontWeight: 700,
+                cursor: adapting ? "wait" : "pointer",
+                opacity: (adapting || regenerating) ? 0.5 : 1,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {adapting ? `⏳ Adatto… ${llmElapsedSec}s` : "🔁 Adatta alle deviazioni"}
+            </button>
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); setRegenPickerOpen(false); }} disabled={adapting || regenerating} style={{ flex: "1 1 140px", padding: "10px 14px", background: adaptOpen ? "#E8553A22" : "#1A1A2E", border: adaptOpen ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#E8553A" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
             ✏ Adatta con richiesta
@@ -694,43 +792,6 @@ export default function TrainingPlanView() {
         )}
         {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
       </div>
-
-      {/* CTA "Adatta piano alle deviazioni" — compare solo se ci sono deviazioni */}
-      {!isExpired && hasDeviations && (
-        <div style={{
-          background: "#78350F20", border: "1px solid #F59E0B66",
-          borderRadius: "12px", padding: "12px 14px",
-          display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
-        }}>
-          <div style={{ flex: 1, minWidth: "180px" }}>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#F59E0B", marginBottom: "3px" }}>
-              Il piano si è discostato dalla realtà
-            </div>
-            <div style={{ fontSize: "11px", color: "#CBD5E1", lineHeight: 1.4 }}>
-              {[
-                deviationCount.skipped > 0 ? `${deviationCount.skipped} sessioni saltate` : "",
-                deviationCount.partial > 0 ? `${deviationCount.partial} con variazione` : "",
-                deviationCount.extras > 0 ? `${deviationCount.extras} allenamenti autonomi` : "",
-              ].filter(Boolean).join(" · ")}. Chiedi al coach di adattare il resto del piano alla realtà.
-            </div>
-          </div>
-          <button
-            onClick={() => handleAdapt(buildDeviationRequest())}
-            disabled={adapting || regenerating}
-            style={{
-              padding: "10px 14px",
-              background: adapting ? "#1E293B" : "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)",
-              border: "none", borderRadius: "10px", color: "#FFF",
-              fontSize: "12px", fontWeight: 700,
-              cursor: adapting ? "wait" : "pointer",
-              opacity: (adapting || regenerating) ? 0.5 : 1,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {adapting ? `⏳ Adatto… ${llmElapsedSec}s` : "🔁 Adatta alle deviazioni"}
-          </button>
-        </div>
-      )}
 
       {!isExpired && plan.weeks.map((w: TrainingPlan["weeks"][number]) => (
         <div key={w.weekNumber} style={{ background: "#16213E", borderRadius: "14px", padding: "18px 20px", border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -879,32 +940,54 @@ export default function TrainingPlanView() {
                   )}
                   <div style={{ color: "#CBD5E1", lineHeight: 1.5 }}>{stripInlineHRRange(s.details)}</div>
                   <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", marginTop: "6px", lineHeight: 1.5 }}>{s.rationale}</div>
-                  {!isCompleted && (
+                  {/* Action row: Registra (se non completata) + Chiedi al coach (sempre).
+                      SALTATA actionable: anche se isPast && !isCompleted, l'utente può
+                      ancora registrare retroattivamente o chiedere al coach come recuperarla. */}
+                  <div style={{ display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" }}>
+                    {!isCompleted && (
+                      <button
+                        onClick={() => registerFromPlan(s, w.weekNumber)}
+                        title={isPast
+                          ? "Registra questa sessione retrodatata (campi pre-compilati dal piano, modificabili)"
+                          : isToday
+                            ? "Registra questa sessione (campi pre-compilati dal piano, modificabili)"
+                            : "Registra in anticipo questa sessione (campi pre-compilati dal piano, modificabili)"
+                        }
+                        style={{
+                          padding: "9px 14px",
+                          background: isToday
+                            ? "linear-gradient(135deg, #E8553A 0%, #D44429 100%)"
+                            : isPast
+                              ? "#1E293B"
+                              : "transparent",
+                          border: isToday ? "none" : isPast ? "1px solid rgba(255,255,255,0.12)" : "1px solid #E8553A66",
+                          borderRadius: "10px",
+                          color: isToday ? "#FFF" : isPast ? "#CBD5E1" : "#E8553A",
+                          fontSize: "13px", fontWeight: 700, cursor: "pointer",
+                          display: "flex", alignItems: "center", gap: "6px",
+                          minHeight: "40px",
+                        }}
+                      >
+                        <span>+</span> Registra allenamento
+                      </button>
+                    )}
                     <button
-                      onClick={() => registerFromPlan(s, w.weekNumber)}
-                      title={isPast
-                        ? "Registra questa sessione retrodatata (campi pre-compilati dal piano, modificabili)"
-                        : isToday
-                          ? "Registra questa sessione (campi pre-compilati dal piano, modificabili)"
-                          : "Registra in anticipo questa sessione (campi pre-compilati dal piano, modificabili)"
-                      }
+                      onClick={() => askCoachAboutSession(s, w.weekNumber)}
+                      title="Apri la chat Coach con un prompt contestuale su questa sessione"
                       style={{
-                        marginTop: "10px", padding: "9px 14px",
-                        background: isToday
-                          ? "linear-gradient(135deg, #E8553A 0%, #D44429 100%)"
-                          : isPast
-                            ? "#1E293B"
-                            : "transparent",
-                        border: isToday ? "none" : isPast ? "1px solid rgba(255,255,255,0.12)" : "1px solid #E8553A66",
+                        padding: "9px 14px",
+                        background: "transparent",
+                        border: "1px solid rgba(14, 165, 233, 0.5)",
                         borderRadius: "10px",
-                        color: isToday ? "#FFF" : isPast ? "#CBD5E1" : "#E8553A",
+                        color: "#38BDF8",
                         fontSize: "13px", fontWeight: 700, cursor: "pointer",
                         display: "flex", alignItems: "center", gap: "6px",
+                        minHeight: "40px",
                       }}
                     >
-                      <span>+</span> Registra allenamento
+                      💬 Chiedi al coach
                     </button>
-                  )}
+                  </div>
                 </div>
               );
               });
@@ -923,7 +1006,7 @@ export default function TrainingPlanView() {
         }}>
           <span>📅</span>
           <span style={{ lineHeight: 1.5 }}>
-            La settimana prossima verrà rigenerata automaticamente lunedì sui tuoi dati reali, oppure puoi farlo ora con "Rigenera con dati recenti".
+            La settimana prossima verrà rigenerata automaticamente lunedì sui tuoi dati reali, oppure puoi farlo ora con "Rigenera piano".
           </span>
         </div>
       )}

@@ -26,6 +26,10 @@ export type EventMap = {
   "llm:fallbackActivated": { primary: string; fallback: string; reason: string };
   /** Emesso quando la chat history cambia (per sync cross-tab/componente). */
   "chat:historyChanged": { length: number };
+  /** Apre la chat Coach pre-compilando l'input con un prompt contestuale
+   *  (es. "parlami della sessione di mer"). Tipicamente accoppiato a
+   *  `nav:goto` tab="coach" dal chiamante. */
+  "chat:openWith": { prompt: string };
 };
 
 const listeners = new Map<keyof EventMap, Set<Handler<any>>>();
@@ -55,6 +59,8 @@ const PAYLOAD_VALIDATORS: Partial<Record<keyof EventMap, PayloadValidator>> = {
     !!p && typeof p === "object" && typeof (p as any).key === "string",
   "chat:historyChanged": (p) =>
     !!p && typeof p === "object" && typeof (p as any).length === "number",
+  "chat:openWith": (p) =>
+    !!p && typeof p === "object" && typeof (p as any).prompt === "string",
   "llm:migrated": (p) =>
     !!p && typeof p === "object" &&
     typeof (p as any).fromModelId === "string" &&

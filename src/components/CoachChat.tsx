@@ -67,6 +67,14 @@ export default function CoachChat() {
     // Cross-tab + cross-component sync: ricarica quando un'altra tab/mano modifica la history.
     const offExt = events.on("data:externalChange", e => { if (e.key === HISTORY_KEY) void loadHistory(); });
     const offChat = events.on("chat:historyChanged", () => { void loadHistory(); });
+    // Deep-link dalla vista Piano: "Chiedi al coach" precompila l'input con
+    // un prompt contestuale (sessione specifica). Non auto-invia — l'utente
+    // può editare prima di premere Invio.
+    const offOpenWith = events.on("chat:openWith", ({ prompt }) => {
+      setInput(prompt);
+      // scroll alla textarea dopo il prossimo tick
+      setTimeout(() => { taRef.current?.focus(); taRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 100);
+    });
     // Notifica fallback LLM (es. Gemini 3.1-preview 503 → 2.5-flash-lite)
     const offFb = events.on("llm:fallbackActivated", p => {
       setFallbackNotice(`Modello primario ${p.primary} momentaneamente occupato — sto usando ${p.fallback}.`);
@@ -88,6 +96,7 @@ export default function CoachChat() {
     return () => {
       offExt();
       offChat();
+      offOpenWith();
       offFb();
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("online", onOnline);
