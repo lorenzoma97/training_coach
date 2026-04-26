@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useId, useRef } from "react";
 import { storage, getJSON, setJSON, StorageQuotaError, StorageValueTooLargeError } from "../lib/storage";
 import { events } from "../lib/events";
+import type { TrainingPlan, PlannedSession } from "../lib/types";
+import { stripInlineHRRange } from "../lib/coach/zones";
 
 const WORKOUT_TYPES = [
   {
@@ -335,6 +337,52 @@ export default function DiaryApp() {
   const [saveMsg, setSaveMsg] = useState("");
   const [exporting, setExporting] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Sessione del piano per oggi: integra Diario↔Piano. Mostra una card sopra
+  // i bottoni Registra che dice "📋 Sessione di oggi: Fondo Lento, 45min" con
+  // CTA "Registra dal piano" che pre-compila il form.
+  // Stato: undefined = ancora da caricare, null = nessuna sessione oggi,
+  // {session, weekNumber, done} = sessione trovata + stato done/todo.
+  const [todayPlannedSession, setTodayPlannedSession] = useState<
+    { session: PlannedSession; weekNumber: number; done: boolean } | null | undefined
+  >(undefined);
+
+  const refreshTodayPlanned = useCallback(async () => {
+    const plan = await getJSON<TrainingPlan | null>("training-plan", null);
+    if (!plan || !plan.startDate || !plan.weeks?.length) {
+      setTodayPlannedSession(null);
+      return;
+    }
+    // Calcola in che settimana del piano siamo oggi
+    const [sy, sm, sd] = plan.startDate.split("-").map(Number);
+    const start = new Date(sy, sm - 1, sd);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - start.getTime()) / (24 * 3600 * 1000));
+    if (diffDays < 0) { setTodayPlannedSession(null); return; }
+    const weekIdx = Math.floor(diffDays / 7);
+    if (weekIdx >= plan.weeks.length) { setTodayPlannedSession(null); return; }
+    const week = plan.weeks[weekIdx];
+    const DAY_KEYS = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"];
+    const todayKey = DAY_KEYS[now.getDay()];
+    const session = week.sessions.find(s => s.day === todayKey);
+    if (!session) { setTodayPlannedSession(null); return; }
+    // Match con workout di oggi: se c'è stesso type (o family forza) → done.
+    const todayDay = await loadDay(today());
+    const workouts: any[] = todayDay?.workouts || [];
+    const typeFamily = (t: string) => (t === "forza_gambe" || t === "forza_upper") ? "forza" : t;
+    const done = workouts.some(w => typeFamily(w.type) === typeFamily(session.type));
+    setTodayPlannedSession({ session, weekNumber: week.weekNumber, done });
+  }, []);
+
+  useEffect(() => {
+    void refreshTodayPlanned();
+    const off1 = events.on("plan:updated", () => void refreshTodayPlanned());
+    const off2 = events.on("workout:saved", () => void refreshTodayPlanned());
+    const off3 = events.on("data:externalChange", ({ key }) => {
+      if (key === "training-plan" || key.startsWith("day:")) void refreshTodayPlanned();
+    });
+    return () => { off1(); off2(); off3(); };
+  }, [refreshTodayPlanned]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -732,6 +780,59 @@ export default function DiaryApp() {
               </div>
             )}
           </div>
+
+          {todayPlannedSession && (
+            <div style={{ padding: "12px 24px 0" }}>
+              <div style={{
+                background: todayPlannedSession.done
+                  ? "linear-gradient(135deg, #14532D 0%, #166534 100%)"
+                  : "linear-gradient(135deg, #1E3A5F 0%, #1E40AF 100%)",
+                border: `1px solid ${todayPlannedSession.done ? "#22C55E66" : "#3B82F666"}`,
+                borderRadius: "12px", padding: "12px 14px",
+                display: "flex", alignItems: "center", gap: "12px",
+              }}>
+                <div aria-hidden="true" style={{
+                  width: "36px", height: "36px", borderRadius: "10px",
+                  background: "rgba(255,255,255,0.1)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "18px", flexShrink: 0,
+                }}>{todayPlannedSession.done ? "✓" : "📋"}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "11px", color: todayPlannedSession.done ? "#86EFAC" : "#93C5FD", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "2px" }}>
+                    {todayPlannedSession.done ? "Sessione del piano fatta" : "Sessione di oggi (dal piano)"}
+                  </div>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#FFF", lineHeight: 1.3 }}>
+                    {todayPlannedSession.session.type}{todayPlannedSession.session.subtype ? ` · ${todayPlannedSession.session.subtype}` : ""} · {todayPlannedSession.session.duration_min}min
+                  </div>
+                </div>
+                {!todayPlannedSession.done && (
+                  <button
+                    onClick={() => {
+                      const s = todayPlannedSession.session;
+                      const durationField = s.type === "corsa" ? "durata_totale" : "durata";
+                      const prefill: Record<string, any> = { [durationField]: s.duration_min };
+                      if (s.subtype) prefill.subtype = s.subtype;
+                      const notes = [
+                        `📋 Dal piano del coach (settimana ${todayPlannedSession.weekNumber}):`,
+                        stripInlineHRRange(s.details),
+                        "",
+                        `Razionale: ${s.rationale}`,
+                      ].join("\n");
+                      applyOpenAddPayload({ type: s.type, date: today(), prefill, notes });
+                    }}
+                    style={{
+                      padding: "9px 13px",
+                      background: "rgba(255,255,255,0.15)",
+                      border: "1px solid rgba(255,255,255,0.25)",
+                      borderRadius: "9px", color: "#FFF",
+                      fontSize: "12px", fontWeight: 700, cursor: "pointer",
+                      whiteSpace: "nowrap", minHeight: "40px",
+                    }}
+                  >Registra</button>
+                )}
+              </div>
+            </div>
+          )}
 
           <div style={{ padding: "16px 24px 8px", display: "flex", gap: "10px" }}>
             <button onClick={() => { setAddDate(today()); setAddType(null); setEditingWorkoutId(null); setScreen("add"); }} style={{
