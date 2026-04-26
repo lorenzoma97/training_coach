@@ -300,20 +300,72 @@ DOMANDA UTENTE: ${text}
 
         {messages.map((m, i) => {
           const isLast = i === messages.length - 1;
+          const isStreamingPlaceholder = m.role === "model" && m.content === "" && isLast && waitingFirstToken;
+          // Mostra azioni Copy/Regenerate solo su messaggi model con contenuto reale.
+          const showActions = m.role === "model" && !isStreamingPlaceholder && m.content && !loading;
           return (
             <div key={m.id} style={{
               alignSelf: m.role === "user" ? "flex-end" : "flex-start",
               maxWidth: "85%",
-              background: m.role === "user" ? "linear-gradient(135deg, #E8553A 0%, #D44429 100%)" : "#16213E",
-              color: m.role === "user" ? "#FFF" : "#E2E8F0",
-              padding: "12px 14px", borderRadius: "14px",
-              fontSize: "14px", lineHeight: 1.55, whiteSpace: "pre-wrap", wordWrap: "break-word",
-              border: m.role === "model" ? "1px solid rgba(255,255,255,0.06)" : "none",
-              animation: "slideUp 0.15s ease",
+              display: "flex", flexDirection: "column",
+              alignItems: m.role === "user" ? "flex-end" : "flex-start",
+              gap: "4px",
             }}>
-              {m.role === "model" && m.content === "" && isLast && waitingFirstToken ? (
-                <span className="typing-dots" aria-label="Il coach sta scrivendo">Coach sta scrivendo</span>
-              ) : m.role === "model" ? <RichText text={m.content} /> : m.content}
+              <div style={{
+                background: m.role === "user" ? "linear-gradient(135deg, #E8553A 0%, #D44429 100%)" : "#16213E",
+                color: m.role === "user" ? "#FFF" : "#E2E8F0",
+                padding: "12px 14px", borderRadius: "14px",
+                fontSize: "14px", lineHeight: 1.55, whiteSpace: "pre-wrap", wordWrap: "break-word",
+                border: m.role === "model" ? "1px solid rgba(255,255,255,0.06)" : "none",
+                animation: "slideUp 0.15s ease",
+              }}>
+                {isStreamingPlaceholder ? (
+                  <span className="typing-dots" aria-label="Il coach sta scrivendo">Coach sta scrivendo</span>
+                ) : m.role === "model" ? <RichText text={m.content} /> : m.content}
+              </div>
+              {showActions && (
+                <div style={{ display: "flex", gap: "6px", paddingLeft: "4px" }}>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard?.writeText(m.content).then(
+                        () => { /* feedback minimo: il bottone è momentaneamente "Copiato" via state — qui usiamo title hint */ },
+                      ).catch(() => { /* clipboard può fallire in iframe non-secure */ });
+                    }}
+                    title="Copia il testo della risposta"
+                    aria-label="Copia messaggio"
+                    style={{
+                      padding: "4px 8px", background: "transparent",
+                      border: "1px solid rgba(255,255,255,0.08)", borderRadius: "6px",
+                      color: "#94A3B8", fontSize: "11px", cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: "4px",
+                    }}
+                  >📋 Copia</button>
+                  {/* Rigenera: trova il msg user che ha causato questa risposta (i-1),
+                      rimuovi questo msg model + cancella history fino a includerlo,
+                      ri-invia. Solo se isLast (regenerare un msg in mezzo richiederebbe
+                      ricostruire il prompt context, complica troppo). */}
+                  {isLast && messages[i-1]?.role === "user" && (
+                    <button
+                      onClick={() => {
+                        const prevUserMsg = messages[i-1].content;
+                        // Rimuovi user + model dell'ultima coppia, poi re-send.
+                        setMessages(messages.slice(0, i-1));
+                        // microtask: send legge messages chiusura → invia comunque,
+                        // l'append nuovo userMsg sostituirà quello rimosso.
+                        setTimeout(() => void send(prevUserMsg), 0);
+                      }}
+                      title="Rigenera questa risposta con la stessa domanda"
+                      aria-label="Rigenera risposta"
+                      style={{
+                        padding: "4px 8px", background: "transparent",
+                        border: "1px solid rgba(255,255,255,0.08)", borderRadius: "6px",
+                        color: "#94A3B8", fontSize: "11px", cursor: "pointer",
+                        display: "flex", alignItems: "center", gap: "4px",
+                      }}
+                    >🔁 Rigenera</button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
