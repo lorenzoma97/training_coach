@@ -549,6 +549,16 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
               Ottieni la chiave gratis su <a href={PROVIDER_HELP[provider].url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{PROVIDER_HELP[provider].label}</a>
             </div>
 
+            {provider === "anthropic" && (
+              <div role="note" style={{
+                marginTop: "10px", padding: "10px 12px",
+                background: "#78350F25", border: "1px solid #F59E0B66",
+                borderRadius: "8px", fontSize: "12px", color: "#FDE68A", lineHeight: 1.5,
+              }}>
+                ⚠ Anthropic non fornisce embeddings nativi: la knowledge base scientifica (RAG) sarà <b>disabilitata</b> con questo provider. Per le risposte del coach, considera Gemini o OpenAI.
+              </div>
+            )}
+
             <div style={{ marginTop: "12px" }}>
               <label htmlFor={fid("apiKey")} style={labelStyle}>
                 Chiave API <span style={{ color: "#E8553A" }} aria-label="obbligatoria">*</span>
@@ -609,9 +619,15 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
               cursor: keyOk ? "pointer" : "not-allowed",
             }}>Continua →</button>
           </div>
-          <button onClick={() => setStep("profile")} style={{
-            ...ghostBtn, alignSelf: "center", fontSize: "12px",
-          }}>Salta: userò solo il diario</button>
+          <button
+            onClick={() => setStep("profile")}
+            title="Puoi configurare il coach AI in qualsiasi momento da Impostazioni"
+            style={{
+              ...ghostBtn, alignSelf: "center", fontSize: "12px",
+              color: "#94A3B8", background: "transparent",
+              border: "1px dashed rgba(148, 163, 184, 0.3)",
+            }}
+          >Salta per ora — userò solo il diario</button>
         </div>
       )}
 
