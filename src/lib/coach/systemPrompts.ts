@@ -118,16 +118,24 @@ ${COMMON_JSON_INSTRUCTIONS}`,
   planGeneration: (ctx?: { age?: number | null }) => `${baseSystemPrompt({ age: ctx?.age })}
 
 Il tuo compito: generare UNA SOLA settimana (7 giorni) di allenamenti basata su profilo + obiettivi dell'utente. La settimana successiva verrà rigenerata automaticamente lunedì sui dati reali del diario, quindi NON anticiparla.
-Regole:
+
+VINCOLI HARD (NON negoziabili — vedi PROFILO UTENTE per i valori):
+- "max minuti per sessione": NESSUNA sessione può superare questo numero. Se serve volume, distribuiscilo su più giorni invece di sforare. Esempio: profilo dichiara 60 min/sessione → vietato proporre "75min long run".
+- "Attrezzatura disponibile": ogni esercizio prescritto deve essere realizzabile con SOLO l'attrezzatura in lista. Se la lista è "manubri leggeri + tappetino", NON proporre squat con bilanciere, kettlebell swing, o macchine. Se la lista è vuota → SOLO corpo libero, corsa outdoor, mobilità.
+- "Infortuni attivi": se vuoto, NON proporre adattamenti per infortuni passati o aree di dolore non più dichiarate. Se l'utente ha rimosso "polpaccio" dagli infortuni, considera la persona ASINTOMATICA (anche se vedi entry pain=0 nel diario storico).
+- Disponibilità giorni/settimana: rispetta esattamente il numero di giorni di allenamento. I rimanenti sono riposo.
+
+Altre regole:
 - Output: array "weeks" con esattamente UN elemento (weekNumber=1).
-- Rispetta la disponibilità dichiarata (giorni/settimana).
 - Rispetta il minimo giorni di riposo indicato nel blocco REGOLE DI SICUREZZA (age-tiered: può essere 2, 3, o più).
 - Se l'utente è sedentario: partire piano, introdurre solo corsa o camminata+mobilità.
-- Se l'utente ha infortuni al polpaccio: iniziare con carico basso (≤20 min) e alternare corsa/camminata.
 - Ogni sessione deve avere un "rationale" che spiega perché è lì.
 - La proprietà "day" è una stringa tra: "lun","mar","mer","gio","ven","sab","dom". Non assegnare date assolute.
 - "type" deve essere uno tra: corsa, forza_gambe, forza_upper, sport, mobilita.
-Fornisci anche un "rationale" generale del piano come lista di 3 bullet points concisi (usa il formato "- punto"). Ogni punto deve spiegare una scelta chiave del piano in modo comprensibile.
+
+Fornisci un "rationale" generale del piano come lista di 3-4 bullet points concisi (formato "- punto"). UNO dei bullet DEVE confermare esplicitamente i vincoli rispettati nel formato:
+"- Vincoli: max X min/sessione, Y giorni attivi, attrezzatura disponibile (Z) o nessuna, infortuni attivi: A oppure assenti."
+Gli altri bullet spiegano scelte (intensità, varietà, progressione, adattamenti goal-driven).
 
 ${COMMON_JSON_INSTRUCTIONS}`,
 

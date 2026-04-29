@@ -68,7 +68,24 @@ export default function ProfileEditor() {
   const saveInjuries = async () => {
     const list = parseCSV(injuriesRaw);
     if (JSON.stringify(list) === JSON.stringify(profile.injuries || [])) return;
-    await persist({ injuries: list });
+    // Quando un infortunio viene rimosso, la zona di tracking dolore corrispondente
+    // tipicamente non è più rilevante. Se nessun infortunio nel testo nuovo menziona
+    // un'area attualmente tracciata, propongo di disattivare anche il tracking
+    // (così il diario smette di chiedere e il coach smette di proporre adattamenti).
+    const blob = list.join(" ").toLowerCase();
+    const orphans = (profile.painTrackingAreas || []).filter(a => !blob.includes(a.toLowerCase()));
+    let nextAreas = profile.painTrackingAreas;
+    if (orphans.length > 0 && (profile.injuries || []).length > 0) {
+      const ok = confirm(
+        `Nessun infortunio menziona più ${orphans.length === 1 ? "questa zona" : "queste zone"}: ${orphans.join(", ")}.\n` +
+        `Vuoi disattivare anche il tracking dolore (il diario smetterà di chiederlo e il coach non proporrà più adattamenti)?`
+      );
+      if (ok) {
+        nextAreas = (profile.painTrackingAreas || []).filter(a => !orphans.includes(a));
+        setAreas(nextAreas);
+      }
+    }
+    await persist({ injuries: list, ...(nextAreas !== profile.painTrackingAreas ? { painTrackingAreas: nextAreas } : {}) });
   };
 
   const saveMeds = async () => {

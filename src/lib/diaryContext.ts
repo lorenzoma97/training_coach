@@ -162,9 +162,15 @@ export async function getAllDays(): Promise<Array<{ date: string; daily: DailyCh
   return out;
 }
 
-/** Formato testuale leggibile per l'LLM, riuso lo stile dell'export TXT originale. */
+/** Formato testuale leggibile per l'LLM, riuso lo stile dell'export TXT originale.
+ *  `activePainAreas` (opzionale): se passato, filtra le righe "dolore X" includendo
+ *  SOLO le aree ancora in tracking dal profilo + le righe con valore > 0. Evita di
+ *  trascinare dolori "risolti" (es. polpaccio rimosso dagli infortuni) come segnale
+ *  attivo nel context LLM. Se omesso, mostra tutte le aree (retrocompat).
+ */
 export function formatDaysForLLM(
   days: Array<{ date: string; daily: DailyCheck | null; workouts: Workout[] }>,
+  activePainAreas?: string[],
 ): string {
   if (!days.length) return "(nessun giorno registrato)";
   const lines: string[] = [];
@@ -218,8 +224,15 @@ export function formatDaysForLLM(
         const entries: Array<[string, unknown]> = isLegacy
           ? [["polpaccio", painObj]]
           : Object.entries(painObj);
+        const activeSet = activePainAreas ? new Set(activePainAreas.map(a => a.toLowerCase())) : null;
         for (const [area, v] of entries) {
           if (!isObject(v)) continue;
+          // Skip aree non più tracciate dall'utente, A MENO CHE non ci siano valori > 0:
+          // un dolore reale registrato in passato resta visibile (informa il coach), ma
+          // i "0/0/0" stale di un'area disattivata vengono filtrati.
+          const valsNum = [v.pre, v.during, v.post].map(x => typeof x === "number" ? x : null);
+          const maxVal = Math.max(0, ...valsNum.filter((x): x is number => x !== null));
+          if (activeSet && !activeSet.has(area.toLowerCase()) && maxVal === 0) continue;
           const bits: string[] = [];
           if (v.pre != null) bits.push(`pre ${String(v.pre)}`);
           if (v.during != null) bits.push(`dur ${String(v.during)}`);
@@ -247,19 +260,36 @@ export async function buildCoachContext(opts: { daysBack?: number } = {}): Promi
   const plan = await getJSON<TrainingPlan | null>("training-plan", null);
   const daysBack = opts.daysBack ?? 14;
   const recentDaysRaw = await getLastNDays(daysBack);
-  const recentDaysText = formatDaysForLLM(recentDaysRaw);
+  // Filtra pain history per le aree ANCORA tracciate. Se l'utente ha rimosso
+  // un'area (es. polpaccio risolto), dolori 0/0/0 stale vengono esclusi dal
+  // context LLM — evita che il coach proponga adattamenti per infortuni passati.
+  const recentDaysText = formatDaysForLLM(recentDaysRaw, profile?.painTrackingAreas);
   return { profile, goals, plan, recentDaysText, recentDaysRaw };
 }
 
 export function profileAsPrompt(p: UserProfile | null): string {
   if (!p) return "(profilo utente non ancora configurato)";
+  // Disponibilità: stringify esplicito di entrambi i numeri + commento "MAX
+  // assoluto per sessione" — l'LLM tendeva a sforare hoursPerSession su sessioni
+  // intense (es. "60min long run + 20min mobilità" su availability=60min).
+  const minPerSession = Math.round((p.weekly_availability.hoursPerSession ?? 1) * 60);
+  // painTrackingAreas: se un'area è stata RIMOSSA dall'utente, NON deve apparire
+  // qui — il filtro a monte (formatDaysForLLM con activePainAreas) si occupa del
+  // cleanup nelle entry diario, ma l'LLM beneficia anche di una dichiarazione
+  // esplicita "non monitorata" così non inferisce dal contesto storico.
+  const trackingLine = p.painTrackingAreas && p.painTrackingAreas.length > 0
+    ? `Zone dolore monitorate attualmente: ${p.painTrackingAreas.join(", ")}.`
+    : "Nessuna zona dolore monitorata attualmente (eventuali infortuni passati sono risolti).";
   return [
     `Età: ${p.age}, sesso: ${p.sex}, peso: ${p.weight_kg}kg, altezza: ${p.height_cm}cm.`,
     `Livello: ${p.experience}.`,
-    `Disponibilità: ${p.weekly_availability.days} giorni/settimana, ${p.weekly_availability.hoursPerSession}h/sessione.`,
-    p.injuries.length ? `Infortuni: ${p.injuries.join("; ")}.` : "Nessun infortunio riportato.",
+    `Disponibilità: ${p.weekly_availability.days} giorni/settimana, max ${minPerSession} minuti per sessione (vincolo HARD: NON sforare).`,
+    p.injuries.length ? `Infortuni attivi: ${p.injuries.join("; ")}.` : "Nessun infortunio attivo riportato.",
+    trackingLine,
     p.meds ? `Farmaci: ${p.meds}.` : "",
-    p.equipment.length ? `Attrezzatura: ${p.equipment.join(", ")}.` : "",
+    p.equipment.length
+      ? `Attrezzatura disponibile (vincolo HARD: NON proporre esercizi che richiedano attrezzi non in lista): ${p.equipment.join(", ")}.`
+      : "Nessuna attrezzatura dichiarata: limita la prescrizione a esercizi a corpo libero, corsa outdoor e mobilità.",
     p.notes ? `Note: ${p.notes}.` : "",
   ].filter(Boolean).join(" ");
 }

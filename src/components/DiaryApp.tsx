@@ -288,6 +288,11 @@ export default function DiaryApp() {
   const [addNotes, setAddNotes] = useState("");
   // Se editingWorkoutId è settato, handleSaveWorkout sostituirà invece di creare.
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
+  // Data ORIGINALE del workout in editing (snapshot al momento dell'apertura).
+  // Necessaria per gestire il caso in cui l'utente cambia la data del workout
+  // durante l'editing: bisogna rimuoverlo dal day:OLD e reinserirlo in day:NEW.
+  // Senza questo, findIndex falliva perché loadDay(addDate=NEW) non conteneva l'id.
+  const [editingOriginalDate, setEditingOriginalDate] = useState<string | null>(null);
   // Flag edit per il check giornaliero: cambia header del form + forza reset
   // dei campi quando si torna a screen="home" (così un "nuovo daily" non
   // eredita valori dalla sessione precedente di editing).
@@ -468,6 +473,7 @@ export default function DiaryApp() {
     setAddRpe(null);
     setAddNotes(p.notes || "");
     setEditingWorkoutId(null);
+    setEditingOriginalDate(null);
     setScreen("add");
   };
 
@@ -503,9 +509,16 @@ export default function DiaryApp() {
       let dayData = (await loadDay(date)) || { daily: null, workouts: [] };
       if (editingWorkoutId) {
         // Modifica: sostituisce i campi del workout esistente, preservando id + createdAt.
-        const idx = dayData.workouts.findIndex((w: any) => w.id === editingWorkoutId);
+        // Caso speciale: se l'utente ha cambiato la data, il workout è ancora salvato
+        // sotto la data ORIGINALE (editingOriginalDate). Lo dobbiamo prima rimuovere
+        // da lì, poi inserirlo nel giorno target.
+        const sourceDate = editingOriginalDate || date;
+        const sourceDay = sourceDate === date
+          ? dayData
+          : ((await loadDay(sourceDate)) || { daily: null, workouts: [] });
+        const idx = sourceDay.workouts.findIndex((w: any) => w.id === editingWorkoutId);
         if (idx < 0) throw new Error("Workout non trovato (potrebbe essere stato eliminato).");
-        const existing = dayData.workouts[idx];
+        const existing = sourceDay.workouts[idx];
         const updated = {
           ...existing,
           type: addType,
@@ -515,8 +528,29 @@ export default function DiaryApp() {
           notes: addNotes,
           updatedAt: new Date().toISOString(),
         };
-        dayData.workouts[idx] = updated;
-        await saveDay(date, dayData);
+
+        if (sourceDate === date) {
+          // Stessa data: replace in-place
+          sourceDay.workouts[idx] = updated;
+          await saveDay(date, sourceDay);
+        } else {
+          // Data cambiata: rimuovi dalla data vecchia, inserisci nella nuova.
+          sourceDay.workouts.splice(idx, 1);
+          await saveDay(sourceDate, sourceDay);
+          dayData.workouts.push(updated);
+          await saveDay(date, dayData);
+          // Aggiorna l'index: aggiungi nuova data se assente; togli vecchia se rimasta vuota.
+          let idxAll = await loadIndex();
+          let idxChanged = false;
+          if (!idxAll.includes(date)) { idxAll.push(date); idxChanged = true; }
+          if (!sourceDay.daily && sourceDay.workouts.length === 0) {
+            idxAll = idxAll.filter(d => d !== sourceDate);
+            idxChanged = true;
+            // Cleanup: rimuovi del tutto il day:OLD vuoto (meno garbage in storage).
+            try { await storage.delete(`day:${sourceDate}`); } catch { /* best-effort */ }
+          }
+          if (idxChanged) await saveIndex(idxAll);
+        }
         events.emit("workout:saved", { date, workout: updated });
         savedOk = true;
         flash("Allenamento aggiornato ✓");
@@ -539,6 +573,7 @@ export default function DiaryApp() {
 
       setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes("");
       setEditingWorkoutId(null);
+      setEditingOriginalDate(null);
       await refresh();
       setScreen("home");
     } catch (e: any) {
@@ -557,6 +592,7 @@ export default function DiaryApp() {
   // Apre il form in modalità modifica: popola addFields/Pain/Rpe/Notes dal workout esistente.
   const openEditWorkout = (date: string, w: any) => {
     setAddDate(date);
+    setEditingOriginalDate(date); // snapshot: serve a handleSaveWorkout per il move cross-day
     setAddType(w.type);
     setAddFields({ ...(w.fields || {}) });
     // Normalizza pain: se legacy { pre, during, post }, lo espande a { polpaccio: {...} }
@@ -835,7 +871,7 @@ export default function DiaryApp() {
           )}
 
           <div style={{ padding: "16px 24px 8px", display: "flex", gap: "10px" }}>
-            <button onClick={() => { setAddDate(today()); setAddType(null); setEditingWorkoutId(null); setScreen("add"); }} style={{
+            <button onClick={() => { setAddDate(today()); setAddType(null); setEditingWorkoutId(null); setEditingOriginalDate(null); setScreen("add"); }} style={{
               flex: 1, padding: "16px", background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
               border: "none", borderRadius: "14px", color: "#FFF", fontSize: "15px", fontWeight: 700, cursor: "pointer",
             }}>🏋️ Registra allenamento</button>
@@ -1403,7 +1439,7 @@ export default function DiaryApp() {
               </div>
             )}
 
-            <button onClick={() => { setAddDate(detailDate); setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes(""); setEditingWorkoutId(null); setScreen("add"); }} style={{
+            <button onClick={() => { setAddDate(detailDate); setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes(""); setEditingWorkoutId(null); setEditingOriginalDate(null); setScreen("add"); }} style={{
               width: "100%", padding: "14px", marginTop: "16px",
               background: "#1A1A2E", border: "1px dashed rgba(255,255,255,0.15)",
               borderRadius: "14px", color: "#94A3B8", fontSize: "14px", fontWeight: 600, cursor: "pointer",
