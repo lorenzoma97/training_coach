@@ -27,6 +27,13 @@ export default function ProfileEditor() {
   const [areas, setAreas] = useState<string[]>([]);
   const [newAreaInput, setNewAreaInput] = useState("");
   const [saved, setSaved] = useState(false);
+  // Disponibilità + attrezzatura: aggiunti post-onboarding perché cambiano nel
+  // tempo (es. iscrizione palestra, periodo lavorativo intenso). Senza editor
+  // l'utente doveva fare reset onboarding completo per modificarli.
+  const [days, setDays] = useState<number>(3);
+  const [sessionHours, setSessionHours] = useState<number>(1);
+  const [sessionMinutes, setSessionMinutes] = useState<number>(0);
+  const [equipmentRaw, setEquipmentRaw] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -36,6 +43,12 @@ export default function ProfileEditor() {
         setInjuriesRaw((p.injuries || []).join(", "));
         setMedsRaw(p.meds || "");
         setAreas(p.painTrackingAreas || []);
+        setDays(p.weekly_availability?.days ?? 3);
+        // Decompose hoursPerSession (es. 1.5) → ore + minuti separati per UI.
+        const totalH = p.weekly_availability?.hoursPerSession ?? 1;
+        setSessionHours(Math.floor(totalH));
+        setSessionMinutes(Math.round((totalH - Math.floor(totalH)) * 60));
+        setEquipmentRaw((p.equipment || []).join(", "));
       }
     })();
   }, []);
@@ -108,6 +121,19 @@ export default function ProfileEditor() {
     await persist({ painTrackingAreas: next });
   };
 
+  const saveAvailability = async (nextDays = days, nextHrs = sessionHours, nextMins = sessionMinutes) => {
+    const hoursPerSession = (nextHrs + nextMins / 60) || 0.25; // min 15min
+    const cur = profile.weekly_availability;
+    if (cur && cur.days === nextDays && Math.abs(cur.hoursPerSession - hoursPerSession) < 0.01) return;
+    await persist({ weekly_availability: { days: nextDays, hoursPerSession } });
+  };
+
+  const saveEquipment = async () => {
+    const list = parseCSV(equipmentRaw);
+    if (JSON.stringify(list) === JSON.stringify(profile.equipment || [])) return;
+    await persist({ equipment: list });
+  };
+
   const labelStyle = { fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" };
   const inputStyle = {
     width: "100%", padding: "11px 14px", background: "#1A1A2E",
@@ -117,6 +143,61 @@ export default function ProfileEditor() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div>
+        <label style={labelStyle}>Disponibilità settimanale</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+          <div>
+            <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Giorni/sett.</div>
+            <select
+              value={days}
+              onChange={e => { const v = Number(e.target.value); setDays(v); void saveAvailability(v, sessionHours, sessionMinutes); }}
+              style={{ ...inputStyle, fontFamily: "inherit" }}
+            >
+              {[1, 2, 3, 4, 5, 6, 7].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Ore/sessione</div>
+            <select
+              value={sessionHours}
+              onChange={e => { const v = Number(e.target.value); setSessionHours(v); void saveAvailability(days, v, sessionMinutes); }}
+              style={{ ...inputStyle, fontFamily: "inherit" }}
+            >
+              {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Minuti</div>
+            <select
+              value={sessionMinutes}
+              onChange={e => { const v = Number(e.target.value); setSessionMinutes(v); void saveAvailability(days, sessionHours, v); }}
+              style={{ ...inputStyle, fontFamily: "inherit" }}
+            >
+              {[0, 15, 30, 45].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "6px", lineHeight: 1.5 }}>
+          Il coach userà questi valori come <b>vincolo HARD</b>: nessuna sessione del piano supererà la durata dichiarata.
+        </div>
+      </div>
+
+      <div>
+        <label htmlFor="prof-equipment" style={labelStyle}>Attrezzatura disponibile</label>
+        <input
+          id="prof-equipment"
+          type="text"
+          style={inputStyle}
+          value={equipmentRaw}
+          placeholder="es. tapis roulant, manubri 10kg, palestra (separati da virgola)"
+          onChange={e => setEquipmentRaw(e.target.value)}
+          onBlur={saveEquipment}
+        />
+        <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "6px", lineHeight: 1.5 }}>
+          Il coach proporrà <b>solo</b> esercizi realizzabili con quanto in lista. Vuoto = solo corpo libero, corsa outdoor, mobilità.
+        </div>
+      </div>
+
       <div>
         <label htmlFor="prof-injuries" style={labelStyle}>Infortuni o condizioni attive</label>
         <input
