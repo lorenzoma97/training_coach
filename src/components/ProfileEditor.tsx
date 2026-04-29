@@ -34,6 +34,7 @@ export default function ProfileEditor() {
   const [sessionHours, setSessionHours] = useState<number>(1);
   const [sessionMinutes, setSessionMinutes] = useState<number>(0);
   const [equipmentRaw, setEquipmentRaw] = useState("");
+  const [availableDays, setAvailableDays] = useState<UserProfile["availableDays"]>([]);
 
   useEffect(() => {
     (async () => {
@@ -49,6 +50,7 @@ export default function ProfileEditor() {
         setSessionHours(Math.floor(totalH));
         setSessionMinutes(Math.round((totalH - Math.floor(totalH)) * 60));
         setEquipmentRaw((p.equipment || []).join(", "));
+        setAvailableDays(p.availableDays || []);
       }
     })();
   }, []);
@@ -134,6 +136,15 @@ export default function ProfileEditor() {
     await persist({ equipment: list });
   };
 
+  const toggleAvailableDay = async (d: NonNullable<UserProfile["availableDays"]>[number]) => {
+    const cur = availableDays || [];
+    const next: NonNullable<UserProfile["availableDays"]> = cur.includes(d)
+      ? cur.filter(x => x !== d)
+      : [...cur, d];
+    setAvailableDays(next);
+    await persist({ availableDays: next });
+  };
+
   const labelStyle = { fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" };
   const inputStyle = {
     width: "100%", padding: "11px 14px", background: "#1A1A2E",
@@ -179,6 +190,35 @@ export default function ProfileEditor() {
         </div>
         <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "6px", lineHeight: 1.5 }}>
           Il coach userà questi valori come <b>vincolo HARD</b>: nessuna sessione del piano supererà la durata dichiarata.
+        </div>
+      </div>
+
+      <div>
+        <label style={labelStyle}>Giorni allenabili (default settimanale)</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
+          {(["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const).map(d => {
+            const active = (availableDays || []).includes(d);
+            return (
+              <button
+                key={d}
+                onClick={() => toggleAvailableDay(d)}
+                aria-pressed={active}
+                style={{
+                  padding: "8px 14px", minWidth: "48px",
+                  background: active ? "#22C55E25" : "#1A1A2E",
+                  border: active ? "1px solid #22C55E66" : "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: "999px",
+                  color: active ? "#22C55E" : "#94A3B8",
+                  fontSize: "12px", fontWeight: 700, cursor: "pointer",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  textTransform: "uppercase", letterSpacing: "0.05em",
+                }}
+              >{d}</button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5 }}>
+          Routine "fissa" (es. lavoro il ven sera, calcetto il mar). Il coach prescriverà sessioni <b>solo</b> nei giorni selezionati. Vuoto = scelta libera del coach. Puoi sempre fare override per la singola settimana dal picker "Rigenera piano".
         </div>
       </div>
 

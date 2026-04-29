@@ -368,8 +368,24 @@ export default function TrainingPlanView() {
   // Picker stato: null = chiuso, "show" = aperto in attesa di scelta utente.
   // Le 2 modalità vengono passate a regenerateNextWeek.
   const [regenPickerOpen, setRegenPickerOpen] = useState(false);
+  // Override giorni allenabili per QUESTA generazione. undefined = usa profilo
+  // (default routine). Inizializzato dal profilo all'apertura del picker.
+  const [pickerDays, setPickerDays] = useState<string[] | undefined>(undefined);
 
-  const handleRegenerate = async (mode: "rest-of-week" | "next-week" = "next-week") => {
+  // Quando il picker si apre, sincronizza con il default del profilo. Se profilo
+  // ha availableDays popolato, parte da quello. Altrimenti seleziona TUTTI i giorni
+  // (più friendly del vuoto = "blocca tutto"). L'utente può deselezionare a piacere.
+  useEffect(() => {
+    if (!regenPickerOpen) return;
+    const def = currentProfile?.availableDays;
+    if (def && def.length > 0) setPickerDays([...def]);
+    else setPickerDays(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]);
+  }, [regenPickerOpen, currentProfile]);
+
+  const handleRegenerate = async (
+    mode: "rest-of-week" | "next-week" = "next-week",
+    daysOverride?: string[],
+  ) => {
     if (regenerating) return;
     // Guard offline: la generazione richiede LLM cloud. Evita errore network
     // criptico dopo 10s di loading — messaggio immediato.
@@ -384,16 +400,30 @@ export default function TrainingPlanView() {
       const profile = await getJSON<UserProfile | null>("user-profile", null);
       const goals = await getJSON<UserGoal[]>("user-goals", []);
       if (!profile) throw new Error("Profilo mancante. Completa l'onboarding.");
+      // Pass override SOLO se l'utente ha modificato il default profilo.
+      // Confronto JSON: ordinato per essere insensibile a permutazioni.
+      const profileDefault = (profile.availableDays || []).slice().sort().join(",");
+      const overrideSorted = daysOverride ? daysOverride.slice().sort().join(",") : null;
+      const allDaysSorted = ["dom","gio","lun","mar","mer","sab","ven"].join(",");
+      const effectiveOverride: string[] | undefined = (() => {
+        if (!daysOverride) return undefined;
+        // Se l'override coincide col default profilo → niente override (passa undefined)
+        if (overrideSorted === profileDefault && profileDefault.length > 0) return undefined;
+        // Se profilo è vuoto E override = tutti i 7 giorni → niente override (= scelta libera LLM)
+        if (profileDefault === "" && overrideSorted === allDaysSorted) return undefined;
+        return daysOverride;
+      })();
+      const opts = effectiveOverride ? { availableDaysOverride: effectiveOverride } : undefined;
       let next: TrainingPlan;
       let title: string;
       if (plan) {
         const ctx = await buildCoachContext({ daysBack: 14 });
-        next = await regenerateNextWeek(profile, goals, plan, ctx.recentDaysText, mode);
+        next = await regenerateNextWeek(profile, goals, plan, ctx.recentDaysText, mode, opts);
         title = mode === "rest-of-week"
           ? "✓ Piano riavviato dai giorni rimanenti di questa settimana"
           : "✓ Piano per la prossima settimana generato";
       } else {
-        next = await generateInitialPlan(profile, goals);
+        next = await generateInitialPlan(profile, goals, opts);
         title = "✓ Piano iniziale generato";
       }
       // Archivia il piano corrente nello storico prima di sovrascrivere (se esiste)
@@ -728,39 +758,107 @@ export default function TrainingPlanView() {
           // Mostra "rest-of-week" solo da martedì a sabato (esclude lun che copre già
           // tutta la settimana, esclude domenica che lascerebbe solo 1 giorno).
           const showRestOfWeek = todayIdx >= 1 && todayIdx <= 5;
+          // Toggle giorno nel picker. Stato locale, non persiste — è override
+          // SOLO per la prossima generazione.
+          const togglePickerDay = (d: string) => {
+            setPickerDays(prev => {
+              const cur = prev || [];
+              return cur.includes(d) ? cur.filter(x => x !== d) : [...cur, d];
+            });
+          };
+          // Reset al default profilo (utility quando l'utente ha smanettato troppo).
+          const resetToProfile = () => {
+            const def = currentProfile?.availableDays;
+            if (def && def.length > 0) setPickerDays([...def]);
+            else setPickerDays(["lun","mar","mer","gio","ven","sab","dom"]);
+          };
+          // Per "Riparti da oggi" mostra in evidenza i giorni rimanenti che
+          // rientrano nella selezione (intersezione).
+          const remainingActive = (pickerDays || []).filter(d => remaining.includes(d));
+          const noDaysSelected = !pickerDays || pickerDays.length === 0;
           return (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600 }}>Come vuoi rigenerare?</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600 }}>Giorni allenabili questa settimana</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {labels.map(d => {
+                  const active = (pickerDays || []).includes(d);
+                  return (
+                    <button
+                      key={d}
+                      onClick={() => togglePickerDay(d)}
+                      aria-pressed={active}
+                      style={{
+                        padding: "8px 12px", minWidth: "44px",
+                        background: active ? "#0891B225" : "#1A1A2E",
+                        border: active ? "1px solid #0891B266" : "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: "999px",
+                        color: active ? "#38BDF8" : "#94A3B8",
+                        fontSize: "12px", fontWeight: 700, cursor: "pointer",
+                        fontFamily: "'JetBrains Mono', monospace",
+                        textTransform: "uppercase",
+                      }}
+                    >{d}</button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
+                <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.4 }}>
+                  {currentProfile?.availableDays && currentProfile.availableDays.length > 0
+                    ? <>Default profilo: <b>{currentProfile.availableDays.join(", ")}</b>. Questa scelta è solo per la prossima generazione.</>
+                    : "Nessun default impostato. Configurarlo in Impostazioni → Profilo per pre-selezione automatica."}
+                </div>
+                <button
+                  onClick={resetToProfile}
+                  style={{
+                    padding: "5px 10px", background: "transparent",
+                    border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+                    color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
+                  }}
+                >↺ Reset</button>
+              </div>
+
+              <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600, marginTop: "4px" }}>Come vuoi rigenerare?</div>
               {showRestOfWeek && (
                 <button
-                  onClick={() => handleRegenerate("rest-of-week")}
+                  onClick={() => handleRegenerate("rest-of-week", pickerDays)}
+                  disabled={noDaysSelected || remainingActive.length === 0}
                   style={{
                     textAlign: "left", padding: "12px 14px",
                     background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: "10px", color: "#E2E8F0", cursor: "pointer",
+                    borderRadius: "10px", color: "#E2E8F0",
+                    cursor: (noDaysSelected || remainingActive.length === 0) ? "not-allowed" : "pointer",
+                    opacity: (noDaysSelected || remainingActive.length === 0) ? 0.5 : 1,
                   }}
                 >
                   <div style={{ fontWeight: 700, fontSize: "13px", color: "#0891B2", marginBottom: "3px" }}>
                     ▶ Riparti da oggi
                   </div>
                   <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
-                    Genera {remaining.length} sessioni per {remaining.join(", ")}. I giorni passati restano chiusi.
+                    {remainingActive.length === 0
+                      ? `Nessuno dei giorni selezionati rientra nei rimanenti (${remaining.join(", ")}).`
+                      : `Genera fino a ${remainingActive.length} sessione/i in ${remainingActive.join(", ")}. I giorni passati restano chiusi.`}
                   </div>
                 </button>
               )}
               <button
-                onClick={() => handleRegenerate("next-week")}
+                onClick={() => handleRegenerate("next-week", pickerDays)}
+                disabled={noDaysSelected}
                 style={{
                   textAlign: "left", padding: "12px 14px",
                   background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: "10px", color: "#E2E8F0", cursor: "pointer",
+                  borderRadius: "10px", color: "#E2E8F0",
+                  cursor: noDaysSelected ? "not-allowed" : "pointer",
+                  opacity: noDaysSelected ? 0.5 : 1,
                 }}
               >
                 <div style={{ fontWeight: 700, fontSize: "13px", color: "#0891B2", marginBottom: "3px" }}>
                   ▶ Pianifica settimana prossima
                 </div>
                 <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
-                  Genera 7 giorni lun–dom prossimi.{!showRestOfWeek ? ` (Oggi è ${todayLabel}, l'opzione "riparti" non è disponibile.)` : ""}
+                  {noDaysSelected
+                    ? "Seleziona almeno un giorno sopra."
+                    : `Genera fino a ${(pickerDays || []).length} sessione/i tra: ${(pickerDays || []).join(", ")}.`}
+                  {!showRestOfWeek && ` (Oggi è ${todayLabel}, l'opzione "riparti" non è disponibile.)`}
                 </div>
               </button>
               <button

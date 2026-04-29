@@ -439,6 +439,7 @@ export function planStateHash(profile: UserProfile, goals: UserGoal[] = []): str
     injuries: [...(profile.injuries || [])].sort(),
     painTrackingAreas: [...(profile.painTrackingAreas || [])].sort(),
     weekly_availability: profile.weekly_availability,
+    availableDays: [...(profile.availableDays || [])].sort(),
     equipment: [...(profile.equipment || [])].sort(),
     goals: activeGoals,
   };

@@ -285,19 +285,22 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
 export async function generateInitialPlan(
   profile: UserProfile,
   goals: UserGoal[],
+  opts?: GenerationOptions,
 ): Promise<TrainingPlan> {
   // Zone FC personalizzate: onboarding ha storico nullo → Tanaka. Carichiamo
   // comunque per sicurezza (es. onboarding ripetuto con diario esistente).
   const recentDaysForZones = await getLastNDays(60).catch(() => []);
   const zonesCtxInit = computeZonesContext(profile, recentDaysForZones);
   const goalConflictHint = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
+  const effectiveDays = effectiveAvailableDays(opts?.availableDaysOverride, profile.availableDays);
+  const availableDaysBlock = buildAvailableDaysBlock(effectiveDays, "GIORNI ALLENABILI");
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
 
 OBIETTIVI:
 ${goalsAsPrompt(goals)}
-${goalConflictHint}
+${goalConflictHint}${availableDaysBlock}
 Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'utente verso gli obiettivi rispettando vincoli e sicurezza. La settimana successiva sarà rigenerata lunedì prossimo sulla base dei dati reali del diario, non anticiparla ora.
 `.trim();
 
@@ -379,6 +382,49 @@ function dayLabelFromDate(d: Date): string {
   return DAY_LABELS[(dow + 6) % 7];
 }
 
+/**
+ * Calcola i giorni allenabili effettivi per la generazione:
+ *  - Se `override` è popolato: ha precedenza assoluta (picker on-demand)
+ *  - Altrimenti se `profile.availableDays` è popolato: routine fissa di default
+ *  - Altrimenti: undefined (= scelta libera dell'LLM, retrocompat)
+ *
+ *  In modalità "rest-of-week", interseca con i giorni rimanenti della settimana.
+ */
+function effectiveAvailableDays(
+  override: ReadonlyArray<string> | undefined,
+  profileDefault: ReadonlyArray<string> | undefined,
+  remainingThisWeek?: ReadonlyArray<string>,
+): string[] | undefined {
+  let base: string[] | undefined;
+  if (override && override.length > 0) base = [...override];
+  else if (profileDefault && profileDefault.length > 0) base = [...profileDefault];
+  else base = undefined;
+  if (!base) return undefined;
+  if (remainingThisWeek) {
+    const remSet = new Set(remainingThisWeek);
+    return base.filter(d => remSet.has(d));
+  }
+  return base;
+}
+
+/** Costruisce il blocco di vincolo HARD per il prompt (vuoto se libero). */
+function buildAvailableDaysBlock(effective: string[] | undefined, label: string): string {
+  if (!effective) return "";
+  if (effective.length === 0) {
+    // Caso edge: override vs remaining = nessun giorno valido. NON dovrebbe
+    // arrivare qui (la UI dovrebbe bloccare il submit) ma se succede chiediamo
+    // all'LLM di restituire 0 sessioni invece di inventare.
+    return `\n${label}: NESSUN giorno utilizzabile in questa finestra. Rispondi con weeks=[{weekNumber:1, focus:"riposo forzato", sessions:[]}] e rationale che spieghi.`;
+  }
+  return `\n${label} (vincolo HARD per QUESTA generazione, sovrascrive eventuale default profilo): ${effective.join(", ")}. NON proporre sessioni in altri giorni.`;
+}
+
+/** Opzioni opzionali per le funzioni di generazione/rigenerazione. */
+export interface GenerationOptions {
+  /** Override per-rigenerazione dei giorni allenabili (es. picker UI). */
+  availableDaysOverride?: ReadonlyArray<string>;
+}
+
 function formatDateIT(d: Date): string {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
@@ -390,6 +436,7 @@ export async function regenerateNextWeek(
   currentPlan: TrainingPlan | null,
   recentDaysText: string,
   mode: RegenerateMode = "next-week",
+  opts?: GenerationOptions,
 ): Promise<TrainingPlan> {
   // Per "rest-of-week" calcoliamo oggi, lunedì-corrente, giorni rimanenti.
   // Il piano avrà startDate = lunedì-corrente (canonical) ma sessioni solo
@@ -421,13 +468,21 @@ non includere sessioni per essi.${minimalWindowGuard}
     : `Genera la settimana corrente parziale (weekNumber=1, una sola) coprendo solo i ${remainingLabels.length} giorni rimanenti. Adatta volume/intensità in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.`;
 
   const goalConflictHintRegen = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
+  // Se mode=rest-of-week intersechiamo l'override (o profilo) con i giorni
+  // RIMANENTI: l'utente non può "selezionare" un giorno passato.
+  const effectiveDaysRegen = effectiveAvailableDays(
+    opts?.availableDaysOverride,
+    profile.availableDays,
+    mode === "rest-of-week" ? remainingLabels : undefined,
+  );
+  const availableDaysBlockRegen = buildAvailableDaysBlock(effectiveDaysRegen, "GIORNI ALLENABILI");
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
 
 OBIETTIVI:
 ${goalsAsPrompt(goals)}
-${goalConflictHintRegen}
+${goalConflictHintRegen}${availableDaysBlockRegen}
 PIANO CORRENTE:
 ${planAsPrompt(currentPlan)}
 
@@ -486,7 +541,14 @@ ${modeInstruction}
   };
   // Per partial week passiamo expectedDayLabels al validator così non flagga
   // "insufficient_rest_days" su una finestra ridotta (es. gio-dom = 4 giorni).
-  const expectedDayLabels = mode === "rest-of-week" ? remainingLabels.slice() : undefined;
+  // Se l'utente ha ulteriormente ristretto via override/profilo, la finestra
+  // effettiva è ancora più piccola — passa l'intersezione.
+  let expectedDayLabels: string[] | undefined;
+  if (mode === "rest-of-week") {
+    expectedDayLabels = effectiveDaysRegen ?? remainingLabels.slice();
+  } else if (effectiveDaysRegen) {
+    expectedDayLabels = effectiveDaysRegen;
+  }
   const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesRegen), { expectedDayLabels });
   if (!validation.ok) {
     console.warn("[regenerateNextWeek] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
@@ -507,15 +569,18 @@ export async function adaptPlan(
   currentPlan: TrainingPlan,
   recentDaysText: string,
   userRequest: string,
+  opts?: GenerationOptions,
 ): Promise<TrainingPlan> {
   const goalConflictHintAdapt = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
+  const effectiveDaysAdapt = effectiveAvailableDays(opts?.availableDaysOverride, profile.availableDays);
+  const availableDaysBlockAdapt = buildAvailableDaysBlock(effectiveDaysAdapt, "GIORNI ALLENABILI");
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
 
 OBIETTIVI:
 ${goalsAsPrompt(goals)}
-${goalConflictHintAdapt}
+${goalConflictHintAdapt}${availableDaysBlockAdapt}
 PIANO CORRENTE (da modificare):
 ${planAsPrompt(currentPlan)}
 

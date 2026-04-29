@@ -280,10 +280,17 @@ export function profileAsPrompt(p: UserProfile | null): string {
   const trackingLine = p.painTrackingAreas && p.painTrackingAreas.length > 0
     ? `Zone dolore monitorate attualmente: ${p.painTrackingAreas.join(", ")}.`
     : "Nessuna zona dolore monitorata attualmente (eventuali infortuni passati sono risolti).";
+  // availableDays: se popolato è vincolo HARD (override per-rigen viene passato
+  // separatamente via param da planGenerator e ha precedenza). Se undefined,
+  // l'LLM è libero di scegliere i giorni → comportamento retrocompat.
+  const availableDaysLine = p.availableDays && p.availableDays.length > 0
+    ? `Giorni allenabili (vincolo HARD: prescrivi sessioni SOLO in questi giorni): ${p.availableDays.join(", ")}.`
+    : "";
   return [
     `Età: ${p.age}, sesso: ${p.sex}, peso: ${p.weight_kg}kg, altezza: ${p.height_cm}cm.`,
     `Livello: ${p.experience}.`,
     `Disponibilità: ${p.weekly_availability.days} giorni/settimana, max ${minPerSession} minuti per sessione (vincolo HARD: NON sforare).`,
+    availableDaysLine,
     p.injuries.length ? `Infortuni attivi: ${p.injuries.join("; ")}.` : "Nessun infortunio attivo riportato.",
     trackingLine,
     p.meds ? `Farmaci: ${p.meds}.` : "",

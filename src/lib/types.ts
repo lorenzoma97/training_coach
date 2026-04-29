@@ -28,6 +28,13 @@ export interface UserProfile {
   injuries: string[];
   meds: string;
   weekly_availability: { days: number; hoursPerSession: number };
+  /**
+   * Giorni della settimana in cui l'utente PUÒ allenarsi (default routine).
+   * Vincolo HARD per il piano: il coach prescrive sessioni SOLO in questi giorni.
+   * Se undefined o vuoto: il coach sceglie liberamente (retrocompat con piani esistenti).
+   * Override per-rigenerazione disponibile dal picker "Rigenera piano".
+   */
+  availableDays?: Array<"lun" | "mar" | "mer" | "gio" | "ven" | "sab" | "dom">;
   equipment: string[];
   notes?: string;
   /**
