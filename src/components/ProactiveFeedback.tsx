@@ -57,6 +57,12 @@ async function appendFeed(item: CoachFeedItem): Promise<void> {
 
 export default function ProactiveFeedback() {
   useEffect(() => {
+    // Dedup workout ID + cooldown 5min: se l'utente salva 3 workout in burst
+    // (sessione lunga di registrazione retroattiva), evita 3 LLM call successive.
+    // Il primo workout passa, gli altri vengono trattati solo per red flag locali.
+    const recentlyAnalyzed = new Map<string, number>();
+    const DEDUP_WINDOW_MS = 5 * 60 * 1000;
+
     const off = events.on("workout:saved", async ({ date, workout }) => {
       // Alert locale immediato se red flag (indipendente dall'API)
       const profile = await getJSON<any>("user-profile", null);
@@ -92,6 +98,19 @@ export default function ProactiveFeedback() {
       }
 
       if (!hasApiKey()) return;
+
+      // Dedup: skip LLM call se questo workout (id) è già stato analizzato
+      // di recente. Cleanup degli entry vecchi per evitare leak Map.
+      const now = Date.now();
+      for (const [k, t] of recentlyAnalyzed.entries()) {
+        if (now - t > DEDUP_WINDOW_MS) recentlyAnalyzed.delete(k);
+      }
+      if (workout?.id && recentlyAnalyzed.has(workout.id)) {
+        console.info("[proactive] dedup: skip analyzeSession per", workout.id);
+        return;
+      }
+      if (workout?.id) recentlyAnalyzed.set(workout.id, now);
+
       try {
         const fb = await analyzeSession({ workoutDate: date, workout });
         const flags = Array.isArray(fb.redFlags) ? fb.redFlags : [];

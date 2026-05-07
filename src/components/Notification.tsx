@@ -162,7 +162,19 @@ function PopupCard({ n, onDismiss }: { n: StoredNotification; onDismiss: () => v
     dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onDismiss(); };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // Body scroll lock: su iOS Safari, senza overflow:hidden sul body, il
+    // backdrop è "rubber-band scrollabile" → l'utente accidentalmente sposta
+    // la pagina sotto invece del modal. Salviamo lo scroll precedente per
+    // ripristino su unmount.
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+    };
   }, [onDismiss]);
 
   return (

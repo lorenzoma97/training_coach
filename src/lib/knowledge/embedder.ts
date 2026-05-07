@@ -27,7 +27,9 @@ const READY_THRESHOLD = 0.8;
 //      weight loss, nutrizione pratica, DOMS, allergie, core/unilateral,
 //      stretching, readiness, return-to-run).
 // v4 = polpaccio topic split + multi-sport chunk sec-36 + citation updates.
-const EMBEDDER_SCHEMA_VERSION = "v4";
+// v5 = enriched embedding text (title + topics + content), prima solo content.
+//      Invalida tutte le cache v4 → re-embedding richiesto al primo open.
+const EMBEDDER_SCHEMA_VERSION = "v5";
 
 function computeVersion(): string {
   const sig = CHUNKS.map(c => c.id).join(",") + "|n=" + CHUNKS.length;
@@ -66,7 +68,16 @@ export async function ensureEmbeddings(onProgress?: (done: number, total: number
   for (let i = 0; i < missing.length; i++) {
     const chunk = missing[i];
     try {
-      const vec = await client.embedContent!(chunk.content);
+      // Embed: title + topics + content per arricchire il segnale semantico
+      // (prima era solo content; query "RED-S donne" non recuperava chunk con
+      // "ciclo mestruale" buried in 3° paragrafo). Nota: questo invalida
+      // implicitamente le cache pre-fix → versioning include questo cambio.
+      const enrichedText = [
+        chunk.title || "",
+        Array.isArray(chunk.topics) ? chunk.topics.join(" ") : "",
+        chunk.content,
+      ].filter(Boolean).join("\n");
+      const vec = await client.embedContent!(enrichedText);
       if (!vec || vec.length === 0) throw new Error("vector vuoto dal provider");
       cache.vectors[chunk.id] = vec;
       if ((i + 1) % 5 === 0 || i === missing.length - 1) {

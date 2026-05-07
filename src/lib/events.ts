@@ -69,8 +69,11 @@ const PAYLOAD_VALIDATORS: Partial<Record<keyof EventMap, PayloadValidator>> = {
     !!p && typeof p === "object" &&
     typeof (p as any).primary === "string" &&
     typeof (p as any).fallback === "string",
-  "nav:goto": (p) =>
-    !!p && typeof p === "object" && typeof (p as any).tab === "string",
+  "nav:goto": (p) => {
+    if (!p || typeof p !== "object") return false;
+    const tab = (p as any).tab;
+    return tab === "diary" || tab === "trends" || tab === "coach" || tab === "settings";
+  },
   "diary:openAdd": (p) => {
     if (!p || typeof p !== "object") return false;
     const o = p as Record<string, unknown>;

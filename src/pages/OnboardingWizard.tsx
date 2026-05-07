@@ -511,7 +511,14 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
 
   return (
     <div style={{ maxWidth: "560px", margin: "0 auto", padding: "24px 20px 120px" }}>
-      <div style={{ display: "flex", gap: "4px", marginBottom: "20px" }} aria-label="Progresso setup">
+      <div
+        style={{ display: "flex", gap: "4px", marginBottom: "20px" }}
+        role="progressbar"
+        aria-label={`Progresso setup: step ${stepIndex + 1} di ${STEPS.length}`}
+        aria-valuenow={stepIndex + 1}
+        aria-valuemin={1}
+        aria-valuemax={STEPS.length}
+      >
         {STEPS.map((s, i) => (
           <div key={s} style={{
             flex: 1, height: "4px", borderRadius: "2px",
