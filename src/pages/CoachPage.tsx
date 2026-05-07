@@ -65,6 +65,15 @@ export default function CoachPage() {
     return off;
   }, []);
 
+  // Deep link: "Chiedi al coach" da TrainingPlanView emette chat:openWith e
+  // nav:goto. Questo listener switcha al sub-tab Chat così CoachChat è montato
+  // e può ricevere chat:openWith (altrimenti l'evento si perderebbe perché
+  // CoachChat non è renderizzato finché tab !== "chat").
+  useEffect(() => {
+    const off = events.on("chat:openWith", () => setTab("chat"));
+    return off;
+  }, []);
+
   const missing: string[] = [];
   if (!setupStatus.hasKey) missing.push("chiave LLM");
   if (!setupStatus.hasProfile) missing.push("profilo");

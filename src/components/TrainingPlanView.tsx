@@ -544,9 +544,9 @@ export default function TrainingPlanView() {
     return Math.floor(diffDays / 7) + 1; // 1-based
   })();
 
-  // "Chiedi al coach": emette chat:openWith con un prompt contestuale e naviga
-  // al tab Coach. Il listener in CoachChat precompila l'input (non auto-invia:
-  // l'utente può ancora editare).
+  // "Chiedi al coach": persiste il prompt in storage + emette eventi.
+  // Storage prima di event: CoachChat al mount legge "pending-chat-prompt"
+  // (stesso pattern di diary:openAdd), evita race con sub-tab switch in CoachPage.
   const askCoachAboutSession = (s: PlannedSession, weekNumber: number) => {
     const zoneStr = (() => {
       const chip = zoneChipFor(s);
@@ -558,6 +558,7 @@ export default function TrainingPlanView() {
       s.details ? `Dettagli: ${stripInlineHRRange(s.details)}` : "",
       `Cosa mi stai chiedendo esattamente? Come dovrei sentirmi durante/dopo? Come si collega ai miei obiettivi?`,
     ].filter(Boolean).join("\n");
+    void setJSON("pending-chat-prompt", { prompt });
     events.emit("chat:openWith", { prompt });
     events.emit("nav:goto", { tab: "coach" });
   };
@@ -755,9 +756,9 @@ export default function TrainingPlanView() {
           const labels = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
           const todayLabel = labels[todayIdx];
           const remaining = labels.slice(todayIdx);
-          // Mostra "rest-of-week" solo da martedì a sabato (esclude lun che copre già
-          // tutta la settimana, esclude domenica che lascerebbe solo 1 giorno).
-          const showRestOfWeek = todayIdx >= 1 && todayIdx <= 5;
+          // Mostra "rest-of-week" lun-sab. Su lunedì copre l'intera settimana
+          // corrente (lun→dom). Su domenica non ha senso (solo 1 giorno).
+          const showRestOfWeek = todayIdx >= 0 && todayIdx <= 5;
           // Toggle giorno nel picker. Stato locale, non persiste — è override
           // SOLO per la prossima generazione.
           const togglePickerDay = (d: string) => {

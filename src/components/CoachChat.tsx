@@ -72,15 +72,27 @@ export default function CoachChat() {
 
   useEffect(() => {
     void loadHistory();
+    // Consumo pending-chat-prompt al mount (deep-link da TrainingPlanView).
+    // CoachChat può essere smontato quando l'evento chat:openWith è emesso
+    // (utente su sub-tab "plan" → click "Chiedi al coach" → CoachPage switcha
+    // a "chat" ma in quel render CoachChat non è ancora montato).
+    // Storage pattern, identico a diary:openAdd.
+    (async () => {
+      const pending = await getJSON<{ prompt?: string } | null>("pending-chat-prompt", null);
+      if (pending && typeof pending.prompt === "string" && pending.prompt) {
+        await setJSON("pending-chat-prompt", null);
+        setInput(pending.prompt);
+        setTimeout(() => { taRef.current?.focus(); taRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 150);
+      }
+    })();
     // Cross-tab + cross-component sync: ricarica quando un'altra tab/mano modifica la history.
     const offExt = events.on("data:externalChange", e => { if (e.key === HISTORY_KEY) void loadHistory(); });
     const offChat = events.on("chat:historyChanged", () => { void loadHistory(); });
-    // Deep-link dalla vista Piano: "Chiedi al coach" precompila l'input con
-    // un prompt contestuale (sessione specifica). Non auto-invia — l'utente
-    // può editare prima di premere Invio.
+    // Deep-link dalla vista Piano (event-bus, fallback se CoachChat è già montato).
+    // Caso A: CoachChat già montato (utente già su sub-tab Chat) → questo handler scatta.
+    // Caso B: CoachChat smontato → il pending sopra fa la stessa cosa al mount.
     const offOpenWith = events.on("chat:openWith", ({ prompt }) => {
       setInput(prompt);
-      // scroll alla textarea dopo il prossimo tick
       setTimeout(() => { taRef.current?.focus(); taRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 100);
     });
     // Notifica fallback LLM (es. Gemini 3.1-preview 503 → 2.5-flash-lite)

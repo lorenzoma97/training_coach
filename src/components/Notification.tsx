@@ -187,37 +187,68 @@ function PopupCard({ n, onDismiss }: { n: StoredNotification; onDismiss: () => v
           background: "#0F172A",
           border: `2px solid ${c.border}`,
           borderRadius: "14px",
-          padding: "24px 22px",
           maxWidth: "440px", width: "100%",
-          display: "flex", flexDirection: "column", gap: "14px",
+          // Caps mobile: maxHeight 85vh + scroll interno. Senza questo, popup
+          // con rationale lungo (3-4 bullet) sfora il viewport iPhone e l'X
+          // esce sopra lo schermo, rendendo impossibile chiuderlo.
+          maxHeight: "85vh",
+          display: "flex", flexDirection: "column",
           boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
           animation: "slideUp 0.2s ease",
+          overflow: "hidden", // necessario per il border-radius coi figli sticky
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+        {/* Header sticky con icona, title e X. Resta visibile mentre il body scrolla. */}
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: "12px",
+          padding: "20px 22px 12px",
+          background: "#0F172A",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          flexShrink: 0,
+        }}>
           <div style={{
             width: "40px", height: "40px", borderRadius: "999px",
             background: c.bg, color: c.text,
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: "20px", fontWeight: 800, flexShrink: 0,
           }} aria-hidden="true">{c.icon}</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "16px", fontWeight: 800, color: c.text, marginBottom: "4px" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "16px", fontWeight: 800, color: c.text, lineHeight: 1.3 }}>
               {n.title}
             </div>
-            {n.message && (
-              <div style={{ fontSize: "13px", color: "#CBD5E1", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
-                {n.message}
-              </div>
-            )}
           </div>
           <button onClick={onDismiss} aria-label="Chiudi" style={{
-            background: "transparent", border: "none", color: "#94A3B8",
-            fontSize: "22px", lineHeight: 1, cursor: "pointer", padding: "0",
-            minWidth: "32px", minHeight: "32px",
+            background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
+            color: "#E2E8F0",
+            fontSize: "20px", lineHeight: 1, cursor: "pointer", padding: "0",
+            minWidth: "36px", minHeight: "36px", borderRadius: "8px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
           }}>×</button>
         </div>
-        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+
+        {/* Body scrollabile: il rationale lungo viene scrollato qui senza
+            spingere il footer fuori dallo schermo. */}
+        {n.message && (
+          <div style={{
+            flex: 1, overflowY: "auto",
+            padding: "12px 22px",
+            fontSize: "13px", color: "#CBD5E1", lineHeight: 1.55, whiteSpace: "pre-wrap",
+            WebkitOverflowScrolling: "touch",
+          }}>
+            {n.message}
+          </div>
+        )}
+
+        {/* Footer sticky con i bottoni azione. Sempre visibile. */}
+        <div style={{
+          display: "flex", gap: "8px", justifyContent: "flex-end",
+          padding: "12px 22px 18px calc(22px + env(safe-area-inset-left, 0px))",
+          paddingBottom: "calc(18px + env(safe-area-inset-bottom, 0px))",
+          background: "#0F172A",
+          borderTop: "1px solid rgba(255,255,255,0.06)",
+          flexShrink: 0,
+        }}>
           {n.action && (
             <button onClick={() => { n.action!.onClick(); onDismiss(); }} style={{
               padding: "10px 18px",
