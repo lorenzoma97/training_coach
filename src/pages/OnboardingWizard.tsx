@@ -821,7 +821,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
 
           <div style={cardStyle}>
             <label htmlFor="ob-injuries" style={labelStyle}>Infortuni o condizioni (opzionale)</label>
-            <input id="ob-injuries" type="text" style={inputStyle} placeholder="es. tendinopatia polpaccio sx, ernia L5"
+            <input id="ob-injuries" type="text" style={inputStyle} placeholder="es. tendinopatia rotulea, ernia L5"
               value={injuriesRaw}
               onChange={e => setInjuriesRaw(e.target.value)}
               onBlur={e => setProfile(p => ({ ...p, injuries: parseCSV(e.target.value) }))} />
@@ -843,7 +843,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
                 <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "6px" }}>
                   Se ti alleni con un'area dolorante, il diario mostrerà una scala 0-4 pre/durante/post per ciascuna zona. Lasciare vuoto per nessun tracking.
                 </div>
-                <input type="text" style={inputStyle} placeholder="es. polpaccio sx, ginocchio, tendine achille"
+                <input type="text" style={inputStyle} placeholder="es. ginocchio dx, schiena lombare, spalla"
                   value={painAreasRaw}
                   onChange={e => setPainAreasRaw(e.target.value)}
                   onBlur={e => setProfile(p => ({ ...p, painTrackingAreas: parseCSV(e.target.value) }))} />

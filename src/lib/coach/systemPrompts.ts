@@ -22,7 +22,7 @@ export function baseSystemPrompt(ctx?: PromptCtx | string): string {
 
 ${safetyRulesAsPrompt({ age: resolved.age })}
 
-SCALA DOLORE POLPACCIO (usata nel diario):
+SCALA DOLORE 0-4 (usata nel diario per OGNI area che l'utente sta monitorando — es. ginocchio, schiena, spalla, ecc.):
 0=nessun dolore, 1=fastidio vago, 2=avvertibile, 3=localizzato (riduci), 4+=a spillo (STOP).
 
 SCALA RPE (sforzo percepito):
@@ -82,7 +82,7 @@ const SESSION_FEEDBACK_EXAMPLE = `
 ESEMPIO DI FEEDBACK BEN FORMATO (solo riferimento di stile, non copiare valori):
 {
   "howItWent": "Corsa di 35min con FC media 148bpm (~72% FCmax stimata) e RPE 6. Passo medio 6:15/km su asfalto. Coerente con fondo lento.",
-  "signalsToMonitor": "Dolore polpaccio passato da 1 a 2 post-sessione, terzo giorno consecutivo. Monitora.",
+  "signalsToMonitor": "Stanchezza percepita in lieve crescita (5→6→7) negli ultimi 3 giorni. Monitora.",
   "whatToDoNext": "Domani recupero attivo (camminata 25min + mobilità). Se dolore ≥3, stop e consulta fisioterapista.",
   "redFlags": [],
   "severity": "info"
@@ -122,7 +122,7 @@ Il tuo compito: generare UNA SOLA settimana (7 giorni) di allenamenti basata su 
 VINCOLI HARD (NON negoziabili — vedi PROFILO UTENTE per i valori):
 - "max minuti per sessione": NESSUNA sessione può superare questo numero. Se serve volume, distribuiscilo su più giorni invece di sforare. Esempio: profilo dichiara 60 min/sessione → vietato proporre "75min long run".
 - "Attrezzatura disponibile": ogni esercizio prescritto deve essere realizzabile con SOLO l'attrezzatura in lista. Se la lista è "manubri leggeri + tappetino", NON proporre squat con bilanciere, kettlebell swing, o macchine. Se la lista è vuota → SOLO corpo libero, corsa outdoor, mobilità.
-- "Infortuni attivi": se vuoto, NON proporre adattamenti per infortuni passati o aree di dolore non più dichiarate. Se l'utente ha rimosso "polpaccio" dagli infortuni, considera la persona ASINTOMATICA (anche se vedi entry pain=0 nel diario storico).
+- "Infortuni attivi": se vuoto, NON proporre adattamenti per infortuni passati o aree di dolore non più dichiarate. Se un'area è stata rimossa dagli infortuni dichiarati, considera la persona ASINTOMATICA per quella zona (anche se vedi entry pain=0 nel diario storico). Non riproporre tutele di infortuni risolti.
 - Disponibilità giorni/settimana: rispetta esattamente il numero di giorni di allenamento. I rimanenti sono riposo.
 
 Altre regole:
@@ -167,7 +167,7 @@ IMPORTANTE — CONTESTO EMPATICO:
 Includi:
 - Sommario in 2-3 frasi (summary) — empatico, contestualizzato
 - Volume per disciplina (minuti pianificati vs effettivi)
-- Trend dolore polpaccio (es. "Pre: 1→1→2→1")
+- Trend dolore per ogni area monitorata dall'utente (es. "ginocchio Pre: 1→1→2→1") — solo se ci sono dati
 - Trend sonno e stanchezza
 - % aderenza al piano (sessioni completate / pianificate) — numero oggettivo
 - Aggiustamenti proposti per la settimana in arrivo (2-3 righe)

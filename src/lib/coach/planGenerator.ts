@@ -141,40 +141,44 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
   const strDur = Math.min(maxDurMin, 30);
   const mobDur = Math.min(maxDurMin, 20);
 
-  // Injuries detection: keyword match lowercase sui campi dichiarati.
-  // Scelta conservativa: in dubbio riduciamo cardio + aumentiamo mobility (WHY:
-  // il fallback è cieco senza LLM, meglio sottostimare il volume che forzare un
-  // rientro aggressivo su strutture potenzialmente non guarite).
+  // Injuries detection: scan generico per qualsiasi area lower-body (calf,
+  // knee, achilles, ankle, hamstring) o back. Niente più hardcode polpaccio-
+  // specifico (era il caso testato per primo, ma diventava persistente anche
+  // dopo la guarigione).
+  // Strategia conservativa: se c'è UN qualsiasi infortunio lower-body, riduciamo
+  // l'impact (1 corsa + camminata + mobility); back issue → niente forza pesante;
+  // altrimenti template standard.
   const injuriesBlob = (profile.injuries || []).join(" ").toLowerCase();
-  const hasCalfIssue = /polpaccio|calf/i.test(injuriesBlob);
-  const hasKneeIssue = /ginocchio|knee/i.test(injuriesBlob);
+  const hasLowerBodyInjury = /polpaccio|calf|ginocchio|knee|achille|achilles|caviglia|ankle|hamstring|ischiocrur|fascia plantare|plantar/i.test(injuriesBlob);
+  const hasBackIssue = /schiena|lombare|back|ernia|disco/i.test(injuriesBlob);
 
   // Template base 7 giorni: 3 corse Z2 + 1 forza + 1 mobilità + 2 riposi.
   // I giorni non scelti restano senza sessione (= riposo).
   type DayKey = "lun" | "mar" | "mer" | "gio" | "ven" | "sab" | "dom";
 
-  // Cardio session factory: rispetta injuries (calf → 2 corse + 1 mobility,
-  // knee → solo camminata).
+  // Cardio session factory: se c'è infortunio lower-body, sostituisce con
+  // mobility/camminata. Generico — nessun riferimento a area specifica.
   const cardioSession = (day: DayKey, slot: "lun" | "gio" | "sab"): PlanWeek["sessions"][number] => {
-    if (hasKneeIssue) {
-      return {
-        day,
-        type: "mobilita",
-        subtype: "Camminata",
-        duration_min: Math.min(maxDurMin, 30),
-        details: "Camminata a passo sostenuto su superficie regolare. Evita salite/discese ripide finché il ginocchio non è asintomatico.",
-        rationale: "Aerobico a basso impatto: carico articolare minimo con ginocchio in fase di tutela.",
-      };
-    }
-    // Calf injury: il 3° slot (sab) diventa mobility, gli altri due restano corse.
-    if (hasCalfIssue && slot === "sab") {
+    if (hasLowerBodyInjury) {
+      // Mantieni 1 sessione cardio leggera (camminata) + 2 mobility per tutela.
+      // Slot lun = camminata. Slot gio/sab = mobility/foam rolling.
+      if (slot === "lun") {
+        return {
+          day,
+          type: "mobilita",
+          subtype: "Camminata",
+          duration_min: Math.min(maxDurMin, 30),
+          details: "Camminata a passo sostenuto su superficie regolare. Evita salite/discese ripide e impatti finché l'area infortunata non è asintomatica.",
+          rationale: "Aerobico a basso impatto: carico articolare minimo durante la fase di tutela infortunio.",
+        };
+      }
       return {
         day,
         type: "mobilita",
         subtype: "Foam Rolling",
         duration_min: Math.min(maxDurMin, 20),
-        details: "Foam rolling polpacci + soleo, stretching prolungato gastrocnemio, mobilità caviglia. Evita impact.",
-        rationale: "Sostituisce la 3a corsa per ridurre lo stress ripetuto sul polpaccio in fase di recupero.",
+        details: "Foam rolling, mobilità articolare, stretching dolce delle aree non infortunate. Evita di mobilizzare aggressivamente l'area in tutela.",
+        rationale: "Recovery + mantenimento ROM senza stress sull'area infortunata.",
       };
     }
     return {
@@ -251,10 +255,10 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
   const validUntil = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
   const ageNote = isSenior ? " Durate ridotte per fascia età ≥65." : "";
   const begNote = isBeginner ? " Volume e intensità conservativi (beginner cap)." : "";
-  const injuryNote = hasKneeIssue
-    ? " Corse sostituite da camminata per tutela ginocchio."
-    : hasCalfIssue
-      ? " Ridotte a 2 corse + 1 mobility per tutela polpaccio."
+  const injuryNote = hasLowerBodyInjury
+    ? " Cardio sostituito con camminata + mobility per tutela infortuni dichiarati."
+    : hasBackIssue
+      ? " Forza pesante limitata per tutela schiena."
       : "";
   const goalNote = goals.length
     ? " Il piano si concentra su base aerobica e forza funzionale — gli obiettivi specifici saranno integrati quando il coach AI tornerà disponibile."

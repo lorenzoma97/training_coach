@@ -245,7 +245,7 @@ export default function ProfileEditor() {
           type="text"
           style={inputStyle}
           value={injuriesRaw}
-          placeholder="es. tendinopatia polpaccio, ernia L5 (separati da virgola)"
+          placeholder="es. tendinopatia rotulea, ernia L5 (separati da virgola)"
           onChange={e => setInjuriesRaw(e.target.value)}
           onBlur={saveInjuries}
         />

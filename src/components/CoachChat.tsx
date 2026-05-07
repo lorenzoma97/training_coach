@@ -15,21 +15,38 @@ const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2
 
 const HISTORY_KEY = "coach-chat-history";
 
-// 10 scenari "starter" coprono il maggior cluster di domande tipiche.
-// Raggruppati mentalmente: 1-3 stato/aderenza · 4-5 dolore/recovery ·
-// 6-7 zone/intensità · 8-9 trend/progressi · 10 strategia evento.
-const QUICK_PROMPTS = [
+// Starter prompts statici. Il prompt dolore-zona è dinamico (vedi
+// buildQuickPrompts), generato in base a painTrackingAreas attuale.
+const STATIC_QUICK_PROMPTS = [
   "Come sta andando la settimana?",
   "Devo riposare domani?",
   "Analizza l'ultimo allenamento",
   "Come gestire la stanchezza di oggi?",
-  "Come sta il polpaccio?",
   "Spiegami le mie zone FC",
   "Posso aumentare il carico settimanale?",
   "Sto migliorando? Mostrami i progressi",
   "Cosa dicono i dati di sonno e recupero?",
   "Strategia per la prossima gara o torneo",
 ];
+
+/**
+ * Costruisce la lista di prompt iniziali aggiungendo (se applicabile) un
+ * prompt sull'area di dolore monitorata. Niente hardcode "polpaccio":
+ * se l'utente monitora ginocchio → "Come sta il ginocchio?"; se monitora
+ * più aree → "Come stanno [aree]?"; se non ne monitora nessuna → niente.
+ */
+function buildQuickPrompts(painAreas: string[] | undefined): string[] {
+  const out = [...STATIC_QUICK_PROMPTS];
+  if (painAreas && painAreas.length > 0) {
+    const list = painAreas.length === 1
+      ? `il ${painAreas[0]}`
+      : painAreas.length === 2
+        ? `il ${painAreas[0]} e il ${painAreas[1]}`
+        : `le aree monitorate (${painAreas.join(", ")})`;
+    out.splice(4, 0, `Come sta ${list}?`); // inseriamo dopo "stanchezza di oggi"
+  }
+  return out;
+}
 
 export default function CoachChat() {
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -38,6 +55,9 @@ export default function CoachChat() {
   const [error, setError] = useState("");
   const [waitingFirstToken, setWaitingFirstToken] = useState(false);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  // Aree dolore monitorate dal profilo (per prompt dinamico "Come sta il X?").
+  // Caricate al mount + reattivo a profile:updated (toggle in ProfileEditor).
+  const [painAreas, setPainAreas] = useState<string[]>([]);
   const waitingRef = useRef(false); // closure-safe per evitare stale read nel loop streaming
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -85,8 +105,18 @@ export default function CoachChat() {
         setTimeout(() => { taRef.current?.focus(); taRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 150);
       }
     })();
+    // Carica painTrackingAreas dal profilo (per prompt dinamico).
+    const refreshPainAreas = async () => {
+      const p = await getJSON<{ painTrackingAreas?: string[] } | null>("user-profile", null);
+      setPainAreas(p?.painTrackingAreas || []);
+    };
+    void refreshPainAreas();
+    const offProfileUpd = events.on("profile:updated", () => { void refreshPainAreas(); });
     // Cross-tab + cross-component sync: ricarica quando un'altra tab/mano modifica la history.
-    const offExt = events.on("data:externalChange", e => { if (e.key === HISTORY_KEY) void loadHistory(); });
+    const offExt = events.on("data:externalChange", e => {
+      if (e.key === HISTORY_KEY) void loadHistory();
+      if (e.key === "user-profile") void refreshPainAreas();
+    });
     const offChat = events.on("chat:historyChanged", () => { void loadHistory(); });
     // Deep-link dalla vista Piano (event-bus, fallback se CoachChat è già montato).
     // Caso A: CoachChat già montato (utente già su sub-tab Chat) → questo handler scatta.
@@ -117,6 +147,7 @@ export default function CoachChat() {
       offExt();
       offChat();
       offOpenWith();
+      offProfileUpd();
       offFb();
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("online", onOnline);
@@ -407,7 +438,7 @@ DOMANDA UTENTE: ${text}
             💡 Suggerimenti per iniziare
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-            {QUICK_PROMPTS.map(p => (
+            {buildQuickPrompts(painAreas).map(p => (
               <button key={p} onClick={() => send(p)} style={{
                 background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.08)",
                 borderRadius: "999px", padding: "8px 14px", fontSize: "12px",
