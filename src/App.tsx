@@ -9,6 +9,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { NotificationHost, useNotify } from "./components/Notification";
 import { getJSON, setJSON, safeBool } from "./lib/storage";
 import { maybeRunWeeklyReport } from "./lib/scheduler";
+import { maybePromoteNextPlan } from "./lib/coach/planHistory";
 import type { CoachFeedItem } from "./lib/types";
 import { useOnline } from "./lib/useOnline";
 import { events } from "./lib/events";
@@ -82,6 +83,11 @@ function AppShell() {
   useEffect(() => {
     if (onboarded) {
       maybeRunWeeklyReport().catch(e => console.error("[scheduler] weekly", e));
+      // Auto-promote del piano "preview" della settimana prossima → se la sua
+      // startDate <= oggi, sostituisce il piano corrente (archiviando il vecchio).
+      // Eseguito qui (App mount) così avviene anche se l'utente non apre il
+      // tab Coach (es. apre l'app per un check rapido del diario).
+      maybePromoteNextPlan().catch(e => console.error("[promote-next-plan]", e));
     }
   }, [onboarded]);
 

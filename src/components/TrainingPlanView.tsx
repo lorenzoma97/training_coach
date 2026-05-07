@@ -7,7 +7,7 @@ import { planStateHash } from "../lib/coach/planValidator";
 import { buildCoachContext, getLastNDays } from "../lib/diaryContext";
 import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach/planGenerator";
 import { translateGeminiError } from "../lib/geminiErrors";
-import { savePlanWithHistory, getPlanHistory } from "../lib/coach/planHistory";
+import { savePlanWithHistory, getPlanHistory, getNextPlan, saveNextPlan, clearNextPlan, maybePromoteNextPlan } from "../lib/coach/planHistory";
 import ZonesCard from "./ZonesCard";
 import { computeZonesContext, inferSessionZone, stripInlineHRRange, type ZonesResult } from "../lib/coach/zones";
 import type { PlannedSession } from "../lib/types";
@@ -93,8 +93,17 @@ export default function TrainingPlanView() {
   // navigate, o plan generation lunga che completa dopo che l'utente ha lasciato).
   const mountedRef = useRef(true);
 
+  // Piano "preview" per la settimana prossima (slot training-plan-next).
+  // Visibile come banner sopra il piano corrente quando entrambi esistono.
+  const [nextPlan, setNextPlan] = useState<TrainingPlan | null>(null);
+  // Toggle visualizzazione: quando true mostra il preview invece del corrente.
+  const [viewingNext, setViewingNext] = useState(false);
+
   const load = async () => {
-    const [p, profile, goals, days, hist, daysForZones] = await Promise.all([
+    // Auto-promote prima di caricare: se la settimana del preview è iniziata,
+    // il preview diventa "corrente" e quello vecchio finisce in history.
+    await maybePromoteNextPlan().catch(() => false);
+    const [p, profile, goals, days, hist, daysForZones, np] = await Promise.all([
       getJSON<TrainingPlan | null>("training-plan", null),
       getJSON<UserProfile | null>("user-profile", null),
       getJSON<UserGoal[]>("user-goals", []),
@@ -103,6 +112,7 @@ export default function TrainingPlanView() {
       // Zone FC: servono 60gg per il calcolo empirico (stesso scope di ZonesCard).
       // Indipendente dai 14gg usati per il matching piano↔diario.
       getLastNDays(60).catch(() => [] as Array<{ date: string; daily: any; workouts: any[] }>),
+      getNextPlan(),
     ]);
     if (!mountedRef.current) return;
     setPlan(p);
@@ -110,6 +120,7 @@ export default function TrainingPlanView() {
     setCurrentGoals(goals);
     setRecentDays(days);
     setHistory(hist);
+    setNextPlan(np);
     // Ricalcola le zone dal profilo corrente + storico recente.
     // Unica fonte di verità per i range bpm renderizzati nei chip delle sessioni.
     const ctx = profile ? computeZonesContext(profile, daysForZones) : null;
@@ -426,13 +437,32 @@ export default function TrainingPlanView() {
         next = await generateInitialPlan(profile, goals, opts);
         title = "✓ Piano iniziale generato";
       }
-      // Archivia il piano corrente nello storico prima di sovrascrivere (se esiste)
-      await savePlanWithHistory(next);
+      // Routing storage: NEXT slot vs CURRENT slot.
+      // - rest-of-week: sempre training-plan (è la settimana che inizia oggi/lun)
+      // - next-week + piano corrente attivo (con startDate <= oggi e validUntil futuro):
+      //     salva in training-plan-next (preview), il corrente resta visibile
+      // - next-week senza piano attivo o startDate generato già passato:
+      //     salva in training-plan corrente
+      const today = new Date(); today.setHours(0,0,0,0);
+      const newPlanStart = next.startDate ? new Date(`${next.startDate}T00:00:00`) : today;
+      const currentStillActive = !!plan && !!plan.validUntil && new Date(plan.validUntil) > today;
+      const shouldSaveAsNext = mode === "next-week" && currentStillActive && newPlanStart > today;
+      if (shouldSaveAsNext) {
+        await saveNextPlan(next);
+        title = "✓ Prossima settimana pianificata in anteprima — il piano corrente resta attivo";
+      } else {
+        await savePlanWithHistory(next);
+      }
       events.emit("plan:updated", { at: new Date().toISOString() });
       // mountedRef guard: generazione piano può durare 20-30s. Se l'utente
       // ha cambiato tab nel frattempo il componente è smontato — non fare setState.
       if (!mountedRef.current) return;
-      setPlan(next);
+      if (shouldSaveAsNext) {
+        setNextPlan(next);
+      } else {
+        setPlan(next);
+        setNextPlan(null);
+      }
       showSuccess(title, next.rationale);
     } catch (e) {
       if (!mountedRef.current) return;
@@ -678,6 +708,94 @@ export default function TrainingPlanView() {
         </div>
       )}
 
+      {/* Banner anteprima prossima settimana — visibile se nextPlan esiste */}
+      {nextPlan && (
+        <div style={{
+          background: "linear-gradient(135deg, #1E3A8A30 0%, #1E40AF20 100%)",
+          border: "1px solid #3B82F666",
+          borderRadius: "12px", padding: "12px 14px",
+          display: "flex", flexDirection: "column", gap: "8px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <div aria-hidden="true" style={{
+              width: "32px", height: "32px", borderRadius: "8px",
+              background: "rgba(59, 130, 246, 0.2)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: "16px", flexShrink: 0,
+            }}>📅</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "11px", color: "#93C5FD", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "2px" }}>
+                Anteprima prossima settimana
+              </div>
+              <div style={{ fontSize: "13px", color: "#E2E8F0", lineHeight: 1.4 }}>
+                {formatWeekRange(nextPlan.startDate)} · {nextPlan.weeks?.[0]?.sessions?.length || 0} sessioni pianificate
+              </div>
+            </div>
+            <button
+              onClick={() => setViewingNext((v: boolean) => !v)}
+              style={{
+                padding: "7px 12px",
+                background: viewingNext ? "#3B82F640" : "transparent",
+                border: "1px solid #3B82F666",
+                borderRadius: "8px",
+                color: "#93C5FD", fontSize: "12px", fontWeight: 700,
+                cursor: "pointer", whiteSpace: "nowrap",
+              }}
+            >{viewingNext ? "Nascondi" : "Mostra"}</button>
+          </div>
+          {viewingNext && (
+            <>
+              {/* Render compatto sessioni del preview, riusa lo stile del piano principale */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", paddingTop: "4px" }}>
+                {nextPlan.weeks?.[0]?.sessions?.map((s: PlannedSession, i: number) => {
+                  const dayIdx = ["lun","mar","mer","gio","ven","sab","dom"].indexOf(s.day);
+                  let dateLabel = "";
+                  if (nextPlan.startDate && dayIdx >= 0) {
+                    const [y, m, d] = nextPlan.startDate.split("-").map(Number);
+                    const dt = new Date(y, m-1, d);
+                    dt.setDate(dt.getDate() + dayIdx);
+                    dateLabel = `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}`;
+                  }
+                  return (
+                    <div key={i} style={{
+                      padding: "8px 10px", background: "#0F172A",
+                      border: "1px solid rgba(59, 130, 246, 0.2)",
+                      borderRadius: "8px", fontSize: "12px",
+                      display: "flex", gap: "8px", alignItems: "baseline", flexWrap: "wrap",
+                    }}>
+                      <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#93C5FD", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "62px" }}>
+                        {s.day}{dateLabel ? ` ${dateLabel}` : ""}
+                      </span>
+                      <span style={{ fontWeight: 600, color: "#E2E8F0" }}>{s.type}{s.subtype ? ` · ${s.subtype}` : ""}</span>
+                      <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>{s.duration_min}min</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: "8px", marginTop: "4px", flexWrap: "wrap" }}>
+                <button
+                  onClick={async () => {
+                    if (confirm("Eliminare la pianificazione della prossima settimana? Potrai rigenerarla in qualsiasi momento.")) {
+                      await clearNextPlan();
+                      setNextPlan(null);
+                      setViewingNext(false);
+                    }
+                  }}
+                  style={{
+                    padding: "7px 12px", background: "transparent",
+                    border: "1px solid rgba(239, 68, 68, 0.4)", borderRadius: "8px",
+                    color: "#FCA5A5", fontSize: "12px", fontWeight: 600, cursor: "pointer",
+                  }}
+                >🗑 Scarta preview</button>
+                <div style={{ flex: 1, fontSize: "11px", color: "#94A3B8", lineHeight: 1.4, alignSelf: "center" }}>
+                  Diventerà il piano corrente automaticamente lun {formatWeekRange(nextPlan.startDate).split(" ")[0]}.
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {profileDrift && !isExpired && (
         <div style={{
           background: "#F59E0B15", border: "1px solid #F59E0B66",
@@ -892,12 +1010,33 @@ export default function TrainingPlanView() {
         {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
       </div>
 
-      {!isExpired && plan.weeks.map((w: TrainingPlan["weeks"][number]) => (
+      {!isExpired && plan.weeks.map((w: TrainingPlan["weeks"][number]) => {
+        // Calcola la data di inizio della settimana (Mon) per il range header
+        // e per le date assolute delle sessioni. plan.startDate è il lun della
+        // weekNumber=1; +(weekNumber-1)*7 → lun della week corrente.
+        let weekStartDate: Date | null = null;
+        let weekRangeLabel = "";
+        if (plan.startDate) {
+          const [sy, sm, sd] = plan.startDate.split("-").map(Number);
+          weekStartDate = new Date(sy, sm - 1, sd);
+          weekStartDate.setDate(weekStartDate.getDate() + (w.weekNumber - 1) * 7);
+          // formatWeekRange si aspetta ISO yyyy-mm-dd
+          const iso = `${weekStartDate.getFullYear()}-${String(weekStartDate.getMonth()+1).padStart(2,"0")}-${String(weekStartDate.getDate()).padStart(2,"0")}`;
+          weekRangeLabel = formatWeekRange(iso);
+        }
+        return (
         <div key={w.weekNumber} style={{ background: "#16213E", borderRadius: "14px", padding: "18px 20px", border: "1px solid rgba(255,255,255,0.06)" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "12px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "4px", flexWrap: "wrap" }}>
             <div style={{ fontSize: "11px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase" }}>Settimana {w.weekNumber}</div>
-            <div style={{ fontSize: "13px", color: "#CBD5E1", fontWeight: 600 }}>{w.focus}</div>
+            {weekRangeLabel && (
+              <div style={{ fontSize: "12px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                {weekRangeLabel}
+              </div>
+            )}
           </div>
+          {w.focus && (
+            <div style={{ fontSize: "13px", color: "#CBD5E1", fontWeight: 600, marginBottom: "12px" }}>{w.focus}</div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             {(() => {
               // Costruisce entries ordinate per giorno (lun-dom): sessioni pianificate
@@ -929,10 +1068,20 @@ export default function TrainingPlanView() {
               const unified: Array<PlannedEntry | ExtraEntry> = [...plannedEntries, ...extraEntries]
                 .sort((a, b) => a.dayIdx - b.dayIdx);
 
+              // Helper: data assoluta dal dayIdx (0=lun..6=dom) usando weekStartDate.
+              // Ritorna formato "28/04" (gg/mm). Vuoto se weekStartDate non disponibile.
+              const dateForDayIdx = (dayIdx: number): string => {
+                if (!weekStartDate || dayIdx < 0) return "";
+                const d = new Date(weekStartDate);
+                d.setDate(d.getDate() + dayIdx);
+                return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+              };
+
               return unified.map((entry) => {
                 if (entry.kind === "extra") {
                   const e = entry.e;
                   const dayKey = DAY_ORDER[entry.dayIdx] || "";
+                  const dayDateLabel = dateForDayIdx(entry.dayIdx);
                   const wtSubtype = e.workout.fields?.tipo || e.workout.fields?.sport || "";
                   const wtDur = e.workout.fields?.durata_totale || e.workout.fields?.durata || "";
                   return (
@@ -943,7 +1092,9 @@ export default function TrainingPlanView() {
                       borderRadius: "10px", fontSize: "13px",
                     }}>
                       <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px" }}>
-                        <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#60A5FA", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{dayKey}</span>
+                        <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#60A5FA", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "62px" }}>
+                          {dayKey}{dayDateLabel ? ` ${dayDateLabel}` : ""}
+                        </span>
                         <span style={{ fontWeight: 600 }}>{e.workout.type}{wtSubtype ? ` · ${wtSubtype}` : ""}</span>
                         {wtDur && <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{wtDur}min</span>}
                         <span style={{ color: "#60A5FA", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>🔸 AUTONOMO</span>
@@ -962,6 +1113,7 @@ export default function TrainingPlanView() {
                 // Planned session
                 const s = entry.s;
                 const i = entry.i;
+                const dayDateLabelP = dateForDayIdx(entry.dayIdx);
               // "Oggi" = il giorno della settimana corrente del piano (non hardcoded week 1)
               const isToday = w.weekNumber === todayPlanWeekNumber && s.day === todayKey;
               // È nel passato (già dovrebbe essere stata fatta)?
@@ -995,7 +1147,9 @@ export default function TrainingPlanView() {
                   opacity: isPast && !isCompleted ? 0.55 : 1,
                 }}>
                   <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px", flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 700, textTransform: "uppercase", color: dayLabelColor, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{s.day}</span>
+                    <span style={{ fontWeight: 700, textTransform: "uppercase", color: dayLabelColor, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "62px" }}>
+                      {s.day}{dayDateLabelP ? ` ${dayDateLabelP}` : ""}
+                    </span>
                     <span style={{ fontWeight: 600 }}>{s.type}{s.subtype ? ` · ${s.subtype}` : ""}</span>
                     <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{s.duration_min}min</span>
                     {(() => {
@@ -1093,7 +1247,8 @@ export default function TrainingPlanView() {
             })()}
           </div>
         </div>
-      ))}
+        );
+      })}
 
 
       {!isExpired && (

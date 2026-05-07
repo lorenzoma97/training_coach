@@ -4,10 +4,16 @@
 // del tab Coach per vedere cosa aveva pianificato e confrontarlo col diario.
 
 import { getJSON, setJSON } from "../storage";
+import { events } from "../events";
 import type { TrainingPlan } from "../types";
 
 export const PLAN_HISTORY_KEY = "plan-history";
 const HISTORY_CAP = 12; // ~3 mesi di piani settimanali
+/** Storage key per il piano "preview" della settimana prossima.
+ *  Mantenuto distinto da training-plan per evitare di confondere l'utente:
+ *  finché la settimana corrente è attiva, NON sostituiamo training-plan.
+ *  Auto-promote al lunedì successivo (vedi maybePromoteNextPlan). */
+export const NEXT_PLAN_KEY = "training-plan-next";
 
 export async function getPlanHistory(): Promise<TrainingPlan[]> {
   return getJSON<TrainingPlan[]>(PLAN_HISTORY_KEY, []);
@@ -34,4 +40,45 @@ export async function savePlanWithHistory(newPlan: TrainingPlan): Promise<void> 
     await archivePlan(prev);
   }
   await setJSON("training-plan", newPlan);
+}
+
+/** Legge il piano "preview" della settimana prossima (può essere null). */
+export async function getNextPlan(): Promise<TrainingPlan | null> {
+  return getJSON<TrainingPlan | null>(NEXT_PLAN_KEY, null);
+}
+
+/** Salva un piano come "preview" della settimana prossima. NON tocca training-plan. */
+export async function saveNextPlan(plan: TrainingPlan): Promise<void> {
+  await setJSON(NEXT_PLAN_KEY, plan);
+}
+
+/** Cancella il piano "preview". Es. quando l'utente lo scarta. */
+export async function clearNextPlan(): Promise<void> {
+  await setJSON(NEXT_PLAN_KEY, null);
+}
+
+/**
+ * Auto-promote: se il piano "preview" ha startDate <= oggi, promuovilo a
+ * training-plan corrente (archiviando quello vecchio in history) e cancella
+ * il preview slot. Idempotente: ritorna `false` se nulla è stato promosso.
+ *
+ * Da chiamare a:
+ *  - App mount (App.tsx useEffect)
+ *  - Apertura tab Coach (CoachPage useEffect)
+ *  - Apertura vista Piano (TrainingPlanView load)
+ * Più chiamate dello stesso giorno = no-op (idempotente).
+ */
+export async function maybePromoteNextPlan(): Promise<boolean> {
+  const next = await getNextPlan();
+  if (!next || !next.startDate) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const [y, m, d] = next.startDate.split("-").map(Number);
+  const startD = new Date(y, m - 1, d);
+  if (startD > today) return false; // not yet, settimana preview ancora futura
+  // Promote: archivia il corrente + sostituisci con next + svuota lo slot preview.
+  await savePlanWithHistory(next);
+  await clearNextPlan();
+  events.emit("plan:updated", { at: new Date().toISOString() });
+  return true;
 }
