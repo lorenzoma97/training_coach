@@ -35,6 +35,7 @@ export default function ProfileEditor() {
   const [sessionMinutes, setSessionMinutes] = useState<number>(0);
   const [equipmentRaw, setEquipmentRaw] = useState("");
   const [availableDays, setAvailableDays] = useState<UserProfile["availableDays"]>([]);
+  const [intensity, setIntensity] = useState<UserProfile["intensityPreference"]>(undefined);
 
   useEffect(() => {
     (async () => {
@@ -51,6 +52,7 @@ export default function ProfileEditor() {
         setSessionMinutes(Math.round((totalH - Math.floor(totalH)) * 60));
         setEquipmentRaw((p.equipment || []).join(", "));
         setAvailableDays(p.availableDays || []);
+        setIntensity(p.intensityPreference);
       }
     })();
   }, []);
@@ -145,6 +147,11 @@ export default function ProfileEditor() {
     await persist({ availableDays: next });
   };
 
+  const setIntensityValue = async (v: NonNullable<UserProfile["intensityPreference"]> | undefined) => {
+    setIntensity(v);
+    await persist({ intensityPreference: v });
+  };
+
   const labelStyle = { fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" };
   const inputStyle = {
     width: "100%", padding: "11px 14px", background: "#1A1A2E",
@@ -190,6 +197,38 @@ export default function ProfileEditor() {
         </div>
         <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "6px", lineHeight: 1.5 }}>
           Il coach userà questi valori come <b>vincolo HARD</b>: nessuna sessione del piano supererà la durata dichiarata.
+        </div>
+      </div>
+
+      <div>
+        <label style={labelStyle}>Preferenza intensità</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
+          {([
+            { v: "soft" as const, label: "Soft" },
+            { v: "balanced" as const, label: "Bilanciato" },
+            { v: "intense" as const, label: "Intenso" },
+            { v: "very_intense" as const, label: "Molto intenso" },
+          ]).map(opt => {
+            const active = intensity === opt.v;
+            return (
+              <button
+                key={opt.v}
+                onClick={() => setIntensityValue(active ? undefined : opt.v)}
+                aria-pressed={active}
+                style={{
+                  padding: "8px 14px",
+                  background: active ? "#E8553A25" : "#1A1A2E",
+                  border: active ? "1px solid #E8553A66" : "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: "999px",
+                  color: active ? "#E8553A" : "#94A3B8",
+                  fontSize: "12px", fontWeight: 700, cursor: "pointer",
+                }}
+              >{opt.label}</button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5 }}>
+          Indica al coach lo stile di settimana che preferisci. Le regole di sicurezza (FC max, recovery 48h, dolore stop) restano sempre applicate. Click di nuovo per deselezionare = scelta libera del coach.
         </div>
       </div>
 

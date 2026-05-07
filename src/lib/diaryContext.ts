@@ -286,10 +286,23 @@ export function profileAsPrompt(p: UserProfile | null): string {
   const availableDaysLine = p.availableDays && p.availableDays.length > 0
     ? `Giorni allenabili (vincolo HARD: prescrivi sessioni SOLO in questi giorni): ${p.availableDays.join(", ")}.`
     : "";
+  // intensityPreference: soft hint, NON vincolo. L'LLM interpreta il livello
+  // applicando comunque safety rules (FC max age-tiered, dolore, recovery).
+  // Niente cap: anche un sedentary può chiedere "intense", l'LLM userà giudizio.
+  const intensityLabels: Record<NonNullable<UserProfile["intensityPreference"]>, string> = {
+    soft: "soft (priorità recovery/mantenimento, volume basso, intensità contenuta)",
+    balanced: "balanced (equilibrio tra base aerobica e qualità)",
+    intense: "intense (l'utente preferisce un piano spinto/sfidante)",
+    very_intense: "very_intense (massima intensità sostenibile, monitora segnali overtraining e proponi deload periodici)",
+  };
+  const intensityLine = p.intensityPreference
+    ? `Preferenza intensità: ${intensityLabels[p.intensityPreference]}.`
+    : "";
   return [
     `Età: ${p.age}, sesso: ${p.sex}, peso: ${p.weight_kg}kg, altezza: ${p.height_cm}cm.`,
     `Livello: ${p.experience}.`,
     `Disponibilità: ${p.weekly_availability.days} giorni/settimana, max ${minPerSession} minuti per sessione (vincolo HARD: NON sforare).`,
+    intensityLine,
     availableDaysLine,
     p.injuries.length ? `Infortuni attivi: ${p.injuries.join("; ")}.` : "Nessun infortunio attivo riportato.",
     trackingLine,

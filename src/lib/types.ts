@@ -35,6 +35,18 @@ export interface UserProfile {
    * Override per-rigenerazione disponibile dal picker "Rigenera piano".
    */
   availableDays?: Array<"lun" | "mar" | "mer" | "gio" | "ven" | "sab" | "dom">;
+  /**
+   * Preferenza intensità del piano. Soft hint per l'LLM: indica che tipo di
+   * settimana l'utente vuole, lasciando al coach la scelta delle modalità
+   * (HIIT/ripetute/long/forza pesante ecc.). Le safety rules in baseSystemPrompt
+   * restano comunque applicate (FC age-tiered, recovery 48h, dolore stop).
+   * - "soft":     priorità recovery e mantenimento. Volume basso, intensità Z1-Z2.
+   * - "balanced": equilibrio tra base aerobica e qualità. Default.
+   * - "intense":  spinto. Adatto a obiettivi peak/weight loss/performance.
+   * - "very_intense": massima intensità sostenibile (peaking pre-gara, RED-S risk
+   *                   se persistente — l'LLM deve consigliare deload periodici).
+   */
+  intensityPreference?: "soft" | "balanced" | "intense" | "very_intense";
   equipment: string[];
   notes?: string;
   /**
