@@ -595,14 +595,26 @@ export default function DiaryApp() {
     setEditingOriginalDate(date); // snapshot: serve a handleSaveWorkout per il move cross-day
     setAddType(w.type);
     setAddFields({ ...(w.fields || {}) });
-    // Normalizza pain: se legacy { pre, during, post }, lo espande a { polpaccio: {...} }
+    // Normalizza pain: se legacy {pre,during,post} (singola area = polpaccio),
+    // espande a {polpaccio: {...}} SOLO se l'utente la sta ancora monitorando.
+    // Altrimenti mantiene il dato originale ma NON lo mostra nel form
+    // (l'utente che ha rimosso polpaccio da painTrackingAreas non vuole vedere
+    // un campo "polpaccio" su un workout vecchio — confusione UI).
     const rawPain = w.pain && typeof w.pain === "object" ? w.pain : {};
     const isLegacy = "pre" in rawPain || "during" in rawPain || "post" in rawPain;
     if (isLegacy) {
-      setAddPainByArea({ polpaccio: { pre: rawPain.pre ?? null, during: rawPain.during ?? null, post: rawPain.post ?? null } });
+      // Legacy = sempre polpaccio (era l'unica area trackata storicamente).
+      // Mostra il campo solo se polpaccio è ancora in painTrackingAreas.
+      if (painAreas.includes("polpaccio")) {
+        setAddPainByArea({ polpaccio: { pre: rawPain.pre ?? null, during: rawPain.during ?? null, post: rawPain.post ?? null } });
+      } else {
+        setAddPainByArea({});
+      }
     } else {
       const normalized: Record<string, { pre: number | null; during: number | null; post: number | null }> = {};
       for (const [area, v] of Object.entries(rawPain as Record<string, any>)) {
+        // Mostra solo le aree ancora attivamente tracciate.
+        if (!painAreas.includes(area)) continue;
         normalized[area] = { pre: v?.pre ?? null, during: v?.during ?? null, post: v?.post ?? null };
       }
       setAddPainByArea(normalized);

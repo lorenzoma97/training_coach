@@ -441,6 +441,9 @@ export function planStateHash(profile: UserProfile, goals: UserGoal[] = []): str
     weekly_availability: profile.weekly_availability,
     availableDays: [...(profile.availableDays || [])].sort(),
     intensityPreference: profile.intensityPreference || null,
+    // FCmax test: cambia le zone target di tutto il piano. Cambio bersaglio
+    // di intensità → drift trigger.
+    fcMaxTested: profile.fcMaxTested ?? null,
     equipment: [...(profile.equipment || [])].sort(),
     goals: activeGoals,
   };

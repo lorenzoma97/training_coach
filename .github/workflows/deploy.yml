@@ -28,6 +28,12 @@ jobs:
       - name: Install deps
         run: npm install
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
       - name: Build
         env:
           # Derives base path from repo name: https://<user>.github.io/<repo>/

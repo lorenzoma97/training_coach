@@ -64,11 +64,26 @@ export async function maybeRunWeeklyReport(force = false): Promise<CoachFeedItem
 async function _runWeekly(force: boolean): Promise<CoachFeedItem | null> {
   if (!hasApiKey()) return null;
   const today = new Date();
-  const isMonday = today.getDay() === 1;
-  if (!isMonday && !force) return null;
-
-  const last = (await getJSON<string | null>(LAST_REPORT_KEY, null)) || "";
   const todayStr = todayLocal();
+  const last = (await getJSON<string | null>(LAST_REPORT_KEY, null)) || "";
+  // Logica trigger:
+  //  - force=true: sempre (manual trigger da CoachPage)
+  //  - lunedì + non già fatto oggi: trigger normale
+  //  - giorni rimanenti settimanale (mar-dom): RETROATTIVO se sono passati
+  //    ≥7 giorni dall'ultimo report. Risolve il caso "utente skip lunedì →
+  //    mai report" — meglio averlo in ritardo che non averlo affatto.
+  const isMonday = today.getDay() === 1;
+  let shouldRun = force || (isMonday && last !== todayStr);
+  if (!shouldRun && last) {
+    const [ly, lm, ld] = last.split("-").map(Number);
+    const lastD = new Date(ly, lm - 1, ld);
+    const daysSinceLast = Math.floor((today.getTime() - lastD.getTime()) / (24 * 3600 * 1000));
+    if (daysSinceLast >= 7) shouldRun = true; // retroattivo
+  } else if (!shouldRun && !last) {
+    // Mai eseguito — corre subito se profilo + diario presenti.
+    shouldRun = true;
+  }
+  if (!shouldRun) return null;
   if (last === todayStr && !force) return null;
 
   // Soft-mutex cross-tab: se un altro tab ha iniziato da <60s, skippa.

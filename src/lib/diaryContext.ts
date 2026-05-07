@@ -298,18 +298,22 @@ export function profileAsPrompt(p: UserProfile | null): string {
   const intensityLine = p.intensityPreference
     ? `Preferenza intensità: ${intensityLabels[p.intensityPreference]}.`
     : "";
+  // NB: i vincoli HARD (max minuti/sessione, attrezzatura, giorni allenabili)
+  // sono dichiarati una volta sola nel system prompt PROMPTS.planGeneration.
+  // Qui esponiamo solo i VALORI del profilo, senza ripetere la formula
+  // "vincolo HARD: NON sforare" (era duplicata, ~2KB token wasted/regen).
   return [
     `Età: ${p.age}, sesso: ${p.sex}, peso: ${p.weight_kg}kg, altezza: ${p.height_cm}cm.`,
     `Livello: ${p.experience}.`,
-    `Disponibilità: ${p.weekly_availability.days} giorni/settimana, max ${minPerSession} minuti per sessione (vincolo HARD: NON sforare).`,
+    `Disponibilità: ${p.weekly_availability.days} giorni/settimana, max ${minPerSession} min/sessione.`,
     intensityLine,
     availableDaysLine,
     p.injuries.length ? `Infortuni attivi: ${p.injuries.join("; ")}.` : "Nessun infortunio attivo riportato.",
     trackingLine,
     p.meds ? `Farmaci: ${p.meds}.` : "",
     p.equipment.length
-      ? `Attrezzatura disponibile (vincolo HARD: NON proporre esercizi che richiedano attrezzi non in lista): ${p.equipment.join(", ")}.`
-      : "Nessuna attrezzatura dichiarata: limita la prescrizione a esercizi a corpo libero, corsa outdoor e mobilità.",
+      ? `Attrezzatura disponibile: ${p.equipment.join(", ")}.`
+      : "Nessuna attrezzatura dichiarata (solo corpo libero, corsa outdoor, mobilità).",
     p.notes ? `Note: ${p.notes}.` : "",
   ].filter(Boolean).join(" ");
 }

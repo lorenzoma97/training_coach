@@ -80,7 +80,7 @@ const schemaHint = `
       ]
     }
   ],
-  "rationale": "2-3 frasi che spiegano la logica del piano (settimana singola)"
+  "rationale": "lista 3-4 bullet (formato '- punto'); UNO dei bullet DEVE confermare i vincoli rispettati come da PROMPT planGeneration"
 }
 IMPORTANTE: l'array "weeks" deve contenere UNA SOLA settimana con weekNumber=1.
 

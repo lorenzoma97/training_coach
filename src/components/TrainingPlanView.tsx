@@ -146,6 +146,13 @@ export default function TrainingPlanView() {
     return plan.profileHash !== planStateHash(currentProfile, currentGoals);
   }, [plan, currentProfile, currentGoals]);
 
+  // Stesso check ma sul nextPlan: se l'utente ha modificato profilo dopo aver
+  // generato la preview prossima settimana, anche quella diventa obsoleta.
+  const nextPlanDrift = useMemo(() => {
+    if (!nextPlan || !currentProfile || !nextPlan.profileHash) return false;
+    return nextPlan.profileHash !== planStateHash(currentProfile, currentGoals);
+  }, [nextPlan, currentProfile, currentGoals]);
+
   // Matching intelligente piano↔diario.
   // Per ogni sessione pianificata, cerca un workout del MEDESIMO TIPO nella settimana
   // del piano (non solo nel giorno esatto). Tiene anche traccia dei workout EXTRA
@@ -451,6 +458,13 @@ export default function TrainingPlanView() {
         await saveNextPlan(next);
         title = "✓ Prossima settimana pianificata in anteprima — il piano corrente resta attivo";
       } else {
+        // rest-of-week (o next-week che sostituisce il corrente): se esiste un
+        // nextPlan pendente, lo invalidiamo. Il rest-of-week ridefinisce la
+        // settimana corrente e il next preview è basato su premesse pre-rest
+        // ormai sorpassate. L'utente potrà rigenerarlo se vuole.
+        if (mode === "rest-of-week") {
+          await clearNextPlan().catch(() => { /* best-effort */ });
+        }
         await savePlanWithHistory(next);
       }
       events.emit("plan:updated", { at: new Date().toISOString() });
@@ -730,6 +744,11 @@ export default function TrainingPlanView() {
               <div style={{ fontSize: "13px", color: "#E2E8F0", lineHeight: 1.4 }}>
                 {formatWeekRange(nextPlan.startDate)} · {nextPlan.weeks?.[0]?.sessions?.length || 0} sessioni pianificate
               </div>
+              {nextPlanDrift && (
+                <div style={{ fontSize: "11px", color: "#F59E0B", marginTop: "4px", fontWeight: 600 }}>
+                  ⚠ Profilo cambiato dopo la generazione — rigenera per aggiornare
+                </div>
+              )}
             </div>
             <button
               onClick={() => setViewingNext((v: boolean) => !v)}
@@ -995,7 +1014,7 @@ export default function TrainingPlanView() {
           <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
             <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>Dimmi cosa vuoi cambiare. Il coach rispetterà comunque le regole di sicurezza.</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {ADAPT_QUICK_PROMPTS.map(p => (<button key={p} onClick={() => setAdaptRequest(p)} disabled={adapting} style={{ padding: "6px 12px", fontSize: "12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "999px", color: "#CBD5E1", cursor: "pointer" }}>{p}</button>))}
+              {ADAPT_QUICK_PROMPTS.map(p => (<button key={p} onClick={() => setAdaptRequest(p)} disabled={adapting} style={{ padding: "10px 14px", minHeight: "40px", fontSize: "12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "999px", color: "#CBD5E1", cursor: "pointer" }}>{p}</button>))}
             </div>
             <textarea value={adaptRequest} onChange={e => setAdaptRequest(e.target.value)} placeholder="es. 'settimana più leggera perché ho un viaggio' o 'aumenta le ripetute'" disabled={adapting} rows={2} style={{ width: "100%", padding: "10px 12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#E2E8F0", fontSize: "14px", fontFamily: "inherit", resize: "vertical", minHeight: "60px", outline: "none", boxSizing: "border-box" }} />
             <div style={{ display: "flex", gap: "8px" }}>

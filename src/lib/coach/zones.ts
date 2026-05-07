@@ -86,8 +86,15 @@ const ZONE_META: Array<Pick<Zone, "index" | "name" | "shortLabel" | "description
   { index: 5, name: "VO2max / Intervals", shortLabel: "Z5", description: "Molto duro",              usageHint: "Ripetute brevi 400-1000m, massimali",      rpeLow: 8, rpeHigh: 10 },
 ];
 
-function tanakaFCmax(age: number): number {
-  return Math.round(208 - 0.7 * age);
+function tanakaFCmax(age: number | undefined | null): number {
+  // Guard difensivo: se age mancante o non numerico, usa fallback adulto medio
+  // (35 anni → ~184 bpm). NON è ideale ma evita crash su profili incompleti
+  // (es. backup importato senza age, o utenti pre-onboarding).
+  // Plus: età <18 o >85 → Tanaka extrapolato; clamp per evitare valori assurdi.
+  const safeAge = (typeof age === "number" && Number.isFinite(age) && age > 0)
+    ? Math.max(10, Math.min(95, age))
+    : 35;
+  return Math.round(208 - 0.7 * safeAge);
 }
 
 /** Karvonen: FC target = HRrest + pct × (FCmax - HRrest). */

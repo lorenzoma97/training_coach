@@ -219,7 +219,9 @@ export default function CoachChat() {
       const ctx = await buildCoachContext({ daysBack: 14 });
 
       // RAG: recupera evidenza scientifica pertinente alla domanda (non blocca se fallisce/offline)
-      const ragResults = await retrieveRelevantChunks({ query: text, topK: 3, minScore: 0.55 });
+      // minScore 0.60 allineato al default retriever (era 0.55, troppo permissivo
+      // dopo l'aumento KB v3+: troppi chunk irrilevanti pescati su query generiche).
+      const ragResults = await retrieveRelevantChunks({ query: text, topK: 3, minScore: 0.60 });
       const ragBlock = chunksAsPromptBlock(ragResults);
 
       // Injection condizionale: moduli basati sul profilo/contesto utente.

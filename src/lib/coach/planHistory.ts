@@ -70,7 +70,18 @@ export async function clearNextPlan(): Promise<void> {
  */
 export async function maybePromoteNextPlan(): Promise<boolean> {
   const next = await getNextPlan();
-  if (!next || !next.startDate) return false;
+  // Runtime validation: lo storage può essere corrotto (manomissione, vecchio
+  // backup, bug pregresso). Se startDate manca/è invalido NON promuoviamo
+  // (evita crash split() su undefined) e logghiamo per diagnostica.
+  if (!next) return false;
+  if (!next.startDate || typeof next.startDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(next.startDate)) {
+    console.warn("[planHistory] next plan ha startDate mancante/invalido — skipping promote", next.startDate);
+    return false;
+  }
+  if (!next.weeks || !Array.isArray(next.weeks) || next.weeks.length === 0) {
+    console.warn("[planHistory] next plan senza settimane — skipping promote");
+    return false;
+  }
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const [y, m, d] = next.startDate.split("-").map(Number);

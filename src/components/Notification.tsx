@@ -146,8 +146,8 @@ function ToastCard({ n, onDismiss }: { n: StoredNotification; onDismiss: () => v
       )}
       <button onClick={onDismiss} aria-label="Chiudi" style={{
         background: "transparent", border: "none", color: "inherit",
-        fontSize: "16px", lineHeight: 1, cursor: "pointer", padding: "0 0 0 4px",
-        minWidth: "24px", minHeight: "24px",
+        fontSize: "18px", lineHeight: 1, cursor: "pointer", padding: "0 8px",
+        minWidth: "44px", minHeight: "44px",
       }}>×</button>
     </div>
   );

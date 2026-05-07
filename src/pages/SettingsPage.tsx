@@ -164,6 +164,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
         storage.delete("user-profile"),
         storage.delete("user-goals"),
         storage.delete("training-plan"),
+        storage.delete("training-plan-next"),
         storage.delete("plan-history"),
         storage.delete("coach-feed"),
         storage.delete("coach-chat-history"),
@@ -173,6 +174,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
         storage.delete("last-weekly-report-date"),
         storage.delete("last-motivation-date"),
         storage.delete("pending-diary-openAdd"),
+        storage.delete("pending-chat-prompt"),
       ]);
       onResetOnboarding();
     } finally {

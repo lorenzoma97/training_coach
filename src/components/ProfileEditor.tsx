@@ -216,12 +216,12 @@ export default function ProfileEditor() {
                 onClick={() => setIntensityValue(active ? undefined : opt.v)}
                 aria-pressed={active}
                 style={{
-                  padding: "8px 14px",
+                  padding: "12px 16px", minHeight: "44px",
                   background: active ? "#E8553A25" : "#1A1A2E",
                   border: active ? "1px solid #E8553A66" : "1px solid rgba(255,255,255,0.1)",
                   borderRadius: "999px",
                   color: active ? "#E8553A" : "#94A3B8",
-                  fontSize: "12px", fontWeight: 700, cursor: "pointer",
+                  fontSize: "13px", fontWeight: 700, cursor: "pointer",
                 }}
               >{opt.label}</button>
             );
@@ -243,12 +243,12 @@ export default function ProfileEditor() {
                 onClick={() => toggleAvailableDay(d)}
                 aria-pressed={active}
                 style={{
-                  padding: "8px 14px", minWidth: "48px",
+                  padding: "12px 18px", minWidth: "56px", minHeight: "44px",
                   background: active ? "#22C55E25" : "#1A1A2E",
                   border: active ? "1px solid #22C55E66" : "1px solid rgba(255,255,255,0.1)",
                   borderRadius: "999px",
                   color: active ? "#22C55E" : "#94A3B8",
-                  fontSize: "12px", fontWeight: 700, cursor: "pointer",
+                  fontSize: "13px", fontWeight: 700, cursor: "pointer",
                   fontFamily: "'JetBrains Mono', monospace",
                   textTransform: "uppercase", letterSpacing: "0.05em",
                 }}
@@ -295,7 +295,9 @@ export default function ProfileEditor() {
               onClick={async () => { setInjuriesRaw(""); await persist({ injuries: [] }); }}
               style={{
                 marginLeft: "8px", background: "transparent", border: "1px solid rgba(255,255,255,0.15)",
-                borderRadius: "6px", color: "#CBD5E1", padding: "3px 8px", fontSize: "11px", cursor: "pointer",
+                borderRadius: "8px", color: "#CBD5E1",
+                padding: "10px 14px", fontSize: "12px", cursor: "pointer",
+                minHeight: "40px",
               }}
             >Rimuovi tutti</button>
           )}
@@ -329,12 +331,12 @@ export default function ProfileEditor() {
                 onClick={() => toggleArea(area)}
                 aria-pressed={active}
                 style={{
-                  padding: "6px 12px",
+                  padding: "10px 14px", minHeight: "40px",
                   background: active ? "#22C55E25" : "#1A1A2E",
                   border: active ? "1px solid #22C55E66" : "1px solid rgba(255,255,255,0.1)",
                   borderRadius: "999px",
                   color: active ? "#22C55E" : "#94A3B8",
-                  fontSize: "12px", fontWeight: 600, cursor: "pointer",
+                  fontSize: "13px", fontWeight: 600, cursor: "pointer",
                 }}
               >
                 {active ? "✓ " : "+ "}{area}

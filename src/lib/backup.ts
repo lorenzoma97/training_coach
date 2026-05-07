@@ -16,6 +16,7 @@ export interface BackupPayload {
     "user-profile"?: unknown;
     "user-goals"?: unknown;
     "training-plan"?: unknown;
+    "training-plan-next"?: unknown;
     "plan-history"?: unknown;
     "coach-feed"?: unknown;
     "coach-chat-history"?: unknown;
@@ -34,6 +35,7 @@ const SIMPLE_KEYS = [
   "user-profile",
   "user-goals",
   "training-plan",
+  "training-plan-next",
   "plan-history",
   "coach-feed",
   "coach-chat-history",
@@ -42,6 +44,14 @@ const SIMPLE_KEYS = [
   "last-motivation-date",
   "coach-feed-last-seen",
 ] as const;
+
+/** Chiavi NON esportate intenzionalmente:
+ *  - "llm-config" / "gemini-api-key": contengono apiKey → security se l'utente
+ *    condivide il backup. L'utente reinserirà la chiave dopo il restore.
+ *  - "pending-chat-prompt", "pending-diary-openAdd", "restore-in-progress":
+ *    stati transitori, non utili nel backup.
+ *  - "onboarding-draft": bozza in-progress, non rilevante post-restore.
+ */
 
 /** Chiave sentinel per rilevare restore interrotti a metà. */
 export const RESTORE_IN_PROGRESS_KEY = "restore-in-progress";

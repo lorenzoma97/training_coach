@@ -18,6 +18,7 @@ export default function Sparkline({
   unit,
   formatValue,
   invertY = false,
+  ariaLabel,
 }: {
   points: SparklinePoint[];
   width?: number;
@@ -31,6 +32,8 @@ export default function Sparkline({
   formatValue?: (v: number) => string;
   /** Se true, valori minori = più alti sul grafico (utile per passo: più basso = migliore). */
   invertY?: boolean;
+  /** Etichetta accessibile per screen reader (es. "Trend peso ultimi 30 giorni"). */
+  ariaLabel?: string;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -156,6 +159,8 @@ export default function Sparkline({
         ref={svgRef}
         width={width} height={height}
         viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={ariaLabel || `Grafico trend ${points.length} valori${lastValue != null ? `, ultimo ${lastValue}` : ""}`}
         style={{ display: "block", touchAction: "pan-y" }}
         onMouseMove={e => handleMove(e.clientX)}
         onMouseLeave={() => setHoverIdx(null)}
@@ -163,6 +168,7 @@ export default function Sparkline({
         onTouchMove={e => { const t = e.touches[0]; if (t) handleMove(t.clientX); }}
         onTouchEnd={() => setHoverIdx(null)}
       >
+        <title>{ariaLabel || `Trend ${points.length} valori${lastValue != null ? `, ultimo ${lastValue}` : ""}`}</title>
         <path d={area} fill={color} opacity={0.12} />
         <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
         {autoShowDots && dots.map((d, i) => (

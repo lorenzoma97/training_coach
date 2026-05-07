@@ -185,15 +185,35 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     if (!apiKeyInput.trim() || !modelId.trim()) return;
     setTestingKey(true); setKeyError(""); setKeyOk(null);
     const config: LLMConfig = { provider, apiKey: apiKeyInput.trim(), modelId: modelId.trim() };
-    try {
-      await setLLMConfig(config);
-      const r = await adapter.ping(config.apiKey, config.modelId);
-      if (r.ok) setKeyOk(true);
-      else { setKeyOk(false); setKeyError(translateGeminiError(r.error || "Errore")); }
-    } catch (e: any) {
-      setKeyOk(false);
-      setKeyError(translateGeminiError(e?.message || e));
+    // Retry network: 3 tentativi con backoff lineare 1s/2s. Risolve fail
+    // intermittenti su rete instabile (mobile data, 4G→5G handoff). Non
+    // ritenta su errori "veri" (401/403/quota), solo errori di trasporto.
+    const isTransient = (msg: string): boolean => {
+      const m = msg.toLowerCase();
+      return /network|fetch failed|timeout|econn|abort|503|502|504/.test(m);
+    };
+    let lastError: string | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await setLLMConfig(config);
+        const r = await adapter.ping(config.apiKey, config.modelId);
+        if (r.ok) {
+          setKeyOk(true);
+          setKeyError("");
+          setTestingKey(false);
+          return;
+        }
+        lastError = r.error || "Errore";
+        if (!isTransient(lastError)) break; // errore "vero" → no retry
+      } catch (e: any) {
+        lastError = e?.message || String(e);
+        if (lastError && !isTransient(lastError)) break;
+      }
+      // Backoff prima del prossimo tentativo (1s, 2s)
+      if (attempt < 2) await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
     }
+    setKeyOk(false);
+    setKeyError(translateGeminiError(lastError || "Errore sconosciuto"));
     setTestingKey(false);
   };
 
@@ -432,6 +452,17 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   };
 
   const saveGoalsAndNext = async () => {
+    // Warning UX se nessun obiettivo definito: il piano generato è generico
+    // ("base aerobica + forza funzionale") senza target specifici. L'utente
+    // beneficia molto di più con almeno 1 goal — confirm prima di procedere.
+    if (goals.length === 0) {
+      const ok = confirm(
+        "Non hai definito alcun obiettivo. Il coach genererà un piano generico " +
+        "(base aerobica + forza funzionale) senza target specifici.\n\n" +
+        "Vuoi continuare lo stesso? Potrai aggiungere obiettivi più tardi da Coach → Obiettivi."
+      );
+      if (!ok) return;
+    }
     await setJSON("user-goals", goals);
     events.emit("goals:updated", { at: new Date().toISOString() });
     setStep("disclaimer");
@@ -453,11 +484,27 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     setGenerating(false);
   };
 
+  // Guard contro double-call cross-tab/double-click: se 2 tab eseguono finish()
+  // in parallelo, il secondo deve essere idempotente. useRef per evitare race
+  // anche all'interno della stessa tab (doppio click su Continua).
+  const finishingRef = useRef(false);
   const finish = async () => {
-    await setJSON("onboarding-completed", true);
-    // Cleanup draft: onboarding completato, non serve più il riprendi-da-dove-eri.
-    try { await setJSON("onboarding-draft", null); } catch { /* ignore */ }
-    onDone();
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    try {
+      // Re-check storage prima di scrivere: se un'altra tab ha già completato,
+      // skippa il setJSON ridondante (evita storage event chain).
+      const already = await getJSON<boolean>("onboarding-completed", false);
+      if (!already) {
+        await setJSON("onboarding-completed", true);
+      }
+      try { await setJSON("onboarding-draft", null); } catch { /* ignore */ }
+      onDone();
+    } finally {
+      // NON resettiamo finishingRef: dopo onDone() il componente si smonta;
+      // se per qualche motivo non si smonta (test/dev), un secondo finish è
+      // comunque NoOp grazie alla check `already`.
+    }
   };
 
   const stepIndex = STEPS.indexOf(step);
