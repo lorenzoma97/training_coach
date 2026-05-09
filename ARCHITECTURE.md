@@ -451,17 +451,25 @@ export function validatePlan(plan, profile, history, options): PlanValidationRes
 - `readiness < 50` AND session has Z4/Z5 → downgrade to Z2-Z3, mark `readinessAdjusted: true`. Inject info nel rationale.
 - Altre issues → sempre `warn` o `error`, mai modifica silente.
 
-### 3.4 Modello tiering
+### 3.4 Modello (decisione finale Q4: solo Flash, no tiering)
+
+Tutti i pass usano il modello LLM **configurato dall'utente in Settings** (no tiering automatico, no feature flag dedicato per Pass 2). Default = Gemini Flash come oggi. Se l'utente vuole quality migliore, cambia provider/modello in Settings → si applica a tutto (chat, planGen, feedback, weekly).
 
 | Pass / Use case | Modello | Razionale |
 |---|---|---|
-| Pass 1 (skeleton) | Gemini Flash | Strutturato, basso volume token, no reasoning complesso. |
-| Pass 2 (detail) | **Default: Flash** + few-shot. **Opt-in Pro 2.5** dietro feature-flag `ADVANCED_DETAIL_MODE`. | Flash con prompt-engineering accurato + esempi prescrittivi (proven via golden tests) può raggiungere quality target a 1/40 del costo Pro. **Open Q4** + golden test su 10 input. |
-| Pass 3 (validate-correct) | Flash | Solo riformulazione di sezioni flagged dai validators deterministici. |
-| Chat / weekly report / motivation | Flash (status quo) | No change. |
+| Pass 1 (skeleton) | Modello configurato (default Flash) | Strutturato, basso volume token. |
+| Pass 2 (detail) | Modello configurato (default Flash) + few-shot ≥3 esempi prescrittivi | La qualità prescrittiva si ottiene via **prompt engineering + few-shot + Zod schema obbligatorio**, non via modello premium. Quality verificata su 10 golden tests in Wave 3.1. |
+| Pass 3 (validate-correct) | Modello configurato (default Flash) | Solo riformulazione di sezioni flagged. |
+| Chat / weekly report / motivation | Modello configurato (status quo) | No change. |
 | Embeddings | gemini-embedding-001 (status quo) | No change. |
 
-**Fallback chain:** Pro fail → Flash. Flash fail → fallback hardcoded (sessione minimale).
+**Cost stimato finale (default Flash):**
+- Pass 1: ~$0.001
+- Pass 2: 7 × ~$0.0005 ≈ $0.0035
+- Pass 3: ~$0.001
+- **Totale: ~$0.005/run** ✓ ben dentro budget G10 (€0.05)
+
+**Fallback chain:** se modello configurato fail → fallback hardcoded (sessione minimale). Nessun cross-model fallback per evitare costi sorpresa.
 
 ---
 
@@ -649,20 +657,20 @@ Tutto in **parallelo**, dipendenze interne minime.
 
 ---
 
-## 8. Open Questions
+## 8. Open Questions — RISOLTE (2026-05-09)
 
-| # | Domanda | Opzioni | Raccomandazione |
+Tutte e 8 le Open Questions sono chiuse. Decisioni definitive sotto.
+
+| # | Domanda | Decisione finale | Note |
 |---|---|---|---|
-| Q1 | DB esercizi: hardcoded in `catalog/exercises.ts` o JSON file separato? | (A) TS const con type-safety. (B) JSON + import + Zod validation. | **(A)** TS const: type-check al build, lookup O(1) via `Record<string, Exercise>`, no runtime parsing cost, no async load. Catalog cresce poco (target 80, max ~150). |
-| Q2 | Test 1RM: obbligatorio in onboarding o opzionale post? | (A) Step obbligatorio onboarding. (B) Opzionale skippabile. (C) Solo post-onboarding via "Tools" page. | **(B)** Opzionale skippabile: utente può cliccare "Lo farò dopo". Pass 2 forza degrada a `rpe_target` invece di `pct1RM` se 1RM null. |
-| Q3 | Default macrociclo se nessuna race | (A) Macro generico 12-settimane "fitness base". (B) No macro, planning settimana-per-settimana (status quo). | **(B)** Status quo: macro è opt-in via race add. Evitiamo over-engineering per utente casual. |
-| Q4 | Pass 2 modello: Flash con few-shot o Pro 2.5? | (A) Flash always. (B) Pro always. (C) Flash default, Pro opt-in flag "modalità avanzata" (transparency cost). | **(C)** Default Flash con golden tests come gate quality. Se utente vuole quality top → toggle Pro con disclaimer "+€0.15/run". Misuriamo quality gap su 10 golden cases prima di decidere. |
-| Q5 | Mobility routines: hardcoded in app o link YouTube esterno? | (A) Hardcoded step-by-step. (B) Link YouTube. (C) Hardcoded + opzionale link. | **(A)** Hardcoded: app PWA offline-first, no dipendenze esterne. ~6 routine × 10 step = 60 step totali, peso minimo. |
-| Q6 | Wearable: solo Samsung Health o estendiamo a Garmin/Strava? | (A) Solo Samsung. (B) Anche Garmin TCX. (C) Plug-in architecture. | **(A)** Samsung only per v2. Architettura `WearableSample` + parser-per-source è già pronta per espansione, ma scope v2 = Samsung. |
-| Q7 | Sessioni "blande" — root cause: solo prompt o anche schema? | Cambiamento prompt forse basta? | Schema-first: `exercises[]` REQUIRED nel Zod schema di Pass 2 forza. Senza esercizi → parse fail → fallback. Forza prescrittiva strutturalmente. |
-| Q8 | RaceEvent.sport: enum chiuso o open string? | (A) Enum stretto. (B) Free string. | **(A)** Enum + "altro" come catch-all. macroPlanner ha rule diverse per corsa vs sport vs trail — devono essere known. |
-
-**Confermare con utente Q1, Q2, Q4, Q5 prima di iniziare Wave 2.1.**
+| Q1 | DB esercizi format | **TS const** in `src/lib/catalog/exercises.ts` | Type-safety al build, lookup O(1), tree-shaking, no async load. |
+| Q2 | Test 1RM in onboarding | **Opzionale skippabile** | UX: 2 bottoni "Faccio il test ora" / "Lo farò dopo". Pass 2 forza usa `rpe_target` se 1RM null. |
+| Q3 | Default macrociclo se no race | **No macro default** | Macro è opt-in via race add. Status quo planning settimana-per-settimana. |
+| Q4 | Pass 2 modello | **Solo Flash, sempre** (no tiering, no flag) | Usa modello configurato in Settings. L'utente cambia in Pro/Pro 2.5 da Settings se vuole. Quality si ottiene via prompt + few-shot + Zod schema obbligatorio. |
+| Q5 | Mobility routines | **In-app step-by-step** | App PWA offline-first. ~6 routine × ~10 step = peso minimo. |
+| Q6 | Wearable scope | **Solo Samsung Health** v2 | Architettura `WearableSample` pronta per espansione futura. |
+| Q7 | Sessioni "blande" — root cause | **Schema-first** | `exercises[]` REQUIRED nel Zod schema di Pass 2 forza. Senza esercizi → parse fail → fallback strutturato. |
+| Q8 | RaceEvent.sport | **Enum stretto** + "altro" catch-all | macroPlanner ha rule diverse per corsa/sport/trail. |
 
 ---
 
