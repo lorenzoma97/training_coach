@@ -1,5 +1,5 @@
 import { getJSON } from "./storage";
-import type { UserProfile, UserGoal, TrainingPlan } from "./types";
+import type { UserProfile, UserGoal, TrainingPlan, ExercisePerformance } from "./types";
 import { stripInlineHRRange } from "./coach/zones";
 
 const WORKOUT_LABELS: Record<string, string> = {
@@ -42,6 +42,13 @@ export interface Workout {
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
+  /**
+   * v2 (Wave 2.1, ARCHITECTURE.md §2.M, I8): performance forza strutturate
+   * PARALLELE al legacy `fields.note`. Lettori v2 leggono da qui se presente,
+   * altrimenti fallback parser regex su `fields.note`. Mai sostituiamo
+   * `fields` (lettore v1 deve continuare a funzionare).
+   */
+  exercises?: ExercisePerformance[];
 }
 
 /** Giorno completo: check quotidiano + lista workout. `null` se giorno mai aperto. */

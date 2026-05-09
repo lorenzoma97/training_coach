@@ -8,7 +8,13 @@ import { storage, getJSON, setJSON } from "./storage";
 
 export interface BackupPayload {
   schema: "training-coach-backup";
-  version: 1;
+  /**
+   * Versione schema. v1 = pre-Personal-Trainer-Pro. v2 = aggiunge i nuovi
+   * storage keys per Wave 2.1 (1RM history, races, wearable, readiness, ...).
+   * Backup v1 leggibili da app v2 con migration. Backup v2 NON leggibili da
+   * app v1 (atteso: l'utente aggiorna app prima del restore).
+   */
+  version: 1 | 2;
   exportedAt: string; // ISO datetime
   appVersion: string;
   data: {
@@ -24,6 +30,20 @@ export interface BackupPayload {
     "last-weekly-report-date"?: unknown;
     "last-motivation-date"?: unknown;
     "coach-feed-last-seen"?: unknown;
+    // ────────────────────────────────────────────────────────────────────
+    // v2 (Personal Trainer Pro, ARCHITECTURE.md §2.3) — tutti opzionali.
+    "exercise-db-version"?: unknown;
+    "user-1rm-history"?: unknown;
+    "user-races"?: unknown;
+    "wearable-import-log"?: unknown;
+    "wearable-samples-v1"?: unknown;
+    "readiness-history"?: unknown;
+    "mobility-routines-version"?: unknown;
+    /**
+     * Macrocicli persistiti con prefisso "macro-cycle:<id>". Stessa
+     * convenzione di `days` (chiave = id senza prefisso).
+     */
+    "macro-cycles"?: Record<string, unknown>;
     // Diario
     "diary-index"?: string[];
     // Giorni indicizzati dal prefisso "day:"
@@ -43,7 +63,19 @@ const SIMPLE_KEYS = [
   "last-weekly-report-date",
   "last-motivation-date",
   "coach-feed-last-seen",
+  // v2 (Personal Trainer Pro): nuove chiavi semplici (no-prefix). I
+  // macrocicli sono trattati separatamente via prefisso "macro-cycle:".
+  "exercise-db-version",
+  "user-1rm-history",
+  "user-races",
+  "wearable-import-log",
+  "wearable-samples-v1",
+  "readiness-history",
+  "mobility-routines-version",
 ] as const;
+
+/** Prefisso storage per i macrocicli individuali. */
+const MACRO_CYCLE_PREFIX = "macro-cycle:";
 
 /** Chiavi NON esportate intenzionalmente:
  *  - "llm-config" / "gemini-api-key": contengono apiKey → security se l'utente
@@ -80,9 +112,24 @@ export async function buildBackup(): Promise<BackupPayload> {
     if (dayData !== null) data.days[date] = dayData;
   }
 
+  // v2: raccoglie ogni macrociclo (chiavi "macro-cycle:<id>"). Stessa
+  // logica usata per i giorni: scan prefisso → mappa per id.
+  const macroKeys = await storage.keys(MACRO_CYCLE_PREFIX);
+  if (macroKeys.length > 0) {
+    const macros: Record<string, unknown> = {};
+    for (const k of macroKeys) {
+      const id = k.slice(MACRO_CYCLE_PREFIX.length);
+      const macro = await getJSON<unknown>(k, null);
+      if (macro !== null) macros[id] = macro;
+    }
+    data["macro-cycles"] = macros;
+  }
+
   return {
     schema: "training-coach-backup",
-    version: 1,
+    // Bump v2: aggiunge i nuovi storage keys di Wave 2.1. App v1 rifiuterà
+    // questo backup (versione superiore alla supportata) → atteso.
+    version: CURRENT_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     // __APP_VERSION__ iniettato al build da vite.config.ts (da package.json).
     // In test/SSR senza Vite, fallback a "dev" per evitare crash.
@@ -189,30 +236,38 @@ function validateNestedShape(payload: { data: Record<string, unknown> }): string
 }
 
 /**
- * Versione schema corrente. Se in futuro cambieremo la shape in modo breaking
- * (es. rename chiavi, nuovi campi REQUIRED), incrementiamo a 2 e aggiungiamo
- * un ramo in `migrateToLatest` per leggere v1 e trasformarla in v2.
+ * Versione schema corrente. Bump v2 in Wave 2.1 (Personal Trainer Pro):
+ * aggiunge storage keys exercise-db-version, user-1rm-history, user-races,
+ * wearable-import-log, wearable-samples-v1, readiness-history,
+ * mobility-routines-version + macro-cycle:<id> con prefisso.
  */
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION: 2 = 2;
 
 /**
  * Migrator per backup più vecchi della versione corrente.
  * Accetta un payload VALIDATO a livello base (schema, version, data) e lo
- * promuove alla shape attesa dall'app. Per v1 è identità (no-op).
+ * promuove alla shape attesa dall'app.
  *
- * Per futura v2: assumere che i nuovi campi opzionali (zone, fcMaxTested,
- * painTrackingAreas) possano mancare da v1 → inizializzare a default.
- * Esempio (non ancora necessario):
- *   if (payload.version === 1) {
- *     // Aggiungi defaults per campi v2 assenti...
- *     payload.version = 2;
- *   }
+ * v1 → v2: i nuovi campi sono tutti opzionali e i lettori dell'app già
+ * controllano `?? defaults`. Pertanto la migration è una hydration esplicita
+ * che evita "undefined" dispersi: array → []; object → {}. Backup v1
+ * sopravvissuti diventano v2-shaped senza perdita di dati.
  */
 function migrateToLatest(payload: BackupPayload): BackupPayload {
-  // v1 → v1: identity. Nessuna migration necessaria al momento.
-  // I campi recentemente aggiunti (zone in PlannedSession, fcMaxTested in
-  // UserProfile, painTrackingAreas) sono tutti OPTIONAL, quindi payload
-  // v1 storici continuano a funzionare senza trasformazione.
+  if (payload.version === 1) {
+    const data = payload.data as BackupPayload["data"];
+    // Hydration defaults per nuove chiavi v2 (vedi §2.M).
+    // Array vuoti per liste; object vuoto per macro-cycles.
+    if (data["user-1rm-history"] === undefined) data["user-1rm-history"] = [];
+    if (data["user-races"] === undefined) data["user-races"] = [];
+    if (data["wearable-import-log"] === undefined) data["wearable-import-log"] = [];
+    if (data["wearable-samples-v1"] === undefined) data["wearable-samples-v1"] = [];
+    if (data["readiness-history"] === undefined) data["readiness-history"] = [];
+    // Le version-string non hanno default: undefined = "non inizializzato".
+    // exercise-db-version e mobility-routines-version restano undefined.
+    if (data["macro-cycles"] === undefined) data["macro-cycles"] = {};
+    payload.version = 2;
+  }
   return payload;
 }
 
@@ -272,8 +327,9 @@ export async function restoreBackup(payload: BackupPayload, opts: RestoreOptions
 
   // --- 1) Scrivi sentinel PRIMA di qualunque modifica distruttiva ---
   const existingDayKeys = await storage.keys("day:");
+  const existingMacroKeys = await storage.keys(MACRO_CYCLE_PREFIX);
   const keysToWipe: string[] = wipeBefore
-    ? [...existingDayKeys, ...SIMPLE_KEYS, "diary-index"]
+    ? [...existingDayKeys, ...existingMacroKeys, ...SIMPLE_KEYS, "diary-index"]
     : [];
   const sentinel: RestoreInProgressInfo = {
     startedAt: new Date().toISOString(),
@@ -291,6 +347,7 @@ export async function restoreBackup(payload: BackupPayload, opts: RestoreOptions
     // --- 2) Wipe ---
     if (wipeBefore) {
       for (const k of existingDayKeys) await storage.delete(k);
+      for (const k of existingMacroKeys) await storage.delete(k);
       for (const k of SIMPLE_KEYS) await storage.delete(k);
       await storage.delete("diary-index");
     }
@@ -336,6 +393,30 @@ export async function restoreBackup(payload: BackupPayload, opts: RestoreOptions
       } catch (e) {
         console.error(`[restoreBackup] setJSON fallito per "day:${date}":`, e);
         throw e;
+      }
+    }
+
+    // v2: restore dei macrocicli (chiavi "macro-cycle:<id>"). Stessa logica
+    // dei days ma senza shape-validation specifica (oggetto generico).
+    const macros = d["macro-cycles"];
+    if (macros && typeof macros === "object" && !Array.isArray(macros)) {
+      for (const [id, macroData] of Object.entries(macros as Record<string, unknown>)) {
+        if (!id || typeof id !== "string") continue;
+        if (!macroData || typeof macroData !== "object" || Array.isArray(macroData)) {
+          report.skippedKeys.push(`${MACRO_CYCLE_PREFIX}${id} (shape non valida)`);
+          continue;
+        }
+        if (!overwrite && (await getJSON<unknown>(`${MACRO_CYCLE_PREFIX}${id}`, undefined as unknown)) !== undefined) {
+          report.skippedKeys.push(`${MACRO_CYCLE_PREFIX}${id}`);
+          continue;
+        }
+        try {
+          await setJSON(`${MACRO_CYCLE_PREFIX}${id}`, macroData);
+          report.restoredKeys.push(`${MACRO_CYCLE_PREFIX}${id}`);
+        } catch (e) {
+          console.error(`[restoreBackup] setJSON fallito per "${MACRO_CYCLE_PREFIX}${id}":`, e);
+          throw e;
+        }
       }
     }
 

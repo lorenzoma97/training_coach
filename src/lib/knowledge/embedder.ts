@@ -29,7 +29,12 @@ const READY_THRESHOLD = 0.8;
 // v4 = polpaccio topic split + multi-sport chunk sec-36 + citation updates.
 // v5 = enriched embedding text (title + topics + content), prima solo content.
 //      Invalida tutte le cache v4 → re-embedding richiesto al primo open.
-const EMBEDDER_SCHEMA_VERSION = "v5";
+// v6 = catalog esercizi + mobility routines + contexts tag (no content change ai chunks).
+//      Tag `contexts: RagContext[]` aggiunto per RAG context routing multi-pass
+//      (Wave 2.1, ARCHITECTURE.md §3.2). Il content/topics dei chunk NON cambia,
+//      ma il bump invalida la cache: al prossimo avvio app, l'utente dovrà
+//      re-embedding (cost ~$0.01, latency ~30s prima volta).
+const EMBEDDER_SCHEMA_VERSION = "v6";
 
 function computeVersion(): string {
   const sig = CHUNKS.map(c => c.id).join(",") + "|n=" + CHUNKS.length;

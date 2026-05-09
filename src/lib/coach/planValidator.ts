@@ -432,6 +432,43 @@ export function planStateHash(profile: UserProfile, goals: UserGoal[] = []): str
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
 
+  // v2 (Wave 2.1): nuovi campi rilevanti per drift detection multi-pass.
+  // - oneRepMaxes: cambio 1RM → Pass-2 forza ricalcola %1RM → carichi diversi.
+  // - races: aggiungere/rimuovere race → macroPlanner ricomputa fase →
+  //   Pass-1 riceve macroPhase diverso → struttura settimana diversa.
+  // - activeMacroCycleId: cambio macro attivo → fase corrente diversa.
+  // - experienceByDiscipline: filtra Exercise.level per Pass-2 forza.
+  // NB: NON includiamo wearableConnected/wearableLastSync (cambiamenti
+  // frequenti ma non impattano la struttura del piano).
+  const oneRepMaxes = [...(profile.oneRepMaxes || [])]
+    .map(o => ({
+      exerciseId: o.exerciseId,
+      value_kg: o.value_kg,
+      source: o.source,
+    }))
+    .sort((a, b) => a.exerciseId.localeCompare(b.exerciseId));
+
+  const races = [...(profile.races || [])]
+    .map(r => ({
+      id: r.id,
+      sport: r.sport,
+      date: r.date,
+      priority: r.priority,
+      targetTimeSec: r.targetTimeSec ?? null,
+      distance_km: r.distance_km ?? null,
+    }))
+    .sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
+
+  const expByDiscipline = profile.experienceByDiscipline
+    ? Object.entries(profile.experienceByDiscipline)
+        .filter(([, v]) => v !== undefined)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .reduce<Record<string, string>>((acc, [k, v]) => {
+          acc[k] = v as string;
+          return acc;
+        }, {})
+    : null;
+
   const relevant = {
     age: profile.age,
     sex: profile.sex,
@@ -446,6 +483,11 @@ export function planStateHash(profile: UserProfile, goals: UserGoal[] = []): str
     fcMaxTested: profile.fcMaxTested ?? null,
     equipment: [...(profile.equipment || [])].sort(),
     goals: activeGoals,
+    // v2 fields:
+    oneRepMaxes,
+    races,
+    activeMacroCycleId: profile.activeMacroCycleId ?? null,
+    experienceByDiscipline: expByDiscipline,
   };
   // djb2 hash della serializzazione JSON: stabile cross-session.
   const s = JSON.stringify(relevant);

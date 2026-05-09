@@ -1,6 +1,29 @@
-// Knowledge base scientifica del coach — 24 chunk auto-contenuti
+// Knowledge base scientifica del coach — 38 chunk auto-contenuti
 // Fonte: docs/scientific-foundations.md
 // Ogni chunk sintetizza: cosa fa il coach + evidenza + implicazione + warning.
+//
+// Wave 2.1: aggiunto campo `contexts: RagContext[]` per RAG context routing
+// (vedi ARCHITECTURE.md §3.2). Il campo è additive (optional retroattivo), ma
+// tutti i chunk esistenti sono ora taggati esplicitamente. Default behavior
+// del retriever è "no filter" se contexts non specificato.
+
+/**
+ * Context tag per il routing RAG multi-pass (vedi contextRouter.ts).
+ * Un chunk può appartenere a più contexts (1-3 tipici).
+ * - "macro_periodization": chunks su periodizzazione, ACWR, fasi, taper, principi generali.
+ * - "strength_db": forza (Ratamess, Schoenfeld, Rønnestad, programmazione pratica).
+ * - "cardio_intervals": corsa intervalli, zone FC, polarizzazione.
+ * - "sport_specific": calcio, tennis/padel, multi-sport.
+ * - "mobility": recovery, mobility, foam rolling, stretching.
+ * - "none": meta chunks usabili da qualsiasi pass (LLM coaching, safety generale).
+ */
+export type RagContext =
+  | "macro_periodization"
+  | "strength_db"
+  | "cardio_intervals"
+  | "sport_specific"
+  | "mobility"
+  | "none";
 
 export interface KnowledgeChunk {
   id: string;
@@ -10,6 +33,8 @@ export interface KnowledgeChunk {
   content: string;
   primaryCitation: string;
   links: string[];
+  /** Context tag per RAG routing multi-pass. Vedi RagContext. */
+  contexts: RagContext[];
 }
 
 export const CHUNKS: KnowledgeChunk[] = [
@@ -27,7 +52,8 @@ Implicazione per il coach: la logica è stata aggiornata per mettere lo spike de
     links: [
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC12421110/",
       "https://www.jospt.org/doi/10.2519/jospt.2014.5164"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-2-acwr",
@@ -43,7 +69,8 @@ Implicazione per il coach: ACWR può essere integrato in v2 come metrica descrit
     links: [
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC7047972/",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC8138569/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-3-tanaka-hrmax",
@@ -59,7 +86,8 @@ Implicazione per il coach: usare Tanaka come stima ragionevole ma esprimersi sem
     links: [
       "https://www.jacc.org/doi/10.1016/S0735-1097(00)01054-8",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC7523886/"
-    ]
+    ],
+    contexts: ["cardio_intervals", "macro_periodization"],
   },
   {
     id: "sec-4-polarized-z2",
@@ -75,7 +103,8 @@ Implicazione per il coach: 80% Z1-Z2 / 20% Z3+ è un default ragionevole da codi
     links: [
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC4621419/",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC11679080/"
-    ]
+    ],
+    contexts: ["cardio_intervals", "macro_periodization"],
   },
   {
     id: "sec-4b-zones-5tier-karvonen-empirical",
@@ -101,7 +130,8 @@ Implicazione per il coach: quando commenta la FC media di una corsa, deve confro
     links: [
       "https://pubmed.ncbi.nlm.nih.gov/13470504/",
       "https://pubmed.ncbi.nlm.nih.gov/12436270/"
-    ]
+    ],
+    contexts: ["cardio_intervals", "macro_periodization"],
   },
   {
     id: "sec-4c-polarization-check-practical",
@@ -123,7 +153,8 @@ Implicazione per il coach: in weeklyReport citare esplicitamente il rapporto % b
     links: [
       "https://pubmed.ncbi.nlm.nih.gov/20861519/",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC4621419/"
-    ]
+    ],
+    contexts: ["cardio_intervals", "macro_periodization"],
   },
   {
     id: "sec-5-rpe-session",
@@ -139,7 +170,8 @@ Implicazione per il coach: il dato RPE raccolto dal diario è già evidence-base
     links: [
       "https://www.frontiersin.org/journals/neuroscience/articles/10.3389/fnins.2017.00612/full",
       "https://pubmed.ncbi.nlm.nih.gov/30160557/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-6-overtraining",
@@ -156,7 +188,8 @@ Implicazione per il coach: la soglia è stata aggiornata da "≤6h × 2gg" a "<7
       "https://www.sportgeneeskunde.com/wp-content/uploads/Meeusen-et-al-2013-Overtraining-Consensus-ECSS-ACSM.pdf",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC3936188/",
       "https://pubmed.ncbi.nlm.nih.gov/33144349/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-7-pain-monitoring",
@@ -172,7 +205,8 @@ Implicazione per il coach: la soglia "≥4 = STOP, =3 = riduci" è allineata sia
     links: [
       "https://pubmed.ncbi.nlm.nih.gov/17307888/",
       "https://www.jospt.org/doi/10.2519/jospt.2015.5885"
-    ]
+    ],
+    contexts: ["mobility", "macro_periodization"],
   },
   {
     id: "sec-8-smart-goals",
@@ -188,7 +222,8 @@ Implicazione per il coach: per utenti neofiti o sedentari, feasibility.ts dovreb
     links: [
       "https://www.tandfonline.com/doi/full/10.1080/17437199.2021.2023608",
       "https://www.tandfonline.com/doi/full/10.1080/1612197X.2025.2570187"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-9-llm-coaching",
@@ -205,7 +240,8 @@ Implicazione per il coach: l'approccio LLM + regole iniettate + validazione Zod 
       "https://www.nature.com/articles/s41591-025-03888-0",
       "https://medinform.jmir.org/2025/1/e59309",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC10986996/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-10-safety-parq",
@@ -221,7 +257,8 @@ Implicazione per il coach: il disclaimer attuale è corretto ma generico. In v2 
     links: [
       "https://eparmedx.com/",
       "https://pubmed.ncbi.nlm.nih.gov/26061457/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-11-resistance-training",
@@ -239,7 +276,8 @@ Confermato ACSM position stand update 2021 senza revisioni sostanziali dei princ
     links: [
       "https://pubmed.ncbi.nlm.nih.gov/19204579/",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/"
-    ]
+    ],
+    contexts: ["strength_db"],
   },
   {
     id: "sec-12-sleep",
@@ -255,7 +293,8 @@ Implicazione per il coach: la soglia <7h × 3gg consecutivi è allineata a Walsh
     links: [
       "https://link.springer.com/article/10.1007/s40279-014-0260-0",
       "https://pubmed.ncbi.nlm.nih.gov/30665263/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-13-nutrition",
@@ -271,7 +310,8 @@ Implicazione per il coach: il coach deve rifiutare esplicitamente di consigliare
     links: [
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC5867441/",
       "https://pubmed.ncbi.nlm.nih.gov/26891166/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-14-strength-endurance",
@@ -287,7 +327,8 @@ Implicazione per il coach: il planGenerator dovrebbe inserire 2-3 sessioni di fo
     links: [
       "https://onlinelibrary.wiley.com/doi/abs/10.1111/sms.12104",
       "https://pubmed.ncbi.nlm.nih.gov/24532151/"
-    ]
+    ],
+    contexts: ["strength_db", "cardio_intervals"],
   },
   {
     id: "sec-15-women-reds",
@@ -303,7 +344,8 @@ Implicazione per il coach: v2 prudente aggiungere nel profilo femminile un campo
     links: [
       "https://link.springer.com/article/10.1007/s40279-020-01319-3",
       "https://pubmed.ncbi.nlm.nih.gov/37752011/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-16-master-athletes",
@@ -319,7 +361,8 @@ Implicazione per il coach: in v2 il planGenerator per utenti ≥50 anni dovrebbe
     links: [
       "https://www.bewegenismedicijn.nl/files/downloads/acsm_position_stand_exercise_and_physical_activity_for_older_adults.pdf",
       "https://pubmed.ncbi.nlm.nih.gov/19516148/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-17-parq-screening",
@@ -335,7 +378,8 @@ Implicazione per il coach: gap critico da colmare. In v2 implementare i 7 PAR-Q+
     links: [
       "https://eparmedx.com/",
       "https://pubmed.ncbi.nlm.nih.gov/26061457/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-18-chronic-conditions",
@@ -351,7 +395,8 @@ Implicazione per il coach: in v2 aggiungere nell'OnboardingWizard checkbox di pa
     links: [
       "https://diabetesjournals.org/care/article/39/11/2065/37249/",
       "https://pubmed.ncbi.nlm.nih.gov/15076798/"
-    ]
+    ],
+    contexts: ["mobility", "macro_periodization"],
   },
   {
     id: "sec-19-sdt-motivation",
@@ -367,7 +412,8 @@ Implicazione per il coach: in v2 allineare esplicitamente il system prompt a pri
     links: [
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC3441783/",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC3096582/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-20-recovery-modalities",
@@ -383,7 +429,8 @@ Implicazione per il coach: in v2 differenziare il suggerimento di recupero nel f
     links: [
       "https://pubmed.ncbi.nlm.nih.gov/29755363/",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC6416396/"
-    ]
+    ],
+    contexts: ["mobility", "macro_periodization"],
   },
   {
     id: "sec-21-running-biomechanics",
@@ -399,7 +446,8 @@ Implicazione per il coach: in v2, se la cadenza dichiarata è <165 ppm, suggerir
     links: [
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC12440572/",
       "https://link.springer.com/article/10.1186/s40798-022-00504-0"
-    ]
+    ],
+    contexts: ["cardio_intervals"],
   },
   {
     id: "sec-22-tapering",
@@ -415,7 +463,8 @@ Implicazione per il coach: in v2, se un obiettivo di gara è entro 2 settimane, 
     links: [
       "https://pubmed.ncbi.nlm.nih.gov/17762369/",
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC10171681/"
-    ]
+    ],
+    contexts: ["macro_periodization", "cardio_intervals"],
   },
   {
     id: "sec-23-wearable-validity",
@@ -431,7 +480,8 @@ Implicazione per il coach: le regole basate su FC (Tanaka + %FCmax) vanno interp
     links: [
       "https://pubmed.ncbi.nlm.nih.gov/33397674/",
       "https://www.frontiersin.org/journals/digital-health/articles/10.3389/fdgth.2024.1326511/full"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-24-environmental",
@@ -447,7 +497,8 @@ Implicazione per il coach: in v2 aggiungere al diario un campo opzionale "condiz
     links: [
       "https://www.khsaa.org/sportsmedicine/heat/exerciseandfluidreplacement.pdf",
       "https://acsm.org/education-resources/pronouncements-scientific-communications/position-stands/"
-    ]
+    ],
+    contexts: ["cardio_intervals", "macro_periodization"],
   },
   {
     id: "sec-25-strength-programming-practical",
@@ -470,7 +521,8 @@ Implicazione per il coach: quando l'utente registra una sessione forza, chiedere
       "https://pubmed.ncbi.nlm.nih.gov/27433992/",
       "https://pubmed.ncbi.nlm.nih.gov/27102172/",
       "https://pubmed.ncbi.nlm.nih.gov/26605807/"
-    ]
+    ],
+    contexts: ["strength_db"],
   },
   {
     id: "sec-26-core-unilateral-training",
@@ -493,7 +545,8 @@ Implicazione per il coach: prescrivere almeno 1 sessione/settimana con 2 eserciz
       "https://pubmed.ncbi.nlm.nih.gov/20139764/",
       "https://pubmed.ncbi.nlm.nih.gov/16503684/",
       "https://www.backfitpro.com/"
-    ]
+    ],
+    contexts: ["strength_db"],
   },
   {
     id: "sec-27-return-to-run-calf",
@@ -516,7 +569,8 @@ Nessun major update post-Beyer 2015; HSR resta standard per rehab tendini/muscol
       "https://pubmed.ncbi.nlm.nih.gov/19793213/",
       "https://pubmed.ncbi.nlm.nih.gov/26362436/",
       "https://pubmed.ncbi.nlm.nih.gov/17485496/"
-    ]
+    ],
+    contexts: ["mobility", "macro_periodization", "cardio_intervals"],
   },
   {
     id: "sec-28-football-amateur",
@@ -541,7 +595,8 @@ Implicazione per il coach: con partita programmata, proporre 4-8 settimane di pr
       "https://pubmed.ncbi.nlm.nih.gov/19066168/",
       "https://pubmed.ncbi.nlm.nih.gov/20861097/",
       "https://pubmed.ncbi.nlm.nih.gov/28500081/"
-    ]
+    ],
+    contexts: ["sport_specific"],
   },
   {
     id: "sec-29-tennis-padel",
@@ -566,7 +621,8 @@ Implicazione per il coach: se l'utente fa tennis/padel ≥2x/settimana, inserire
       "https://pubmed.ncbi.nlm.nih.gov/17326697/",
       "https://pubmed.ncbi.nlm.nih.gov/25708136/",
       "https://pubmed.ncbi.nlm.nih.gov/35681969/"
-    ]
+    ],
+    contexts: ["sport_specific"],
   },
   {
     id: "sec-30-weight-loss-sustainable",
@@ -593,7 +649,8 @@ Implicazione per il coach: se obiettivo peso è dichiarato, proporre target -0.5
       "https://pubmed.ncbi.nlm.nih.gov/24864135/",
       "https://pubmed.ncbi.nlm.nih.gov/21558571/",
       "https://pubmed.ncbi.nlm.nih.gov/22644898/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-31-nutrition-practical-timing",
@@ -620,7 +677,8 @@ Implicazione per il coach: in risposte chat su domande nutrizione/timing, usare 
       "https://pubmed.ncbi.nlm.nih.gov/21660839/",
       "https://pubmed.ncbi.nlm.nih.gov/23360586/",
       "https://pubmed.ncbi.nlm.nih.gov/28615996/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-32-doms-management",
@@ -645,7 +703,8 @@ Implicazione per il coach: quando l'utente riporta RPE alto + soreness il giorno
       "https://pubmed.ncbi.nlm.nih.gov/11731588/",
       "https://pubmed.ncbi.nlm.nih.gov/19050918/",
       "https://pubmed.ncbi.nlm.nih.gov/29713282/"
-    ]
+    ],
+    contexts: ["mobility", "macro_periodization"],
   },
   {
     id: "sec-33-allergie-esercizio",
@@ -672,7 +731,8 @@ Implicazione per il coach: se l'utente dichiara uso antistaminici in giorni sint
       "https://pubmed.ncbi.nlm.nih.gov/18315547/",
       "https://pubmed.ncbi.nlm.nih.gov/23634861/",
       "https://pubmed.ncbi.nlm.nih.gov/28460296/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-34-stretching-mobility",
@@ -699,7 +759,8 @@ Implicazione per il coach: nei piani, proporre warm-up 10min dynamic (leg swings
       "https://pubmed.ncbi.nlm.nih.gov/26642915/",
       "https://pubmed.ncbi.nlm.nih.gov/29589749/",
       "https://pubmed.ncbi.nlm.nih.gov/31164822/"
-    ]
+    ],
+    contexts: ["mobility"],
   },
   {
     id: "sec-35-readiness-cmj",
@@ -726,7 +787,8 @@ Implicazione per il coach: il campo freshness 1-10 dell'utente è un segnale val
       "https://pubmed.ncbi.nlm.nih.gov/26701923/",
       "https://pubmed.ncbi.nlm.nih.gov/27629813/",
       "https://pubmed.ncbi.nlm.nih.gov/24353105/"
-    ]
+    ],
+    contexts: ["macro_periodization"],
   },
   {
     id: "sec-36-multisport-periodization",
@@ -758,6 +820,7 @@ Implicazione per il coach: quando l'utente dichiara multi-sport (>1 sport oltre 
       "https://pubmed.ncbi.nlm.nih.gov/22002517/",
       "https://pubmed.ncbi.nlm.nih.gov/11310548/",
       "https://pubmed.ncbi.nlm.nih.gov/26816209/"
-    ]
+    ],
+    contexts: ["sport_specific", "macro_periodization"],
   }
 ];
