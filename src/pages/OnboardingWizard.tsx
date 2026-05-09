@@ -7,6 +7,10 @@ import { checkGoalFeasibility } from "../lib/coach/feasibility";
 import { generateInitialPlan } from "../lib/coach/planGenerator";
 import { events } from "../lib/events";
 import { translateGeminiError } from "../lib/geminiErrors";
+import StepStrength1RM, { EMPTY_1RM_DRAFT, type Step1RMDraft } from "../components/onboarding/StepStrength1RM";
+import StepRaces, { EMPTY_RACES_DRAFT, type StepRacesDraft } from "../components/onboarding/StepRaces";
+import type { OneRepMax } from "../lib/types/strength";
+import type { RaceEvent } from "../lib/types/periodization";
 
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   gemini: "Google Gemini (consigliato, gratis)",
@@ -22,8 +26,10 @@ const PROVIDER_PLACEHOLDER: Record<ProviderId, string> = {
   gemini: "AIza...", openai: "sk-...", anthropic: "sk-ant-...",
 };
 
-type Step = "intro" | "apiKey" | "profile" | "goals" | "disclaimer" | "plan";
-const STEPS: Step[] = ["intro", "apiKey", "profile", "goals", "disclaimer", "plan"];
+type Step = "intro" | "apiKey" | "profile" | "strength-1rm" | "races" | "goals" | "disclaimer" | "plan";
+// Wave 2.2: nuovi step "strength-1rm" e "races" inseriti tra "profile" e "goals"
+// (entrambi opzionali, sempre skippabili). Aggiornato anche aria-valuemax sotto.
+const STEPS: Step[] = ["intro", "apiKey", "profile", "strength-1rm", "races", "goals", "disclaimer", "plan"];
 
 interface OnboardingDraft {
   step?: Step;
@@ -31,6 +37,9 @@ interface OnboardingDraft {
   goalTexts?: string[];
   acceptedDisclaimer?: boolean;
   goalsNeedRecheck?: boolean;
+  // Wave 2.2: persistenza dei due nuovi step opzionali per idempotenza F5/reload.
+  strength1RMDraft?: Step1RMDraft;
+  racesDraft?: StepRacesDraft;
   // ISO timestamp ultimo salvataggio — usato per scartare draft più vecchi di 30 giorni.
   savedAt?: string;
 }
@@ -114,6 +123,25 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         const mInt = Math.round((hrs - hInt) * 60);
         setSessionHours(String(hInt));
         setSessionMinutes(String(mInt));
+        // Wave 2.2 — Backward compat: se profile ha già oneRepMaxes/races
+        // (utente sta riprendendo dopo aver completato gli step opzionali una
+        // prima volta), pre-popola i draft per non far perdere il lavoro.
+        if (existing.oneRepMaxes && existing.oneRepMaxes.length > 0) {
+          setStrength1RMDraft({
+            entries: existing.oneRepMaxes.map(o => ({
+              exerciseId: o.exerciseId,
+              valueKg: String(o.value_kg),
+              source: o.source,
+              acquiredAt: o.acquiredAt,
+            })),
+          });
+        }
+        if (existing.races && existing.races.length > 0) {
+          setRacesDraft({
+            form: { ...EMPTY_RACES_DRAFT.form },
+            races: existing.races,
+          });
+        }
       }
       // Carica goal già accettati
       const existingGoals = await getJSON<UserGoal[]>("user-goals", []);
@@ -146,6 +174,12 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     if (Array.isArray(draft.goalTexts) && draft.goalTexts.length === 3) setGoalTexts(draft.goalTexts);
     if (draft.acceptedDisclaimer) setAcceptedDisclaimer(true);
     if (draft.goalsNeedRecheck) setGoalsNeedRecheck(true);
+    if (draft.strength1RMDraft && Array.isArray(draft.strength1RMDraft.entries)) {
+      setStrength1RMDraft(draft.strength1RMDraft);
+    }
+    if (draft.racesDraft && Array.isArray(draft.racesDraft.races)) {
+      setRacesDraft(draft.racesDraft);
+    }
     setPendingDraft(null);
   };
 
@@ -252,15 +286,31 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [planError, setPlanError] = useState("");
 
+  // Wave 2.2 — Draft per gli step opzionali "strength-1rm" e "races". Persistiti
+  // in `onboarding-draft` insieme agli altri campi per idempotenza F5/reload.
+  // Inizializzazione lazy (vedi useEffect più sotto) per riprendere dai dati
+  // già su `user-profile.oneRepMaxes/races` se l'utente sta riprendendo.
+  const [strength1RMDraft, setStrength1RMDraft] = useState<Step1RMDraft>(EMPTY_1RM_DRAFT);
+  const [racesDraft, setRacesDraft] = useState<StepRacesDraft>(EMPTY_RACES_DRAFT);
+
   // Persistenza draft: salva ad ogni cambio di step/goalTexts/goalsCount/acceptedDisclaimer/goalsNeedRecheck.
   // Non partire prima del caricamento iniziale per evitare di sovrascrivere il draft esistente.
   useEffect(() => {
     if (!draftLoadedRef.current) return;
     // Non sovrascrivere il draft mentre il banner di resume è ancora in attesa di risposta utente.
     if (pendingDraft) return;
-    const draft: OnboardingDraft = { step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck, savedAt: new Date().toISOString() };
+    const draft: OnboardingDraft = {
+      step,
+      goalsCount,
+      goalTexts,
+      acceptedDisclaimer,
+      goalsNeedRecheck,
+      strength1RMDraft,
+      racesDraft,
+      savedAt: new Date().toISOString(),
+    };
     setJSON("onboarding-draft", draft).catch(() => { /* ignore quota here, non-critical */ });
-  }, [step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck, pendingDraft]);
+  }, [step, goalsCount, goalTexts, acceptedDisclaimer, goalsNeedRecheck, strength1RMDraft, racesDraft, pendingDraft]);
 
   const parseNum = (v: string): number | undefined => {
     const t = v.trim();
@@ -328,6 +378,41 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     if (relevantChanged && goals.length > 0) {
       setGoalsNeedRecheck(true);
     }
+    // Wave 2.2: dopo il profilo, mostriamo gli step opzionali 1RM → races prima
+    // dei goal. Sono entrambi skippabili.
+    setStep("strength-1rm");
+  };
+
+  // Wave 2.2 — Save handlers per i due nuovi step opzionali. Idempotenti.
+  // Salvano sul `user-profile` esistente (oneRepMaxes / races sono campi
+  // optional di UserProfile estesi in Wave 2.1).
+  const saveStrength1RMAndNext = async (oneRepMaxes: OneRepMax[]) => {
+    const now = new Date().toISOString();
+    const prev = await getJSON<UserProfile | null>("user-profile", null);
+    if (prev) {
+      const next: UserProfile = { ...prev, oneRepMaxes, updatedAt: now };
+      await setJSON("user-profile", next);
+      events.emit("profile:updated", { at: now });
+    }
+    setStep("races");
+  };
+
+  const skipStrength1RM = () => {
+    setStep("races");
+  };
+
+  const saveRacesAndNext = async (races: RaceEvent[]) => {
+    const now = new Date().toISOString();
+    const prev = await getJSON<UserProfile | null>("user-profile", null);
+    if (prev) {
+      const next: UserProfile = { ...prev, races, updatedAt: now };
+      await setJSON("user-profile", next);
+      events.emit("profile:updated", { at: now });
+    }
+    setStep("goals");
+  };
+
+  const skipRaces = () => {
     setStep("goals");
   };
 
@@ -917,10 +1002,30 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
+      {step === "strength-1rm" && (
+        <StepStrength1RM
+          draft={strength1RMDraft}
+          onDraftChange={setStrength1RMDraft}
+          onSave={saveStrength1RMAndNext}
+          onSkip={skipStrength1RM}
+          onBack={() => setStep("profile")}
+        />
+      )}
+
+      {step === "races" && (
+        <StepRaces
+          draft={racesDraft}
+          onDraftChange={setRacesDraft}
+          onSave={saveRacesAndNext}
+          onSkip={skipRaces}
+          onBack={() => setStep("strength-1rm")}
+        />
+      )}
+
       {step === "goals" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 3 · Obiettivi</div>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 5 · Obiettivi</div>
             <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Obiettivi</h2>
             <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0, lineHeight: 1.5 }}>
               Scrivi 1-3 obiettivi. Il coach li valuterà e proporrà una versione realistica se servono aggiustamenti.
@@ -1077,7 +1182,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
           )}
 
           <div style={{ display: "flex", gap: "10px" }}>
-            <button onClick={() => setStep("profile")} style={ghostBtn}>← Indietro</button>
+            <button onClick={() => setStep("races")} style={ghostBtn}>← Indietro</button>
             <button onClick={saveGoalsAndNext} style={{ ...primaryBtn, flex: 1 }}>
               {goals.length ? "Continua →" : "Salta per ora →"}
             </button>
@@ -1102,7 +1207,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         return (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 4 · Sicurezza</div>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 6 · Sicurezza</div>
             <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Regole di sicurezza</h2>
             <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0 }}>Il coach si basa su queste regole per ogni consiglio. Leggile bene.</p>
           </div>
@@ -1187,7 +1292,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       {step === "plan" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 5 · Piano</div>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 7 · Piano</div>
             <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Il tuo piano</h2>
             <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0 }}>Microciclo di 2 settimane costruito sul tuo profilo.</p>
           </div>
