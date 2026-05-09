@@ -2,9 +2,13 @@
 // L'LLM è istruito via prompt ma può sbagliare/ignorare regole. Qui controlliamo
 // le invarianti di sicurezza e correggiamo/avvisiamo se violate.
 
-import type { TrainingPlan, UserProfile, PlanWeek, PlannedSession, UserGoal } from "../types";
+import type { TrainingPlan, UserProfile, PlanWeek, PlannedSession, UserGoal, ExercisePerformance } from "../types";
 import { restDaysMinForAge, SAFETY } from "./safetyRules";
 import { isCanonicalSubtype, WORKOUT_SUBTYPES } from "../workoutCatalog";
+import {
+  validateStrengthLoadProgression,
+  validatePct1rmRepsCoherence,
+} from "./validators/strengthValidators";
 
 export interface PlanValidationIssue {
   weekNumber: number;
@@ -18,20 +22,66 @@ export interface PlanValidationIssue {
     | "strength_unsafe_elder"
     | "subtype_out_of_catalog"
     | "strength_recovery_violation"
-    | "weekly_volume_exceeds_availability";
+    | "weekly_volume_exceeds_availability"
+    // Wave 3.1 — strength engine validators (additive, no breaking change).
+    | "strength_load_progression"
+    | "pct1rm_reps_mismatch";
   message: string;
   severity: "warn" | "error";
   /** Categoria usata per metriche/raggruppamento (coincide con `type`). */
   category?: string;
 }
 
-/** Shape minima storico per lo spike check Johansen. */
-interface RecentWorkoutForValidator {
+/**
+ * Shape minima storico per i validator. Volutamente permissiva (lettura
+ * cross-versione: piani v1 hanno solo `fields`, piani v2 hanno anche
+ * `exercises[]` per la forza strutturata, vedi I8 in ARCHITECTURE.md §6).
+ */
+export interface RecentWorkoutForValidator {
   type?: string;
   fields?: { tipo?: string; durata_totale?: number | string; durata?: number | string };
-  /** Data ISO (YYYY-MM-DD) opzionale per filtro 14gg. */
+  /** Data ISO (YYYY-MM-DD) opzionale per filtro 14gg / 30gg. */
   date?: string;
+  /**
+   * v2 (Wave 2.1, ARCHITECTURE.md §2.M): performance forza strutturate.
+   * Se presente, validateStrengthLoadProgression la legge per costruire
+   * la baseline carichi recenti per `exerciseId`.
+   */
+  exercises?: ExercisePerformance[];
 }
+
+/**
+ * Contesto condiviso passato ai validator compositivi (Wave 3.1, ARCHITECTURE
+ * §3.3). I validator esistenti continuano a usare i parametri legacy diretti;
+ * i nuovi validator (strength_load_progression, pct1rm_reps_mismatch) ricevono
+ * questo ctx via l'array `VALIDATORS`.
+ */
+export interface ValidatorCtx {
+  profile: UserProfile;
+  recentWorkouts: RecentWorkoutForValidator[];
+  options: ValidatePlanOptions;
+}
+
+/** Firma uniforme per i validator compositivi (no breaking API esterna). */
+export type PlanValidator = (
+  plan: TrainingPlan,
+  ctx: ValidatorCtx,
+) => PlanValidationIssue[];
+
+/**
+ * Validator registrati in modalità compositiva (additive). Ogni validator è
+ * una pure function — composabilità + testabilità isolata. I validator legacy
+ * inline (validateSessionZoneConfig, validateStrengthAgeTiered, ecc.) restano
+ * dove sono per evitare big-bang refactor (ARCHITECTURE.md §3.3 "no big-bang").
+ *
+ * Wave 3.1 introduce qui i primi 2 validator strength engine.
+ * Wave successive aggiungeranno: validatePhaseCoherence, validateReadiness,
+ * validatePolarization, validateEquipment, validateCyclePhaseRisk.
+ */
+const VALIDATORS: PlanValidator[] = [
+  validateStrengthLoadProgression,
+  validatePct1rmRepsCoherence,
+];
 
 export interface PlanValidationResult {
   ok: boolean;
@@ -212,6 +262,14 @@ export function validatePlan(
     // Week-level checks: strength recovery 48h + volume vs availability.
     validateStrengthRecovery(week, issues);
     validateWeeklyVolume(week, profile, options.expectedDayLabels, issues);
+  }
+
+  // Compositional validators (Wave 3.1+): pure functions con ctx condiviso.
+  // Aggiunti DOPO i legacy per preservare ordine output (i test esistenti
+  // assumono l'ordine corrente dei legacy; i nuovi issue arrivano in coda).
+  const ctx: ValidatorCtx = { profile, recentWorkouts, options };
+  for (const v of VALIDATORS) {
+    issues.push(...v(plan, ctx));
   }
 
   const ok = issues.filter(i => i.severity === "error").length === 0;

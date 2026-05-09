@@ -2,7 +2,17 @@ import { useState, useEffect, useCallback, useId, useRef } from "react";
 import { storage, getJSON, setJSON, StorageQuotaError, StorageValueTooLargeError } from "../lib/storage";
 import { events } from "../lib/events";
 import type { TrainingPlan, PlannedSession } from "../lib/types";
+import type { ExercisePerformance } from "../lib/types/strength";
 import { stripInlineHRRange } from "../lib/coach/zones";
+import StrengthExercisesForm from "./diary/StrengthExercisesForm";
+// Wave 3.1 (data-integration): hook 1RM updater post-save.
+import { applyOneRepMaxUpdates } from "../lib/coach/oneRepMaxEstimator";
+import { useNotify } from "./Notification";
+import { EXERCISES_BY_ID } from "../lib/catalog/exercises";
+
+// Wave 3.1: tipi workout per cui mostriamo il toggle "modalità strutturata".
+// Allineato con catalog forza (forza_gambe + forza_upper).
+const STRENGTH_TYPES: ReadonlySet<string> = new Set(["forza_gambe", "forza_upper"]);
 
 const WORKOUT_TYPES = [
   {
@@ -271,6 +281,8 @@ export default function DiaryApp() {
   // useId() assicura unicità tra istanze e stabilità tra render.
   const uidBase = useId();
   const fid = (name: string) => `${uidBase}-${name}`;
+  // Wave 3.1: notify per feedback PR 1RM (es. "Nuovo PR stimato squat 95kg").
+  const { notify } = useNotify();
   const [screen, setScreen] = useState<"home" | "add" | "daily" | "detail">("home");
   const [index, setIndex] = useState<string[]>([]);
   const [todayData, setTodayData] = useState<any>(null);
@@ -286,6 +298,16 @@ export default function DiaryApp() {
   const [addPainByArea, setAddPainByArea] = useState<Record<string, { pre: number | null; during: number | null; post: number | null }>>({});
   const [addRpe, setAddRpe] = useState<number | null>(null);
   const [addNotes, setAddNotes] = useState("");
+  // Wave 3.1: stato esercizi strutturati (parallel a addFields legacy).
+  // Il toggle `addStrengthMode` controlla se la sezione è visibile e se
+  // `addExercises` viene incluso nel workout salvato.
+  // - default OFF: comportamento legacy invariato
+  // - auto-ON in edit se workout.exercises esistono
+  const [addStrengthMode, setAddStrengthMode] = useState<boolean>(false);
+  const [addExercises, setAddExercises] = useState<ExercisePerformance[]>([]);
+  // Equipment dichiarato dall'utente (profile.equipment). Filtra picker esercizi.
+  // Default [] = solo bodyweight (StrengthExercisesForm aggiunge "bodyweight" sempre).
+  const [userEquipment, setUserEquipment] = useState<string[]>([]);
   // Se editingWorkoutId è settato, handleSaveWorkout sostituirà invece di creare.
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
   // Data ORIGINALE del workout in editing (snapshot al momento dell'apertura).
@@ -307,6 +329,8 @@ export default function DiaryApp() {
         if (r) {
           const p = JSON.parse(r.value);
           setPainAreas(Array.isArray(p?.painTrackingAreas) ? p.painTrackingAreas : []);
+          // Wave 3.1: carica anche equipment per StrengthExercisesForm picker.
+          setUserEquipment(Array.isArray(p?.equipment) ? p.equipment : []);
         }
       } catch { /* silent */ }
     })();
@@ -435,6 +459,7 @@ export default function DiaryApp() {
               const p = JSON.parse(r.value);
               setPainAreas(Array.isArray(p?.painTrackingAreas) ? p.painTrackingAreas : []);
               setProfileSex(p?.sex || null);
+              setUserEquipment(Array.isArray(p?.equipment) ? p.equipment : []);
             }
           } catch { /* silent */ }
         })();
@@ -472,6 +497,9 @@ export default function DiaryApp() {
     setAddPainByArea({});
     setAddRpe(null);
     setAddNotes(p.notes || "");
+    // Wave 3.1: reset modalità strutturata su nuovo open (default OFF, no pre-fill)
+    setAddStrengthMode(false);
+    setAddExercises([]);
     setEditingWorkoutId(null);
     setEditingOriginalDate(null);
     setScreen("add");
@@ -504,9 +532,16 @@ export default function DiaryApp() {
 
     setSaving(true);
     let savedOk = false;
+    // Wave 3.1: cattura il workout salvato per il post-save 1RM updater (data-integration).
+    let workoutSavedRef: Record<string, any> | null = null;
     try {
       const date = addDate;
       let dayData = (await loadDay(date)) || { daily: null, workouts: [] };
+      // Wave 3.1: gestione esercizi strutturati. La modalità è applicabile solo
+      // ai workout di forza (STRENGTH_TYPES). Per gli altri il toggle è nascosto
+      // e addStrengthMode resta false → ramo no-op (campo `exercises` non toccato).
+      const strengthModeApplicable = STRENGTH_TYPES.has(addType) && addStrengthMode;
+
       if (editingWorkoutId) {
         // Modifica: sostituisce i campi del workout esistente, preservando id + createdAt.
         // Caso speciale: se l'utente ha cambiato la data, il workout è ancora salvato
@@ -519,7 +554,7 @@ export default function DiaryApp() {
         const idx = sourceDay.workouts.findIndex((w: any) => w.id === editingWorkoutId);
         if (idx < 0) throw new Error("Workout non trovato (potrebbe essere stato eliminato).");
         const existing = sourceDay.workouts[idx];
-        const updated = {
+        const updated: Record<string, any> = {
           ...existing,
           type: addType,
           fields: { ...addFields },
@@ -528,6 +563,18 @@ export default function DiaryApp() {
           notes: addNotes,
           updatedAt: new Date().toISOString(),
         };
+        // Wave 3.1: gestisci exercises[] in edit
+        // - strengthModeApplicable + array non vuoto → salva array (anche replace su esistente)
+        // - strengthModeApplicable + array vuoto → rimuovi chiave (utente ha svuotato)
+        // - !strengthModeApplicable → preserva campo legacy esistente se presente
+        //   (utente ha disattivato il toggle ma non vogliamo perdere dati che ha già)
+        if (strengthModeApplicable) {
+          if (addExercises.length > 0) {
+            updated.exercises = [...addExercises];
+          } else {
+            delete updated.exercises;
+          }
+        }
 
         if (sourceDate === date) {
           // Stessa data: replace in-place
@@ -552,14 +599,19 @@ export default function DiaryApp() {
           if (idxChanged) await saveIndex(idxAll);
         }
         events.emit("workout:saved", { date, workout: updated });
+        workoutSavedRef = updated;
         savedOk = true;
         flash("Allenamento aggiornato ✓");
       } else {
-        const newWorkout = {
+        const newWorkout: Record<string, any> = {
           id: uid(), type: addType, fields: { ...addFields },
           pain: { ...addPainByArea }, rpe: addRpe, notes: addNotes,
           createdAt: new Date().toISOString(),
         };
+        // Wave 3.1: includi exercises[] solo se applicabile + array non vuoto.
+        if (strengthModeApplicable && addExercises.length > 0) {
+          newWorkout.exercises = [...addExercises];
+        }
         dayData.workouts.push(newWorkout);
         await saveDay(date, dayData);
 
@@ -567,15 +619,45 @@ export default function DiaryApp() {
         if (!idx.includes(date)) { idx.push(date); await saveIndex(idx); }
 
         events.emit("workout:saved", { date, workout: newWorkout });
+        workoutSavedRef = newWorkout;
         savedOk = true;
         flash("Allenamento salvato ✓");
       }
 
       setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes("");
+      setAddStrengthMode(false); setAddExercises([]);
       setEditingWorkoutId(null);
       setEditingOriginalDate(null);
       await refresh();
       setScreen("home");
+
+      // Wave 3.1 (data-integration): post-save 1RM updater. No-op se workout
+      // non ha exercises[] strutturati (backward compat, retro-storico legacy).
+      // applyOneRepMaxUpdates gestisce internamente errori (no throw).
+      if (workoutSavedRef && Array.isArray(workoutSavedRef.exercises) && workoutSavedRef.exercises.length > 0) {
+        try {
+          const changes = await applyOneRepMaxUpdates(workoutSavedRef as any);
+          if (changes.length > 0) {
+            // Notifica i PR. Mostra fino a 3 nomi esercizio (tronca se più).
+            const lines = changes.slice(0, 3).map(c => {
+              const name = EXERCISES_BY_ID[c.exerciseId]?.name ?? c.exerciseId;
+              return c.from !== undefined
+                ? `${name}: ${c.from} → ${c.to} kg`
+                : `${name}: ${c.to} kg (nuova stima)`;
+            });
+            const more = changes.length > 3 ? `\n+${changes.length - 3} altri` : "";
+            notify({
+              tone: "success",
+              title: changes.length === 1 ? "Nuovo PR stimato!" : `${changes.length} PR stimati!`,
+              message: lines.join("\n") + more,
+              duration: 7000,
+            });
+          }
+        } catch (e) {
+          // Best-effort: il save è già completato, non degradiamo l'UX.
+          console.warn("[handleSaveWorkout] applyOneRepMaxUpdates failed:", e);
+        }
+      }
     } catch (e: any) {
       console.error("[handleSaveWorkout]", e);
       if (!savedOk) {
@@ -621,6 +703,15 @@ export default function DiaryApp() {
     }
     setAddRpe(w.rpe ?? null);
     setAddNotes(w.notes ?? "");
+    // Wave 3.1: detect esercizi strutturati esistenti → auto-attiva toggle.
+    // Workout legacy senza `exercises` → toggle OFF (mantiene behavior originale).
+    if (STRENGTH_TYPES.has(w.type) && Array.isArray(w.exercises) && w.exercises.length > 0) {
+      setAddStrengthMode(true);
+      setAddExercises(w.exercises as ExercisePerformance[]);
+    } else {
+      setAddStrengthMode(false);
+      setAddExercises([]);
+    }
     setEditingWorkoutId(w.id);
     setScreen("add");
   };
@@ -883,7 +974,7 @@ export default function DiaryApp() {
           )}
 
           <div style={{ padding: "16px 24px 8px", display: "flex", gap: "10px" }}>
-            <button onClick={() => { setAddDate(today()); setAddType(null); setEditingWorkoutId(null); setEditingOriginalDate(null); setScreen("add"); }} style={{
+            <button onClick={() => { setAddDate(today()); setAddType(null); setAddStrengthMode(false); setAddExercises([]); setEditingWorkoutId(null); setEditingOriginalDate(null); setScreen("add"); }} style={{
               flex: 1, padding: "16px", background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
               border: "none", borderRadius: "14px", color: "#FFF", fontSize: "15px", fontWeight: 700, cursor: "pointer",
             }}>🏋️ Registra allenamento</button>
@@ -1051,6 +1142,53 @@ export default function DiaryApp() {
                     );
                   })}
                 </div>
+
+                {/* Wave 3.1: Modalità strutturata esercizi (solo forza_*).
+                    Toggle default OFF (backward compat). Auto-ON in edit se workout
+                    ha già `exercises[]`. Salvato PARALLEL a `fields.esercizi` legacy. */}
+                {STRENGTH_TYPES.has(addType) && (
+                  <div style={{ marginTop: "20px" }}>
+                    <label
+                      htmlFor={fid("strength-mode-toggle")}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "12px",
+                        padding: "14px 16px", minHeight: "44px",
+                        background: addStrengthMode ? "#7C3AED15" : "#16213E",
+                        border: addStrengthMode ? "1px solid #7C3AED" : "1px solid rgba(255,255,255,0.06)",
+                        borderRadius: "12px", cursor: saving ? "wait" : "pointer",
+                      }}
+                    >
+                      <input
+                        id={fid("strength-mode-toggle")}
+                        type="checkbox"
+                        checked={addStrengthMode}
+                        onChange={e => setAddStrengthMode(e.target.checked)}
+                        disabled={saving}
+                        aria-label="Attiva modalità strutturata: registra esercizi, set, carichi e RPE"
+                        style={{ width: "20px", height: "20px", accentColor: "#7C3AED", cursor: "pointer" }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: "14px", fontWeight: 700, color: addStrengthMode ? "#A78BFA" : "#CBD5E1" }}>
+                          Modalità strutturata
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
+                          Registra esercizi, set e carichi (richiesto per analisi 1RM e progressione).
+                        </div>
+                      </div>
+                    </label>
+
+                    {addStrengthMode && (
+                      <div style={{ marginTop: "14px" }}>
+                        <StrengthExercisesForm
+                          availableEquipment={userEquipment}
+                          exercises={addExercises}
+                          onChange={setAddExercises}
+                          disabled={saving}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {painAreas.length > 0 && painAreas.map(area => {
                   const p = addPainByArea[area] || { pre: null, during: null, post: null };
@@ -1451,7 +1589,7 @@ export default function DiaryApp() {
               </div>
             )}
 
-            <button onClick={() => { setAddDate(detailDate); setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes(""); setEditingWorkoutId(null); setEditingOriginalDate(null); setScreen("add"); }} style={{
+            <button onClick={() => { setAddDate(detailDate); setAddType(null); setAddFields({}); setAddPainByArea({}); setAddRpe(null); setAddNotes(""); setAddStrengthMode(false); setAddExercises([]); setEditingWorkoutId(null); setEditingOriginalDate(null); setScreen("add"); }} style={{
               width: "100%", padding: "14px", marginTop: "16px",
               background: "#1A1A2E", border: "1px dashed rgba(255,255,255,0.15)",
               borderRadius: "14px", color: "#94A3B8", fontSize: "14px", fontWeight: 600, cursor: "pointer",
