@@ -14,24 +14,24 @@ const baseProfile: UserProfile = {
 describe("computeZonesContext", () => {
   it("computes zones for valid age (Tanaka 30 → 187 bpm)", () => {
     const ctx = computeZonesContext(baseProfile, []);
-    expect(ctx.zones.fcMax).toBe(187);
-    expect(ctx.zones.zones.length).toBe(5);
+    expect(ctx!.zones!.fcMax).toBe(187);
+    expect(ctx!.zones!.zones.length).toBe(5);
   });
   it("does NOT crash if age is missing (uses safe fallback)", () => {
     const noAge = { ...baseProfile, age: undefined as any };
     const ctx = computeZonesContext(noAge, []);
-    expect(ctx.zones.fcMax).toBeGreaterThan(150);
-    expect(ctx.zones.fcMax).toBeLessThan(220);
+    expect(ctx!.zones!.fcMax).toBeGreaterThan(150);
+    expect(ctx!.zones!.fcMax).toBeLessThan(220);
   });
   it("clamps extreme age (>95) to safe range", () => {
     const old = { ...baseProfile, age: 120 };
     const ctx = computeZonesContext(old, []);
-    expect(ctx.zones.fcMax).toBeGreaterThan(130);
+    expect(ctx!.zones!.fcMax).toBeGreaterThan(130);
   });
   it("uses fcMaxTested when present (overrides Tanaka)", () => {
     const tested = { ...baseProfile, fcMaxTested: 195 };
     const ctx = computeZonesContext(tested, []);
-    expect(ctx.zones.fcMax).toBe(195);
+    expect(ctx!.zones!.fcMax).toBe(195);
   });
 });
 

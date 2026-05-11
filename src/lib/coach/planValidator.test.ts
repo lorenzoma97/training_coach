@@ -52,7 +52,7 @@ describe("planStateHash", () => {
       id: "1", originalDescription: "x", smartDescription: "y",
       kpi: { metric: "km", target: "10", deadline: "2026-12-31" },
       realistic: true, coachReasoning: "ok", status: "active",
-      createdAt: "2026-01-01", updatedAt: "2026-01-01",
+      createdAt: "2026-01-01",
     };
     const goalArchived: UserGoal = { ...goalActive, id: "2", status: "archived" };
     const h1 = planStateHash(baseProfile, [goalActive]);

@@ -12,18 +12,23 @@ import StepRaces, { EMPTY_RACES_DRAFT, type StepRacesDraft } from "../components
 import type { OneRepMax } from "../lib/types/strength";
 import type { RaceEvent } from "../lib/types/periodization";
 
+// Wave 5 fix: ProviderId include "ollama" → Record<ProviderId,...> richiede
+// tutte le chiavi. Aggiungiamo entry ollama per completezza tipo (l'onboarding
+// non lo offre nella UI ma il typecheck è esaustivo).
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   gemini: "Google Gemini (consigliato, gratis)",
   openai: "OpenAI",
   anthropic: "Anthropic Claude",
+  ollama: "Ollama (locale)",
 };
 const PROVIDER_HELP: Record<ProviderId, { url: string; label: string }> = {
   gemini: { url: "https://aistudio.google.com/apikey", label: "aistudio.google.com/apikey" },
   openai: { url: "https://platform.openai.com/api-keys", label: "platform.openai.com/api-keys" },
   anthropic: { url: "https://console.anthropic.com/settings/keys", label: "console.anthropic.com/settings/keys" },
+  ollama: { url: "https://ollama.com/download", label: "ollama.com/download" },
 };
 const PROVIDER_PLACEHOLDER: Record<ProviderId, string> = {
-  gemini: "AIza...", openai: "sk-...", anthropic: "sk-ant-...",
+  gemini: "AIza...", openai: "sk-...", anthropic: "sk-ant-...", ollama: "(non richiesta — locale)",
 };
 
 type Step = "intro" | "apiKey" | "profile" | "strength-1rm" | "races" | "goals" | "disclaimer" | "plan";

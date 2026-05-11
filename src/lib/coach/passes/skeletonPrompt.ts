@@ -43,7 +43,7 @@ export interface SkeletonContext {
   /** Zone FC personalizzate (banner descrittivo, non range bpm inline). */
   zones?: ZonesResult | null;
   /** Readiness band oggi: low → l'LLM deve evitare Z4-Z5. */
-  readinessBand?: "low" | "medium" | "high" | null;
+  readinessBand?: "low" | "moderate" | "high" | null;
   /** Modalita' di generazione (impatta wording). */
   mode: "initial" | "regen" | "adapt";
   /** Solo per mode=adapt: testo richiesta utente sanitizzato. */

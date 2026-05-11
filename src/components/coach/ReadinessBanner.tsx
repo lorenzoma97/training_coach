@@ -95,6 +95,7 @@ export function ReadinessBanner({ loader }: ReadinessBannerProps = {}) {
     return (
       <div
         role="alert"
+        aria-live="assertive"
         aria-label="Readiness bassa"
         style={{
           backgroundColor: "#fef3c7", // amber-100
@@ -123,22 +124,27 @@ export function ReadinessBanner({ loader }: ReadinessBannerProps = {}) {
           type="button"
           onClick={() => setShowDetails(s => !s)}
           aria-expanded={showDetails}
+          aria-controls="readiness-details"
           style={{
             marginTop: "8px",
-            fontSize: "12px",
+            fontSize: "13px",
             fontWeight: 700,
             textDecoration: "underline",
             cursor: "pointer",
             background: "transparent",
             border: "none",
             color: "inherit",
-            padding: 0,
+            // a11y WCAG 2.5.5 — touch target min 44x44px
+            minHeight: "44px",
+            minWidth: "44px",
+            padding: "8px 4px",
+            textAlign: "left",
           }}
         >
           {showDetails ? "Nascondi dettagli" : "Vedi dettagli"}
         </button>
         {showDetails && (
-          <div style={{
+          <div id="readiness-details" style={{
             marginTop: "8px",
             fontSize: "12px",
             borderTop: "1px solid #fcd34d",
@@ -172,6 +178,7 @@ export function ReadinessBanner({ loader }: ReadinessBannerProps = {}) {
     return (
       <div
         role="status"
+        aria-live="polite"
         aria-label="Readiness alta"
         style={{
           backgroundColor: "#d1fae5", // emerald-100

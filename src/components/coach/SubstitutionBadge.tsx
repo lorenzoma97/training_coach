@@ -28,16 +28,21 @@ export function SubstitutionBadge({ original, resolved, reason }: SubstitutionBa
     ? `Sostituito: ${original} → ${resolved} (${reason})`
     : `Sostituito: ${original} → ${resolved}`;
 
+  // a11y: role="img" + aria-label espone il contesto completo a screen reader
+  // (la singola parola "sostituito" sarebbe insufficiente). Title resta per
+  // tooltip mouse hover.
   return (
     <span
+      role="img"
       title={tooltip}
       aria-label={tooltip}
       style={{
         backgroundColor: "#fef3c7", // amber-100
-        color: "#78350f",           // amber-900
+        color: "#78350f",           // amber-900 (contrast ~10:1 vs amber-100, AAA)
         padding: "2px 8px",
         borderRadius: "4px",
-        fontSize: "11px",
+        // WCAG 1.4.4 Resize Text — 12px minimo per body inline copy
+        fontSize: "12px",
         fontWeight: 600,
         marginLeft: "6px",
         verticalAlign: "middle",

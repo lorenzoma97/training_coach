@@ -85,6 +85,7 @@ export function MacroUpdatedBanner({ onRegenerate }: MacroUpdatedBannerProps = {
   return (
     <div
       role="status"
+      aria-live="polite"
       aria-label="Macrociclo aggiornato"
       style={{
         backgroundColor: "#dbeafe", // blue-100
@@ -102,20 +103,23 @@ export function MacroUpdatedBanner({ onRegenerate }: MacroUpdatedBannerProps = {
         <button
           type="button"
           onClick={handleDismiss}
-          aria-label="Chiudi banner"
+          aria-label="Chiudi banner macrociclo aggiornato"
           style={{
             marginLeft: "auto",
-            fontSize: "12px",
+            fontSize: "13px",
             fontWeight: 700,
             cursor: "pointer",
             textDecoration: "underline",
             background: "transparent",
             border: "none",
             color: "inherit",
-            padding: 0,
+            // a11y WCAG 2.5.5 — touch target min 44x44px
+            minHeight: "44px",
+            minWidth: "44px",
+            padding: "8px 12px",
           }}
         >
-          chiudi
+          Chiudi
         </button>
       </div>
       <div style={{ fontSize: "12px", marginTop: "4px", lineHeight: 1.35 }}>
@@ -131,11 +135,13 @@ export function MacroUpdatedBanner({ onRegenerate }: MacroUpdatedBannerProps = {
           onClick={onRegenerate}
           style={{
             marginTop: "8px",
-            backgroundColor: "#2563eb", // blue-600
+            backgroundColor: "#1e40af", // blue-800 (contrast 8.6:1 vs white — WCAG AAA)
             color: "white",
-            fontSize: "12px",
+            fontSize: "14px",
             fontWeight: 700,
-            padding: "6px 12px",
+            // a11y WCAG 2.5.5 — touch target min 44x44px
+            minHeight: "44px",
+            padding: "10px 16px",
             borderRadius: "4px",
             border: "none",
             cursor: "pointer",

@@ -145,59 +145,64 @@ export default function PwaInstallBanner() {
     lineHeight: 1.4,
   };
 
+  // a11y WCAG 2.5.5 — touch target min 44x44px su tutti i bottoni interattivi
   const closeBtn: React.CSSProperties = {
     background: "transparent",
     border: "none",
-    color: "#94A3B8",
-    fontSize: "20px",
+    // #CBD5E1 (slate-300) su #16213E → contrast ~9.5:1 (AAA), vs #94A3B8 ~5.2:1
+    color: "#CBD5E1",
+    fontSize: "22px",
     cursor: "pointer",
-    padding: "4px 8px",
+    padding: "10px 14px",
     marginLeft: "auto",
     lineHeight: 1,
-    minHeight: "32px",
-    minWidth: "32px",
+    minHeight: "44px",
+    minWidth: "44px",
   };
 
   const installBtn: React.CSSProperties = {
-    padding: "8px 14px",
+    padding: "12px 18px",
     background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
     border: "none",
     borderRadius: "8px",
     color: "#FFF",
-    fontSize: "13px",
+    fontSize: "14px",
     fontWeight: 700,
     cursor: "pointer",
-    minHeight: "36px",
+    minHeight: "44px",
     whiteSpace: "nowrap",
   };
 
+  // Secondary text style: #CBD5E1 (slate-300) per contrast >= 7:1 su #16213E (AAA)
+  const secondaryText: React.CSSProperties = { color: "#CBD5E1", fontSize: "13px" };
+
   if (platform === "ios") {
+    // role="region" + aria-label rende il banner un landmark navigabile
+    // (NON role="dialog": non c'è focus trap né è modale).
     return (
-      <div role="dialog" aria-label="Installa Diario & Coach" style={baseStyle}>
-        <div style={{ fontSize: "20px", lineHeight: 1 }} aria-hidden>📲</div>
+      <div role="region" aria-label="Installa Diario e Coach" style={baseStyle}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, marginBottom: "2px" }}>Installa l'app</div>
-          <div style={{ color: "#94A3B8", fontSize: "12px" }}>
+          <div style={{ fontWeight: 700, marginBottom: "2px", fontSize: "14px" }}>Installa l'app</div>
+          <div style={secondaryText}>
             Tocca <b>Condividi</b> e poi <b>Aggiungi a Home</b>
           </div>
         </div>
-        <button onClick={handleDismiss} aria-label="Chiudi" style={closeBtn}>×</button>
+        <button type="button" onClick={handleDismiss} aria-label="Chiudi banner installazione" style={closeBtn}>×</button>
       </div>
     );
   }
 
   // Android Chrome (con deferredPrompt disponibile)
   return (
-    <div role="dialog" aria-label="Installa Diario & Coach" style={baseStyle}>
-      <div style={{ fontSize: "20px", lineHeight: 1 }} aria-hidden>📲</div>
+    <div role="region" aria-label="Installa Diario e Coach" style={baseStyle}>
       <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 700, marginBottom: "2px" }}>Installa l'app</div>
-        <div style={{ color: "#94A3B8", fontSize: "12px" }}>
+        <div style={{ fontWeight: 700, marginBottom: "2px", fontSize: "14px" }}>Installa l'app</div>
+        <div style={secondaryText}>
           Apertura più rapida e icona sulla Home
         </div>
       </div>
-      <button onClick={handleInstall} style={installBtn}>Installa app</button>
-      <button onClick={handleDismiss} aria-label="Chiudi" style={closeBtn}>×</button>
+      <button type="button" onClick={handleInstall} style={installBtn}>Installa app</button>
+      <button type="button" onClick={handleDismiss} aria-label="Chiudi banner installazione" style={closeBtn}>×</button>
     </div>
   );
 }
