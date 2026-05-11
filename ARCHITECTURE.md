@@ -1,6 +1,7 @@
 # DESIGN DOC: diario-coach v2 — "Personal Trainer Pro"
 
 **Author:** Architect agent · **Date:** 2026-05-09 · **Target:** ARCHITECTURE.md (root)
+**Last refresh:** 2026-05-11 (Documentation Specialist Fase 5 — stato implementato Wave 2.1→4.3 + Privacy + roadmap residua, vedi §9-§11).
 **Scope:** estensione da wellness coach a coach prescrittivo per atleta amatoriale serio (corsa + calcio + forza occasionale).
 **Effort target:** 8-11 settimane · **Builder Specialist coinvolti:** 7 (schema, llm-prompt, kb-content, validator, frontend, data-integration, documentation).
 
@@ -8,18 +9,18 @@
 
 ## 1. Goals (misurabili)
 
-| # | Goal | Misura del successo |
-|---|---|---|
-| G1 | Forza prescrittiva con carico | ≥80% sessioni `forza_*` includono `exercises[]` con `weight_kg` (o `bodyweight: true`) e RPE/RIR target derivati da %1RM/storia. Validator `strength_load_progression` flagga deviazioni >+10% vs storia. |
-| G2 | Database esercizi | ≥80 esercizi catalogati (squat/dead/bench/row/press patterns + accessori + sport-specific calcio + core), ognuno con `equipment[]`, `muscles[]`, `pattern`, `level`, `alternatives[]`. Lookup O(1) per nome. |
-| G3 | 1RM tracking | Profile contiene `oneRepMaxes` per ≥3 lift base (squat, panca, stacco) — testato (test sul campo) o stimato (Brzycki/Epley dal diario). Valore aggiornabile dal piano dopo PR. |
-| G4 | Wearable Samsung Health import | Parser CSV ZIP UTF-16 LE; ≥4 stream supportati (workout, heart_rate, sleep, weight). Dedup vs registrazioni manuali con f1≥0.9 su test dataset (date+type+duration±2min). |
-| G5 | Macrocicli race-driven | `RaceEvent` con date+sport+target genera `MacroCycle` 12-24 settimane con fasi `base/build/peak/taper`. Pass-1 LLM riceve fase corrente come input. |
-| G6 | Mobility library | ≥6 routine pre-strutturate (FIFA 11+, Movement Prep, Dynamic Flow Runner, Foam Rolling, Yoga Recovery 20', Calf+Achilles Protocol). Selezionabili in piano e iniettate come `blocks[]` strutturati. |
-| G7 | Readiness scoring | `Readiness` calcolato da HRV trend 7gg vs baseline 30gg + sleep + `morningFreshness`. Score 0-100 con auto-adjust validator: readiness <50 → downgrade Z4-5 → Z2-3. |
-| G8 | Equipment substitution | Tabella `EXERCISE_ALTERNATIVES` con ≥3 alternative/esercizio principale; al cambio `profile.equipment` il piano corrente ri-renderizza `effectiveExercise` senza ri-chiamare LLM. |
-| G9 | Sessioni prescrittive non più "blande" | Su test set di 10 input "calcio 40min" / "forza upper 45min", l'output Pass-2 contiene ≥4 esercizi/sessione forza con sets/reps/weight specifici e per cardio ≥3 blocchi (warmup+core+cooldown) con intensità target — verifica manuale + golden tests. |
-| G10 | Cost & latency budget | Generazione piano completa (Pass 1+2+3) ≤ €0.05/run, ≤25s end-to-end p95 wall-clock. |
+| # | Goal | Misura del successo | Stato |
+|---|---|---|---|
+| G1 | Forza prescrittiva con carico | ≥80% sessioni `forza_*` includono `exercises[]` con `weight_kg` (o `bodyweight: true`) e RPE/RIR target derivati da %1RM/storia. Validator `strength_load_progression` flagga deviazioni >+10% vs storia. | **[IMPLEMENTATO]** Wave 3.1 (`buildStrengthPassPrompt` + `validateStrengthLoadProgression` + Zod `plannedExerciseSchema`). |
+| G2 | Database esercizi | ≥80 esercizi catalogati (squat/dead/bench/row/press patterns + accessori + sport-specific calcio + core), ognuno con `equipment[]`, `muscles[]`, `pattern`, `level`, `alternatives[]`. Lookup O(1) per nome. | **[IMPLEMENTATO]** Wave 2.1 — 113 esercizi in `src/lib/catalog/exercises.ts` con `EXERCISES_BY_ID` lookup O(1). |
+| G3 | 1RM tracking | Profile contiene `oneRepMaxes` per ≥3 lift base (squat, panca, stacco) — testato (test sul campo) o stimato (Brzycki/Epley dal diario). Valore aggiornabile dal piano dopo PR. | **[IMPLEMENTATO]** Wave 3.1 — `oneRepMaxEstimator.ts` (Brzycki+Epley) + `StepStrength1RM` onboarding + `UserProfile.oneRepMaxes`. |
+| G4 | Wearable Samsung Health import | Parser CSV ZIP UTF-16 LE; ≥4 stream supportati (workout, heart_rate, sleep, weight). Dedup vs registrazioni manuali con f1≥0.9 su test dataset (date+type+duration±2min). | **[PARZIALE]** Wave 3.2 — exercise.csv (workouts) implementato. Wave 3.4 estesa a HRV+sleep JSON (`samsungHealthJson.ts`). Stream "weight" non implementato (rinviato). |
+| G5 | Macrocicli race-driven | `RaceEvent` con date+sport+target genera `MacroCycle` 12-24 settimane con fasi `base/build/peak/taper`. Pass-1 LLM riceve fase corrente come input. | **[IMPLEMENTATO]** Wave 3.3 — `macroPlanner.ts` (Bompa/Mujika/Seiler) + `macroLifecycle.ts` (recompute+events) + `MacroCtx` iniettato in `buildPass1SkeletonPrompt`. |
+| G6 | Mobility library | ≥6 routine pre-strutturate (FIFA 11+, Movement Prep, Dynamic Flow Runner, Foam Rolling, Yoga Recovery 20', Calf+Achilles Protocol). Selezionabili in piano e iniettate come `blocks[]` strutturati. | **[IMPLEMENTATO]** Wave 3.4 — 6 routine in `mobilityRoutines.ts` + `MobilityLibrary.tsx` + `MobilityRoutineGuide.tsx`. Iniezione in piano via `warmupRoutineId`/`cooldownRoutineId`. |
+| G7 | Readiness scoring | `Readiness` calcolato da HRV trend 7gg vs baseline 30gg + sleep + `morningFreshness`. Score 0-100 con auto-adjust validator: readiness <50 → downgrade Z4-5 → Z2-3. | **[IMPLEMENTATO]** Wave 3.4 — `readinessScoring.ts` (HRV/sleep/subjective/soreness pesati) + `validateReadiness` + `ReadinessBanner`. |
+| G8 | Equipment substitution | Tabella `EXERCISE_ALTERNATIVES` con ≥3 alternative/esercizio principale; al cambio `profile.equipment` il piano corrente ri-renderizza `effectiveExercise` senza ri-chiamare LLM. | **[IMPLEMENTATO]** Wave 3.5 — `equipmentSubstitutor.ts` (BFS + cycle detection) + 23 catalog alts + `validateEquipmentMismatch` + `SubstitutionBadge` orphan render. |
+| G9 | Sessioni prescrittive non più "blande" | Su test set di 10 input "calcio 40min" / "forza upper 45min", l'output Pass-2 contiene ≥4 esercizi/sessione forza con sets/reps/weight specifici e per cardio ≥3 blocchi (warmup+core+cooldown) con intensità target — verifica manuale + golden tests. | **[IMPLEMENTATO]** Wave 4.1 — multi-pass orchestrator. Schema Zod `min(1).max(12)` exercises strength + `min(1).max(20)` cardio intervals. Verificato in `passOrchestrator.test.ts` + `strengthSessionPrompt.test.ts`. |
+| G10 | Cost & latency budget | Generazione piano completa (Pass 1+2+3) ≤ €0.05/run, ≤25s end-to-end p95 wall-clock. | **[IMPLEMENTATO]** stima ~$0.005/run con default Flash (vedi §11). Latency p95 non ancora misurata in produzione (telemetria token open — vedi §10). |
 
 ---
 
@@ -325,6 +326,8 @@ I cataloghi `Exercise` e `MobilityRoutine` sono **bundlati nel codice** (`src/li
 
 Nuovo file: **`src/lib/coach/planOrchestrator.ts`**.
 
+> **[IMPLEMENTATO Wave 4.1]** File reale: [`src/lib/coach/passes/passOrchestrator.ts`](src/lib/coach/passes/passOrchestrator.ts) (rinominato per coerenza barrel `passes/`). Prompt builder: [`skeletonPrompt.ts`](src/lib/coach/passes/skeletonPrompt.ts), [`strengthSessionPrompt.ts`](src/lib/coach/passes/strengthSessionPrompt.ts), [`cardioIntervalPrompt.ts`](src/lib/coach/passes/cardioIntervalPrompt.ts). `planGenerator.ts` mantiene la firma legacy ma delega via `if (MULTI_PASS_ENABLED) await runMultiPass(...)` su 3 entry-point (initial/regen/adapt). Pass-3 è 100% deterministico (no LLM correction call: scelta pragmatica per token-cost — vedi §10 OQ4.1.4). Sessioni `corsa` con `zone <= 3`, `sport`, `mobilita` saltano Pass-2 (skeleton sufficiente).
+
 ```ts
 // Signature pubbliche
 export async function generatePlanMulti(input: PlanInput): Promise<TrainingPlan>;
@@ -368,6 +371,8 @@ async function pass3Validate(plan: TrainingPlan, profile: UserProfile, history: 
 ### 3.2 RAG context routing
 
 Nuovo file: **`src/lib/knowledge/contextRouter.ts`**.
+
+> **[PARZIALE Wave 4.2]** Funzione cablata: `contextsForPass(pass, workoutType?)` esposta in [`src/lib/knowledge/index.ts`](src/lib/knowledge/index.ts) (no file separato `contextRouter.ts`). `RetrievalOptions.contexts?: RagContext[]` aggiunto in [`retriever.ts`](src/lib/knowledge/retriever.ts) con fallback "no filter su 0 chunks". Tutti i 38 chunks hanno tag `contexts: RagContext[]` (Wave 2.1). **Gap residuo**: `passOrchestrator.detailStrengthSession()` passa ancora `ragContextStrength: ""` hardcoded — il wiring `retrieveRelevantChunks({ contexts: contextsForPass("pass2_strength") })` dentro Pass-2 NON è implementato (vedi §10 OQ4.1.1). Solo `CoachChat.tsx` usa effettivamente `retrieveRelevantChunks` (senza filter, comportamento legacy).
 
 ```ts
 export type RagContext = "macro_periodization" | "strength_db" | "cardio_intervals"
@@ -625,22 +630,24 @@ Tutto in **parallelo**, dipendenze interne minime.
 
 ## 6. Intersections critiche (top 10)
 
-| # | Intersezione | Cosa rompe se errato | Prevenzione |
-|---|---|---|---|
-| I1 | `Exercise.id` shape coerente tra catalog ↔ LLM output ↔ Workout.exercises | LLM inventa "back-squat" vs catalog "back-squat-barbell" → matching fallisce, FE mostra "esercizio sconosciuto", validator load progression non funziona | Allowlist iniettata nel Pass 2 prompt (analogo a `workoutSubtypesForPrompt()`); validator `unknown_exercise_id` warn; runtime fallback "esercizio non riconosciuto" lo mostra come free-text |
-| I2 | `dedupKey` Samsung vs manual workout | Doppia registrazione (utente importa, poi registra a mano stessa sessione) → volume gonfiato, validator spike falsi | Algoritmo dedup documentato (data + tipo + duration±2min). Test fixture coverage ≥10 casi reali. UI mostra "duplicato sospetto, conferma?" se match >0.8 |
-| I3 | `MacroCycle` rigenerazione vs piano corrente | Utente aggiunge race → macro cambia → piano corrente è "vecchia fase". Se ri-genero piano automaticamente, perdo workout già fatti | Su race add: NON rigenero piano corrente; mark plan `staleReason: "macro_changed"`. UI prompt manuale "ricalcola piano". |
-| I4 | `oneRepMaxes` aggiornamento da diario | Brzycki estimator scrive 1RM "estimated" — sovrascrive 1RM "tested"? | Mai: `tested > estimated`. Solo `estimated` nuovo > `estimated` vecchio aggiorna. UI mostra source con badge. |
-| I5 | RAG `contexts[]` filter vs query | Se filter troppo stretto → 0 chunks, coach perde contesto scientifico. Se troppo largo → noise | Default fallback: se filter ritorna 0 chunks, retry senza filter. Log "context_router_miss". |
-| I6 | Pass 2 parallel calls rate-limit | 7 sessioni × API call simultanee → rate-limit Gemini → fallimenti random | `Promise.allSettled` con concurrency cap=3. Retry singolo con backoff. Settled fallback per session non-critical. |
-| I7 | Readiness auto-correction su piano già visto | Utente vede piano lunedì con Z5; martedì readiness basso → validator downgrade a Z2 → utente confuso "il piano è cambiato senza preavviso" | UI banner "Adattato per readiness basso oggi". Notifica chiara. **Mai** modifica silente del piano persistito; il cambiamento è solo a render-time + new feed item. |
-| I8 | `Workout.exercises[]` vs `workout.fields.note` legacy | Utente legacy ha forza in `fields.note` come testo libero. Validator legge `exercises[]` → vuoto → flagga "no progression possible" | Parser fallback: estrai esercizi da note free-text con regex (best-effort). Se fallisce, validator skippa silently. |
-| I9 | Backup v1 → app v2 | Profilo v1 senza `oneRepMaxes/races` → coach non sa cosa fare di Pass 2 forza | Defaults: `oneRepMaxes ?? []`, `races ?? []`. Pass 2 forza con 1RM=null usa range RPE invece di %1RM. |
-| I10 | Equipment substitution chain | User toglie barbell da equipment → squat-barbell → goblet-squat (ok). Poi toglie kettlebell → goblet-squat → bulgarian-split (ok). Poi toglie dumbbell → bulgarian → bodyweight-squat. UI mostra cosa? | Render mostra `effectiveExercise` con tooltip "originale: ${plannedExercise.name}". Sequenza substitution loop max 3. Se anche bodyweight non disponibile (assurdo) → flag warn. |
+| # | Intersezione | Cosa rompe se errato | Prevenzione | Stato |
+|---|---|---|---|---|
+| I1 | `Exercise.id` shape coerente tra catalog ↔ LLM output ↔ Workout.exercises | LLM inventa "back-squat" vs catalog "back-squat-barbell" → matching fallisce, FE mostra "esercizio sconosciuto", validator load progression non funziona | Allowlist iniettata nel Pass 2 prompt (analogo a `workoutSubtypesForPrompt()`); validator `unknown_exercise_id` warn; runtime fallback "esercizio non riconosciuto" lo mostra come free-text | **[RISOLTA]** Wave 3.1 — allowlist passata al prompt + Zod schema rigetta unknown id. Validator `equipment_mismatch`/`equipment_substituted` coprono il caso runtime. |
+| I2 | `dedupKey` Samsung vs manual workout | Doppia registrazione (utente importa, poi registra a mano stessa sessione) → volume gonfiato, validator spike falsi | Algoritmo dedup documentato (data + tipo + duration±2min). Test fixture coverage ≥10 casi reali. UI mostra "duplicato sospetto, conferma?" se match >0.8 | **[RISOLTA]** Wave 3.2 — `dedupKey` deterministico in `samsungHealth.ts`; preview UI in `SettingsPage`. |
+| I3 | `MacroCycle` rigenerazione vs piano corrente | Utente aggiunge race → macro cambia → piano corrente è "vecchia fase". Se ri-genero piano automaticamente, perdo workout già fatti | Su race add: NON rigenero piano corrente; mark plan `staleReason: "macro_changed"`. UI prompt manuale "ricalcola piano". | **[RISOLTA]** Wave 3.3 — `markPlanStaleIfMacroChanged` in `macroLifecycle.ts` + `MacroUpdatedBanner` (CTA "Rigenera ora"). |
+| I4 | `oneRepMaxes` aggiornamento da diario | Brzycki estimator scrive 1RM "estimated" — sovrascrive 1RM "tested"? | Mai: `tested > estimated`. Solo `estimated` nuovo > `estimated` vecchio aggiorna. UI mostra source con badge. | **[RISOLTA]** Wave 3.1 — `oneRepMaxEstimator.ts` rispetta priority `tested > estimated` (29 test). |
+| I5 | RAG `contexts[]` filter vs query | Se filter troppo stretto → 0 chunks, coach perde contesto scientifico. Se troppo largo → noise | Default fallback: se filter ritorna 0 chunks, retry senza filter. Log "context_router_miss". | **[RISOLTA]** Wave 4.2 — `retriever.ts` fallback su pool completo se subset < topK + `console.warn`. |
+| I6 | Pass 2 parallel calls rate-limit | 7 sessioni × API call simultanee → rate-limit Gemini → fallimenti random | `Promise.allSettled` con concurrency cap=3. Retry singolo con backoff. Settled fallback per session non-critical. | **[APERTA]** Wave 4.1 — `runPass2` esegue sequenziale (for loop). Decisione pragmatica per debug + cost predictability. Parallelizzazione open in §10 OQ4.1.3. |
+| I7 | Readiness auto-correction su piano già visto | Utente vede piano lunedì con Z5; martedì readiness basso → validator downgrade a Z2 → utente confuso "il piano è cambiato senza preavviso" | UI banner "Adattato per readiness basso oggi". Notifica chiara. **Mai** modifica silente del piano persistito; il cambiamento è solo a render-time + new feed item. | **[RISOLTA]** Wave 3.4/4.3 — `validateReadiness` produce `correctedPlan` con `readinessAdjusted: true` + `ReadinessBanner` (auto-mute se band="moderate"). |
+| I8 | `Workout.exercises[]` vs `workout.fields.note` legacy | Utente legacy ha forza in `fields.note` come testo libero. Validator legge `exercises[]` → vuoto → flagga "no progression possible" | Parser fallback: estrai esercizi da note free-text con regex (best-effort). Se fallisce, validator skippa silently. | **[PARZIALE]** Wave 3.1 — `RecentWorkoutForValidator.exercises?: ExercisePerformance[]` opzionale. Se assente, validator skippa silenziosamente (no regex parser legacy implementato — accettato). |
+| I9 | Backup v1 → app v2 | Profilo v1 senza `oneRepMaxes/races` → coach non sa cosa fare di Pass 2 forza | Defaults: `oneRepMaxes ?? []`, `races ?? []`. Pass 2 forza con 1RM=null usa range RPE invece di %1RM. | **[RISOLTA]** Wave 2.2 — backup v2 con `migrateToLatest`. Tutti i campi v2 sono optional con `?? []`/`?? null` defaults nei reader. |
+| I10 | Equipment substitution chain | User toglie barbell da equipment → squat-barbell → goblet-squat (ok). Poi toglie kettlebell → goblet-squat → bulgarian-split (ok). Poi toglie dumbbell → bulgarian → bodyweight-squat. UI mostra cosa? | Render mostra `effectiveExercise` con tooltip "originale: ${plannedExercise.name}". Sequenza substitution loop max 3. Se anche bodyweight non disponibile (assurdo) → flag warn. | **[RISOLTA]** Wave 3.5 — `walkAlternativeChain` BFS con `DEFAULT_MAX_HOP=3` + cycle detection via `Set<visited>`. `SubstitutionBadge` mostra reason. |
 
 ---
 
 ## 7. Risks & Mitigations (top 10)
+
+> **Update 2026-05-11**: R1 risolto (default Flash, ~$0.005/run — vedi §11). R2 latency p95 NON ancora misurata in produzione (telemetria token mancante — §10 OQ4.1.2). Nuovi rischi emersi: **R11** RAG-Pass2 wiring incompleto (§10 OQ4.1.1) — Pass-2 strength/cardio non riceve scientific evidence specifica, riduce qualità prescrittiva. **R12** Tailwind dependency — UI Wave 4.3 usa classi Tailwind senza setup PostCSS verificato (nessun build locale, deploy GH Actions: rischio render plain). **R13** Test coverage UI — `tsx` test files esistono ma jsdom + @testing-library/react non setup → assertion runtime su DOM non eseguite (vedi §10).
 
 | # | Rischio | P | I | Mitigazione |
 |---|---|---|---|---|
@@ -659,7 +666,9 @@ Tutto in **parallelo**, dipendenze interne minime.
 
 ## 8. Open Questions — RISOLTE (2026-05-09)
 
-Tutte e 8 le Open Questions sono chiuse. Decisioni definitive sotto.
+Tutte e 8 le Open Questions originali (Q1-Q8) sono chiuse. Decisioni definitive sotto.
+
+> **Nuove Open Questions emerse durante implementazione Wave 4.x → vedi §10 Roadmap residua.**
 
 | # | Domanda | Decisione finale | Note |
 |---|---|---|---|
@@ -674,7 +683,117 @@ Tutte e 8 le Open Questions sono chiuse. Decisioni definitive sotto.
 
 ---
 
-## 9. Effort estimate refined
+## §9. Implementation Status (al 2026-05-11)
+
+Tabella sintetica dello stato di tutte le wave implementate. Test count = `it()`/`test()` count grep su `*.test.*` files.
+
+| Wave | Status | Files chiave | Test count | Known issues |
+|---|---|---|---|---|
+| **2.1 Foundation — Schemas** | DONE | [`types/exercise.ts`](src/lib/types/exercise.ts), [`types/strength.ts`](src/lib/types/strength.ts), [`types/periodization.ts`](src/lib/types/periodization.ts), [`types/mobility.ts`](src/lib/types/mobility.ts), [`types/readiness.ts`](src/lib/types/readiness.ts), [`types/wearable.ts`](src/lib/types/wearable.ts), [`schemas/*.ts`](src/lib/schemas/) (Zod) | 39 (4 type tests) | — |
+| **2.1 Foundation — Catalog** | DONE | [`catalog/exercises.ts`](src/lib/catalog/exercises.ts) (113 esercizi, target ≥80), [`catalog/mobilityRoutines.ts`](src/lib/catalog/mobilityRoutines.ts) (6 routine), [`knowledge/chunks.ts`](src/lib/knowledge/chunks.ts) (38 chunk con `contexts: RagContext[]`) | 30 (catalog+chunks) | — |
+| **2.1 Foundation — Docs** | DONE | [`docs/guida-test-1rm.md`](docs/guida-test-1rm.md), [`docs/guida-import-samsung-health.md`](docs/guida-import-samsung-health.md), [`docs/scientific-foundations.md`](docs/scientific-foundations.md) | — | Output `.md` (Lorenzo policy: guide-utente in Excel/Word). Accettato per docs interne dev. |
+| **2.2 Foundation — Backup migration + Onboarding** | DONE | `backup.ts` v2 + `migrateToLatest`, [`StepStrength1RM.tsx`](src/components/onboarding/StepStrength1RM.tsx), [`StepRaces.tsx`](src/components/onboarding/StepRaces.tsx) | 30 (backup+steps) | — |
+| **3.1 Strength engine** | DONE | [`passes/strengthSessionPrompt.ts`](src/lib/coach/passes/strengthSessionPrompt.ts), [`validators/strengthValidators.ts`](src/lib/coach/validators/strengthValidators.ts), [`oneRepMaxEstimator.ts`](src/lib/coach/oneRepMaxEstimator.ts), [`StrengthExercisesForm.tsx`](src/components/diary/StrengthExercisesForm.tsx) | 105 (prompt+validator+estimator+form) | RAG context non passato a Pass-2 (`ragContextStrength: ""` hardcoded) — vedi Wave 4.2 gap. |
+| **3.2 Wearable Samsung CSV** | DONE | [`integrations/samsungHealth.ts`](src/lib/integrations/samsungHealth.ts) (parser ZIP UTF-16 LE BOM + dedup), preview UI in `SettingsPage` | 31 | Stream "weight" non implementato. |
+| **3.3 Macrocycle + races** | DONE | [`macroPlanner.ts`](src/lib/coach/macroPlanner.ts) (Bompa/Mujika/Seiler), [`macroLifecycle.ts`](src/lib/coach/macroLifecycle.ts), [`macroLookup.ts`](src/lib/coach/macroLookup.ts), [`RaceCalendarSection.tsx`](src/components/races/RaceCalendarSection.tsx), [`MacroUpdatedBanner.tsx`](src/components/coach/MacroUpdatedBanner.tsx), [`taperingRules.ts`](src/lib/coach/promptModules/taperingRules.ts) | 67 | — |
+| **3.4 Mobility library + Readiness HRV** | DONE | [`MobilityLibrary.tsx`](src/components/mobility/MobilityLibrary.tsx), [`MobilityRoutineGuide.tsx`](src/components/mobility/MobilityRoutineGuide.tsx), [`readinessScoring.ts`](src/lib/coach/readinessScoring.ts), [`integrations/samsungHealthJson.ts`](src/lib/integrations/samsungHealthJson.ts) (HRV+sleep stream), [`validators/readinessValidator.ts`](src/lib/coach/validators/readinessValidator.ts), [`ReadinessBanner.tsx`](src/components/coach/ReadinessBanner.tsx) | 95 (mobility+readiness+samsungJson+validator+banner) | Reviewer DEFERRED: ZIP single-load perf (parser ricarica ZIP per ogni stream — accettabile <10MB). |
+| **3.5 Equipment substitution G8** | DONE | [`equipmentSubstitutor.ts`](src/lib/coach/equipmentSubstitutor.ts) (BFS chain + cycle detect), 23 alternatives in catalog, `validateEquipmentMismatch` + `validateEquipmentSubstituted` (severity warn), [`SubstitutionBadge.tsx`](src/components/coach/SubstitutionBadge.tsx) | 27 (substitutor+wiring) | Reviewer MINOR: severity `info` non distinguibile da `warn` nell'enum (vedi §10). |
+| **Privacy — PII sanitizer** | DONE | [`promptSanitizer.ts`](src/lib/promptSanitizer.ts) (regex IT-aware: email/phone IT/CF/IBAN/URL) — applicato su 9 free-text al cloud (`profile.notes`, `meds`, `injuries[]`, `goal.smartDescription`, `workout.notes`, `daily.note`, ecc.) | 15 | Ollama provider opt-in desktop NON implementato (Lorenzo decision: tutti i dati passano cloud Gemini sanitizzati). |
+| **4.1 Multi-pass orchestrator** | DONE | [`passes/passOrchestrator.ts`](src/lib/coach/passes/passOrchestrator.ts), [`skeletonPrompt.ts`](src/lib/coach/passes/skeletonPrompt.ts), [`cardioIntervalPrompt.ts`](src/lib/coach/passes/cardioIntervalPrompt.ts), branch in [`planGenerator.ts`](src/lib/coach/planGenerator.ts) (3 entry-point) | 30 (orchestrator+prompts) | Pass-2 sequenziale (no parallel cap=3 come da design); Pass-3 senza LLM-repair call; token telemetria assente. Vedi §10. |
+| **4.2 RAG context routing** | PARTIAL | `RetrievalOptions.contexts` in [`retriever.ts`](src/lib/knowledge/retriever.ts), `contextsForPass(pass, workoutType?)` in [`knowledge/index.ts`](src/lib/knowledge/index.ts), tag `contexts` su 38 chunks | 22 (retriever+chunks) | Wiring incompleto: `passOrchestrator.detailStrengthSession/detailCardioSession` NON chiama `retrieveRelevantChunks({contexts: contextsForPass(...)})`. Solo `CoachChat` la usa (senza filter). Vedi §10 OQ4.1.1. |
+| **4.3 UI rinnovata** | DONE | [`ReadinessBanner.tsx`](src/components/coach/ReadinessBanner.tsx), [`MacroUpdatedBanner.tsx`](src/components/coach/MacroUpdatedBanner.tsx), wiring in [`TrainingPlanView.tsx`](src/components/TrainingPlanView.tsx) (linee 754-755) | 11 (banner tests) | Test render-DOM not effective: `tsx` test files presenti ma jsdom + @testing-library/react non setup → assertions su DOM non eseguite. Vedi §10 Wave Tests. |
+
+**Totale test:** 527 `it()`/`test()` calls su 36 test files. Pass rate non misurato in questo refresh (no `npm test` — Lorenzo non ha Node locale; CI GitHub Actions è la fonte di verità).
+
+---
+
+## §10. Roadmap residua post-Fase 4
+
+### Open Questions Wave 4.1 (multi-pass orchestrator)
+
+- **OQ4.1.1 — RAG-Pass2 wiring**: cablare `retrieveRelevantChunks({contexts: contextsForPass("pass2_strength")})` in `passOrchestrator.detailStrengthSession()` e analogamente per `detailCardioSession`. Attualmente `ragContextStrength: ""` hardcoded → Pass-2 non ha scientific evidence specifica oltre quanto già nel few-shot del prompt builder. Effort: ~0.5 sw. **Bloccante per qualità prescrittiva G9 in regime "scientifico documentato".**
+- **OQ4.1.2 — Token telemetria**: `PassLog.tokens?: number` è dichiarato ma sempre `undefined` (provider Gemini non ritorna token usage in `generateJSON`). Aggiungere counter approssimativo (input length / 4 + output length / 4 = token estimate) per validare empiricamente la stima §11. Effort: ~0.2 sw.
+- **OQ4.1.3 — Parallelizzazione Pass-2**: design prevedeva `Promise.allSettled` con concurrency cap=3; implementazione attuale è for-loop sequenziale. Misurare prima latency p95 attuale; se >25s, parallelizzare. Effort: ~0.5 sw.
+- **OQ4.1.4 — Pass-3 LLM-repair**: design prevedeva LLM correction call su issue residue non-fixabili deterministicamente. Attualmente Pass-3 si limita a deterministic + warning text in rationale. Decidere se vale la pena (token cost +~$0.001/run, qualità marginale). Effort: ~1 sw.
+- **OQ4.1.5 — Focus handover Pass-1 → Pass-2**: Pass-1 popola `session.details = focus`, Pass-2 strength riceve `session.subtype` ma non `focus` esplicitamente. Verificare se l'inserimento di `focus` esplicito nel prompt Pass-2 migliora coerenza skeleton↔detail. Effort: ~0.3 sw.
+
+### Reviewer deferred — Wave 3.4
+
+- **ZIP single-load perf**: `samsungHealth.ts` + `samsungHealthJson.ts` ricaricano lo ZIP per ogni stream parsato (workout + HRV + sleep = 3 reload). Per ZIP <10MB OK; per export annuale (decine di MB) → singola load + parser multi-stream condiviso. Effort: ~0.5 sw.
+
+### Reviewer minor — Wave 3.5
+
+- **Severity `info` per equipment_substituted**: l'enum `PlanValidationIssue.severity` è `"warn" | "error"`. `equipment_substituted` (hop > 0 ma alternativa trovata) è "info-warn"; aggiungere `"info"` per non sporcare il counter warning del banner UI. Effort: ~0.2 sw + audit consumer FE.
+- **Prompt pre-filter alts**: passare al Pass-2 prompt SOLO gli esercizi eseguibili con `profile.equipment` corrente (pre-filter via `walkAlternativeChain`) invece di tutto il catalog. Evita LLM che propone esercizi che poi il validator deve sostituire. Effort: ~0.3 sw.
+
+### Wave Privacy — opzioni desktop
+
+- **Ollama provider opt-in (desktop)**: per utenti che vogliono zero-cloud, esporre selettore provider "Ollama locale" in Settings. Richiede LLM client adapter (`src/lib/llm/`) + UI guard "embeddings non disponibili in modalità Ollama → RAG disabilitato". Decisione utente: posticipato (tutti i dati passano cloud Gemini sanitizzati con `promptSanitizer` — sufficiente per Lorenzo's threat model).
+
+### Wave Mobile UX
+
+- **PWA install banner**: `index.html` ha `manifest.json` (verificare). Aggiungere banner "Installa app" iOS/Android con auto-detect platform. Effort: ~0.5 sw.
+- **Offline mode test**: app è offline-first per lettura diary/plan; test che il Settings + plan generation falliscono gracefully con `useOnline()`. Effort: ~0.3 sw.
+
+### Wave Tests — infrastructure gap
+
+- **jsdom + @testing-library/react setup**: `MacroUpdatedBanner.test.tsx`, `ReadinessBanner.test.tsx`, `SubstitutionBadgeWiring.test.tsx` esistono come `*.test.tsx` ma vitest non ha jsdom + RTL configurati → asserzioni runtime su DOM non eseguibili. Setup `vite.config.ts` con `test.environment: "jsdom"` + dependency `@testing-library/react` + `@testing-library/jest-dom`. Effort: ~0.5 sw + audit migration test esistenti.
+
+---
+
+## §11. Token cost analysis (al 2026-05-11)
+
+Stime basate sui `maxTokens` impostati nel codice ([`passOrchestrator.ts`](src/lib/coach/passes/passOrchestrator.ts) linee 327, 502, 556) e su lunghezza tipica dei prompt builder. Token input stimati: caratteri prompt / 4 (rule of thumb GPT-tokenizer-like).
+
+### Workflow `generateInitialPlan` — single-pass legacy (deprecato)
+
+| Componente | Input tok | Output tok | Subtotale |
+|---|---|---|---|
+| 1× call planSchema | ~1500 | ~2000 | ~3500 token |
+
+### Workflow `generateInitialPlan` — multi-pass (default `MULTI_PASS_ENABLED=true`)
+
+Profilo tipico utente Lorenzo: 4-5 sessioni/settimana, di cui ~3-4 forza_*, ~1 corsa Z>=4, ~1 mobility/sport.
+
+| Pass | Input tok | Output tok (`maxTokens`) | N call | Subtotale |
+|---|---|---|---|---|
+| Pass-1 skeleton | ~2000 | 1500 | 1 | ~3500 |
+| Pass-2 strength | ~1800 | 1000 | 3-4 | ~10000 (3.5 avg) |
+| Pass-2 cardio Z>=4 | ~1500 | 800 | 0-1 | ~2300 |
+| Pass-3 validate | 0 (deterministico) | 0 | 0 | 0 |
+| **Totale** | | | | **~12000-15000 token** |
+
+### Altri workflow
+
+| Workflow | Input tok | Output tok | Note |
+|---|---|---|---|
+| chat coach turn | ~1000 | ~500 | Incluso RAG context (~3 chunks × 200 tok) |
+| weeklyReport | ~1500 | ~1000 | Riassunto 7gg + analisi qualitativa |
+| sessionFeedback | ~1200 | ~600 | Feedback su singola sessione + suggerimento |
+
+### Costi €/mese — Gemini Flash 2.5 (listino 2026-04, EU)
+
+- Input: $0.075 / 1M token
+- Output: $0.30 / 1M token
+
+| Item | Token/run | Cost/run | Run/settimana | Cost/settimana | Cost/anno |
+|---|---|---|---|---|---|
+| `generateInitialPlan` multi-pass | 12500 | ~$0.0014 | 1 (lunedì auto) | ~$0.0014 | ~$0.07 |
+| `weeklyReport` | 2500 | ~$0.0005 | 1 | ~$0.0005 | ~$0.026 |
+| `sessionFeedback` | 1800 | ~$0.0003 | 4-5 | ~$0.0015 | ~$0.078 |
+| `chat coach` | 1500 | ~$0.0002 | 5-10 | ~$0.002 | ~$0.10 |
+| **Totale settimanale** | | | | **~$0.005** | **~$0.27/utente/anno** |
+
+**Verdetto:** sostenibile per utente single (Lorenzo). Anche con 100 utenti pilot → ~$27/anno API costs. Ben dentro budget G10 (€0.05/run = $0.054 con cambio 1.08, attuale ~$0.0014/run = **2.6% del budget**).
+
+**Note:**
+- I numeri Pass-2 strength (3-4 sessioni × ~2800 token totali = ~10000) sono dominanti: ~80% del costo per generazione piano.
+- Stima conservativa: token input reale può essere superiore se l'utente ha cronologia esercizi lunga (`recentStrengthHistory` dump). Cap soft: in pratica gli ultimi 30gg di storia forza ~5-8 workout × ~150 token = ~1000 token aggiuntivi.
+- Pro 2.5 (decisione Q4 = no, default Flash): se l'utente passasse a Pro, costo × ~17 → ~$0.024/run. Ancora sotto budget G10 ma 17× più alto.
+
+---
+
+## §12. Effort estimate refined
 
 | Fase | Wave | Specialist-week (h equivalenti) |
 |---|---|---|
