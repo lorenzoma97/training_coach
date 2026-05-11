@@ -23,6 +23,17 @@ import JSZip from "jszip";
 import { storage, getJSON, setJSON } from "../storage";
 import { getAllDays, type Workout, type DiaryDay } from "../diaryContext";
 import type { WearableSample } from "../types/wearable";
+import {
+  parseSamsungHrvFromZip,
+  parseSamsungSleepFromZip,
+  type DailyHrvAggregate,
+  type DailySleepAggregate,
+} from "./samsungHealthJson";
+import {
+  SAMSUNG_HRV_HISTORY_KEY,
+  SAMSUNG_SLEEP_HISTORY_KEY,
+  recomputeReadinessForToday,
+} from "../coach/readinessScoring";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipi pubblici
@@ -39,12 +50,28 @@ export interface ImportPreview {
   unrecognizedTypes: string[];
   /** Errori di parsing per file (CSV mancante, malformato, ecc). */
   parseErrors: Array<{ file: string; error: string }>;
+  /**
+   * Wave 3.4: HRV aggregata per giorno (RMSSD media). Se lo ZIP contiene
+   * com.samsung.shealth.hrv.csv, viene popolata; altrimenti array vuoto.
+   * Storage separato (samsung-hrv-history) — NON sostituisce daily check.
+   */
+  hrvDaily: DailyHrvAggregate[];
+  /**
+   * Wave 3.4: Sleep aggregata per giorno (durata + efficiency). Se lo ZIP
+   * contiene com.samsung.shealth.sleep.csv, viene popolata; altrimenti vuota.
+   * Storage separato (samsung-sleep-history) — NON sostituisce daily check.
+   */
+  sleepDaily: DailySleepAggregate[];
 }
 
 export interface CommitResult {
   workoutsCreated: number;
   duplicatesSkipped: number;
   importLogId: string;
+  /** Numero di giorni HRV importati (samsung-hrv-history). */
+  hrvDaysImported: number;
+  /** Numero di giorni sleep importati (samsung-sleep-history). */
+  sleepDaysImported: number;
 }
 
 interface ImportLogEntry {
@@ -55,6 +82,9 @@ interface ImportLogEntry {
   workoutsCreated: number;
   duplicatesSkipped: number;
   unrecognizedTypes: string[];
+  /** Wave 3.4: tracking aggiuntivo HRV/sleep importati. Optional per back-compat log v1. */
+  hrvDaysImported?: number;
+  sleepDaysImported?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -801,12 +831,30 @@ export async function previewImport(zipBlob: Blob): Promise<ImportPreview> {
     }
   }
 
+  // Wave 3.4: parse HRV + Sleep dal medesimo ZIP. Storage separati, non sostituiscono
+  // daily check. parseErrors NON è inquinato perché i parser aggregati non
+  // espongono per-file errors (sono best-effort).
+  let hrvDaily: DailyHrvAggregate[] = [];
+  let sleepDaily: DailySleepAggregate[] = [];
+  try {
+    hrvDaily = await parseSamsungHrvFromZip(zipBlob);
+  } catch (e) {
+    parseErrors.push({ file: "<hrv>", error: e instanceof Error ? e.message : String(e) });
+  }
+  try {
+    sleepDaily = await parseSamsungSleepFromZip(zipBlob);
+  } catch (e) {
+    parseErrors.push({ file: "<sleep>", error: e instanceof Error ? e.message : String(e) });
+  }
+
   return {
     totalSamples: samples.length,
     newWorkouts,
     matchedWorkouts,
     unrecognizedTypes: Array.from(unrecognizedTypes).sort(),
     parseErrors,
+    hrvDaily,
+    sleepDaily,
   };
 }
 
@@ -854,6 +902,21 @@ export async function commitImport(preview: ImportPreview): Promise<CommitResult
     }
   }
 
+  // Wave 3.4: persist HRV/sleep aggregati (storage separati). Merge con
+  // history esistente, dedup per `date` (l'import nuovo VINCE su quello vecchio
+  // — l'utente sta sincronizzando dati più recenti). Pruning a 90gg.
+  const hrvDaysImported = await mergeHrvHistory(preview.hrvDaily);
+  const sleepDaysImported = await mergeSleepHistory(preview.sleepDaily);
+
+  // Trigger ricalcolo readiness se sono arrivati nuovi dati HRV/sleep
+  if (hrvDaysImported > 0 || sleepDaysImported > 0) {
+    try {
+      await recomputeReadinessForToday();
+    } catch (e) {
+      console.warn("[commitImport] recompute readiness fallito:", e);
+    }
+  }
+
   // Append import log
   const logEntry: ImportLogEntry = {
     id: importLogId,
@@ -863,6 +926,8 @@ export async function commitImport(preview: ImportPreview): Promise<CommitResult
     workoutsCreated,
     duplicatesSkipped,
     unrecognizedTypes: preview.unrecognizedTypes,
+    hrvDaysImported,
+    sleepDaysImported,
   };
   const log = await getJSON<ImportLogEntry[]>("wearable-import-log", []);
   log.push(logEntry);
@@ -874,7 +939,76 @@ export async function commitImport(preview: ImportPreview): Promise<CommitResult
     console.warn("[commitImport] failed to write wearable-import-log:", e);
   }
 
-  return { workoutsCreated, duplicatesSkipped, importLogId };
+  return { workoutsCreated, duplicatesSkipped, importLogId, hrvDaysImported, sleepDaysImported };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 3.4: HRV / Sleep history merging (storage separati)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Pruning window per HRV/sleep history (90gg) per evitare blow-up storage. */
+const WEARABLE_HISTORY_DAYS = 90;
+
+function pruneCutoffDate(): string {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - WEARABLE_HISTORY_DAYS);
+  return cutoff.toISOString().slice(0, 10);
+}
+
+/**
+ * Merge nuovi sample HRV con storage esistente. Strategy: l'import nuovo
+ * VINCE per stessa data (l'utente sta ri-sincronizzando dati più recenti).
+ * Pruning automatico a WEARABLE_HISTORY_DAYS.
+ *
+ * Ritorna il numero di giorni effettivamente importati (post-merge).
+ */
+async function mergeHrvHistory(incoming: DailyHrvAggregate[]): Promise<number> {
+  if (incoming.length === 0) return 0;
+  const existing = await getJSON<DailyHrvAggregate[]>(SAMSUNG_HRV_HISTORY_KEY, []);
+  const map = new Map<string, DailyHrvAggregate>();
+  for (const entry of existing) {
+    if (entry && typeof entry.date === "string") map.set(entry.date, entry);
+  }
+  let imported = 0;
+  for (const entry of incoming) {
+    map.set(entry.date, entry);
+    imported++;
+  }
+  const cutoff = pruneCutoffDate();
+  const merged = Array.from(map.values())
+    .filter(e => e.date >= cutoff)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  try {
+    await setJSON(SAMSUNG_HRV_HISTORY_KEY, merged);
+  } catch (e) {
+    console.warn("[mergeHrvHistory] failed to persist:", e);
+  }
+  return imported;
+}
+
+/** Stessa logica per sleep. */
+async function mergeSleepHistory(incoming: DailySleepAggregate[]): Promise<number> {
+  if (incoming.length === 0) return 0;
+  const existing = await getJSON<DailySleepAggregate[]>(SAMSUNG_SLEEP_HISTORY_KEY, []);
+  const map = new Map<string, DailySleepAggregate>();
+  for (const entry of existing) {
+    if (entry && typeof entry.date === "string") map.set(entry.date, entry);
+  }
+  let imported = 0;
+  for (const entry of incoming) {
+    map.set(entry.date, entry);
+    imported++;
+  }
+  const cutoff = pruneCutoffDate();
+  const merged = Array.from(map.values())
+    .filter(e => e.date >= cutoff)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  try {
+    await setJSON(SAMSUNG_SLEEP_HISTORY_KEY, merged);
+  } catch (e) {
+    console.warn("[mergeSleepHistory] failed to persist:", e);
+  }
+  return imported;
 }
 
 // Re-export per consumer che vogliono accesso a storage helper interni

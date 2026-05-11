@@ -6,6 +6,7 @@ import GoalsEditor from "../components/GoalsEditor";
 import ZonesCard from "../components/ZonesCard";
 import ZonesAnalytics from "../components/ZonesAnalytics";
 import FCMaxTestSection from "../components/FCMaxTestSection";
+import MobilityLibrary from "../components/mobility/MobilityLibrary";
 import { hasApiKey } from "../lib/gemini";
 import { getJSON, setJSON } from "../lib/storage";
 import { savePlanWithHistory } from "../lib/coach/planHistory";
@@ -15,7 +16,7 @@ import { generateInitialPlan } from "../lib/coach/planGenerator";
 import { maybeRunWeeklyReport } from "../lib/scheduler";
 import { translateGeminiError } from "../lib/geminiErrors";
 
-type Tab = "plan" | "goals" | "zones" | "feed" | "chat";
+type Tab = "plan" | "goals" | "zones" | "feed" | "chat" | "mobility";
 
 export default function CoachPage() {
   const [tab, setTab] = useState<Tab>("plan");
@@ -197,17 +198,19 @@ export default function CoachPage() {
           { id: "plan" as const, label: "Piano" },
           { id: "chat" as const, label: "Chat" },
           { id: "feed" as const, label: feedUnread > 0 ? `Feed (${feedUnread})` : "Feed" },
+          { id: "mobility" as const, label: "Mobility" },
           { id: "zones" as const, label: "Zone FC" },
           { id: "goals" as const, label: "Obiettivi" },
         ]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             role="tab" aria-selected={tab === t.id}
+            aria-label={`Tab ${t.label}`}
             style={{
               flex: 1, padding: "10px", borderRadius: "8px",
               background: tab === t.id ? "#16213E" : "transparent",
               border: "none", color: tab === t.id ? "#E2E8F0" : "#94A3B8",
-              fontSize: "13px", fontWeight: 700, cursor: "pointer",
-              minHeight: "40px",
+              fontSize: "12px", fontWeight: 700, cursor: "pointer",
+              minHeight: "44px", whiteSpace: "nowrap",
             }}>{t.label}</button>
         ))}
       </div>
@@ -276,6 +279,7 @@ export default function CoachPage() {
         </>
       )}
       {tab === "chat" && <CoachChat />}
+      {tab === "mobility" && <MobilityLibrary />}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { validatePlan, planStateHash, computePlanStartDate } from "./planValidat
 import { computeZonesContext } from "./zones";
 import { workoutSubtypesForPrompt, isCanonicalSubtype } from "../workoutCatalog";
 import { loadActiveMacroContext } from "./macroLookup";
+import { getCurrentReadiness } from "./readinessScoring";
 
 // WHY: appiattisce i giorni del diario nella shape attesa dal validator per
 // lo spike check Johansen (14gg). Senza questo i call-site passavano [] e lo
@@ -351,7 +352,7 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
 
   const now = new Date();
   const validUntil = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
-  const plan: TrainingPlan = {
+  let plan: TrainingPlan = {
     generatedAt: now.toISOString(),
     validUntil: validUntil.toISOString(),
     startDate: computePlanStartDate(now),
@@ -361,7 +362,10 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
   };
   // Validator deterministico post-LLM: logga violazioni safety anche se il modello
   // le ha ignorate. Non ri-generiamo automaticamente (caro in token) — segnaliamo.
-  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZones));
+  // G7 readiness: se band="low" oggi, validatePlan downgrade Z4-5→Z3 su correctedPlan.
+  const readiness = await getCurrentReadiness();
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZones), { readiness });
+  plan = validation.correctedPlan;
   if (!validation.ok) {
     console.warn("[planGenerator] Violazioni safety nel piano generato:",
       validation.issues.map(i => i.message).join(" | "));
@@ -543,7 +547,7 @@ ${modeInstruction}
     nextMonday.setDate(now.getDate() + (7 - todayIdxLocal));
     startDate = `${nextMonday.getFullYear()}-${String(nextMonday.getMonth() + 1).padStart(2, "0")}-${String(nextMonday.getDate()).padStart(2, "0")}`;
   }
-  const plan: TrainingPlan = {
+  let plan: TrainingPlan = {
     generatedAt: now.toISOString(),
     validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
     startDate,
@@ -561,7 +565,9 @@ ${modeInstruction}
   } else if (effectiveDaysRegen) {
     expectedDayLabels = effectiveDaysRegen;
   }
-  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesRegen), { expectedDayLabels });
+  const readiness = await getCurrentReadiness();
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesRegen), { expectedDayLabels, readiness });
+  plan = validation.correctedPlan;
   if (!validation.ok) {
     console.warn("[regenerateNextWeek] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
     plan.rationale = plan.rationale + "\n\n[Validator] Avvertenze: " + validation.issues.map(i => i.message).join(" ");
@@ -649,7 +655,7 @@ Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le
   }
   const parsed = parseResult.data;
   const now = new Date();
-  const plan: TrainingPlan = {
+  let plan: TrainingPlan = {
     generatedAt: now.toISOString(),
     validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
     startDate: currentPlan.startDate ?? computePlanStartDate(now),
@@ -657,7 +663,9 @@ Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le
     weeks: coerceWeeks(parsed.weeks),
     rationale: parsed.rationale,
   };
-  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesAdapt));
+  const readiness = await getCurrentReadiness();
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesAdapt), { readiness });
+  plan = validation.correctedPlan;
   if (!validation.ok) {
     console.warn("[adaptPlan] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
     plan.rationale = plan.rationale + "\n\n[Validator] Avvertenze: " + validation.issues.map(i => i.message).join(" ");

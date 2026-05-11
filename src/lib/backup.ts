@@ -38,6 +38,8 @@ export interface BackupPayload {
     "wearable-import-log"?: unknown;
     "wearable-samples-v1"?: unknown;
     "readiness-history"?: unknown;
+    "samsung-hrv-history"?: unknown;
+    "samsung-sleep-history"?: unknown;
     "mobility-routines-version"?: unknown;
     /**
      * Macrocicli persistiti con prefisso "macro-cycle:<id>". Stessa
@@ -71,6 +73,11 @@ const SIMPLE_KEYS = [
   "wearable-import-log",
   "wearable-samples-v1",
   "readiness-history",
+  // Wave 3.4: storage HRV/sleep da Samsung Health JSON. Additive opzionali —
+  // non bumpa schema v2: backup pre-3.4 restano leggibili (le chiavi mancano,
+  // restore le salta; l'app le lazy-init come array vuoti).
+  "samsung-hrv-history",
+  "samsung-sleep-history",
   "mobility-routines-version",
 ] as const;
 

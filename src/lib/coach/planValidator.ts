@@ -2,13 +2,14 @@
 // L'LLM è istruito via prompt ma può sbagliare/ignorare regole. Qui controlliamo
 // le invarianti di sicurezza e correggiamo/avvisiamo se violate.
 
-import type { TrainingPlan, UserProfile, PlanWeek, PlannedSession, UserGoal, ExercisePerformance } from "../types";
+import type { TrainingPlan, UserProfile, PlanWeek, PlannedSession, UserGoal, ExercisePerformance, ReadinessSnapshot } from "../types";
 import { restDaysMinForAge, SAFETY } from "./safetyRules";
 import { isCanonicalSubtype, WORKOUT_SUBTYPES } from "../workoutCatalog";
 import {
   validateStrengthLoadProgression,
   validatePct1rmRepsCoherence,
 } from "./validators/strengthValidators";
+import { validateReadiness } from "./validators/readinessValidator";
 
 export interface PlanValidationIssue {
   weekNumber: number;
@@ -25,7 +26,9 @@ export interface PlanValidationIssue {
     | "weekly_volume_exceeds_availability"
     // Wave 3.1 — strength engine validators (additive, no breaking change).
     | "strength_load_progression"
-    | "pct1rm_reps_mismatch";
+    | "pct1rm_reps_mismatch"
+    // Wave 3.4 — readiness auto-correction (G7, ARCHITECTURE.md §6 I7).
+    | "readiness_override_required";
   message: string;
   severity: "warn" | "error";
   /** Categoria usata per metriche/raggruppamento (coincide con `type`). */
@@ -81,6 +84,11 @@ export type PlanValidator = (
 const VALIDATORS: PlanValidator[] = [
   validateStrengthLoadProgression,
   validatePct1rmRepsCoherence,
+  // Wave 3.4 — readiness auto-correction (G7).
+  // Le issue ritornate sono di tipo "readiness_override_required" e vengono
+  // intercettate da validatePlan per applicare il downgrade Z4-5 → Z3 sul
+  // correctedPlan (immutability del plan input preservata).
+  validateReadiness,
 ];
 
 export interface PlanValidationResult {
@@ -188,9 +196,15 @@ function historyMediansByType(
  * - expectedDayLabels: se presente, restringe il check "rest days" alla finestra
  *   indicata (es. ["gio","ven","sab","dom"] per settimana parziale rest-of-week).
  *   Senza questo parametro, il validator assume settimana piena 7gg.
+ * - readiness: snapshot di readiness "di oggi" (G7, Wave 3.4). Se presente
+ *   con band "low", validateReadiness flagga le sessioni cardio Z4/Z5 di
+ *   OGGI e validatePlan applica il downgrade a Z3 sul `correctedPlan`
+ *   (`readinessAdjusted: true` sulle sessioni modificate). Backward compat:
+ *   omettere → comportamento invariato (no readiness check).
  */
 export interface ValidatePlanOptions {
   expectedDayLabels?: string[];
+  readiness?: ReadinessSnapshot | null;
 }
 
 export function validatePlan(
@@ -272,8 +286,72 @@ export function validatePlan(
     issues.push(...v(plan, ctx));
   }
 
+  // Wave 3.4 — Auto-correction readiness (G7, ARCHITECTURE.md §6 I7).
+  // Il validateReadiness ritorna issue "readiness_override_required" SENZA
+  // mutare il plan (immutability). Qui il caller intercetta e applica:
+  //   1. Deep-clone (shallow per weeks/sessions) di `plan` → `correctedPlan`.
+  //   2. Per ogni sessione di oggi (week 1) con zone >= 4 → set zone = 3 e
+  //      `readinessAdjusted: true`.
+  // Se non ci sono issue readiness → correctedPlan === plan (no clone overhead).
+  let correctedPlan = plan;
+  const readinessIssues = issues.filter(i => i.type === "readiness_override_required");
+  if (readinessIssues.length > 0) {
+    correctedPlan = applyReadinessDowngrade(plan, options.readiness ?? null);
+  }
+
   const ok = issues.filter(i => i.severity === "error").length === 0;
-  return { ok, issues, correctedPlan: plan };
+  return { ok, issues, correctedPlan };
+}
+
+/**
+ * Auto-correction (G7): downgrade Z4/Z5 → Z3 sulle sessioni di OGGI in week 1
+ * quando la readiness è "low". Pure function: ritorna NUOVO plan, non muta
+ * l'input. Idempotente (rieseguirla non cambia il risultato).
+ *
+ * Marca `readinessAdjusted: true` sulle sessioni modificate (UI banner
+ * spiegativo via I7).
+ *
+ * Strategy: shallow-clone il plan, weeks, sessions[i] modificate; le sessioni
+ * non toccate sono riferimenti diretti agli originali (no overhead inutile).
+ */
+function applyReadinessDowngrade(
+  plan: TrainingPlan,
+  readiness: ReadinessSnapshot | null,
+): TrainingPlan {
+  if (!readiness || readiness.band !== "low") return plan;
+  const dayKey = readinessTodayDayKey();
+  const refISO = readinessTodayISO();
+  if (readiness.date !== refISO) return plan;
+
+  const newWeeks: PlanWeek[] = plan.weeks.map(week => {
+    if (week.weekNumber !== 1) return week;
+    let modified = false;
+    const newSessions = week.sessions.map(s => {
+      const sessionDayLc = (s.day || "").toLowerCase();
+      if (sessionDayLc !== dayKey) return s;
+      const z = s.zone;
+      if (typeof z !== "number" || z < 4) return s;
+      modified = true;
+      return { ...s, zone: 3 as 1 | 2 | 3 | 4 | 5, readinessAdjusted: true };
+    });
+    return modified ? { ...week, sessions: newSessions } : week;
+  });
+
+  return { ...plan, weeks: newWeeks };
+}
+
+// Wrapper locali per ridurre coupling con readinessValidator.ts (gli helper
+// stessi sono pure → re-importati qui per chiarezza/test isolati).
+function readinessTodayDayKey(d: Date = new Date()): string {
+  const dow = d.getDay();
+  const idx = (dow + 6) % 7;
+  return DAY_ORDER[idx];
+}
+function readinessTodayISO(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /**
