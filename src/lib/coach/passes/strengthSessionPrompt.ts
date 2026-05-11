@@ -126,7 +126,14 @@ export function strengthCatalogForPrompt(equipment: string[], pattern?: string):
 
   const lines = head.map(ex => {
     const muscles = ex.primaryMuscles.slice(0, 3).join(", ");
-    return `- ${ex.id} | ${ex.name} | ${ex.level} | ${muscles}`;
+    // Wave 3.5 (G8): mostriamo anche le alternatives (max 3 per token discipline).
+    // Serve all'LLM per scegliere il fallback corretto se l'esercizio "preferito"
+    // non è disponibile (anche se il filtro equipSet già esclude i non-disponibili,
+    // la trasparenza sulla chain aiuta nei rare edge dove un alt è ancora migliore
+    // del canonico per il subtype richiesto).
+    const altList = (ex.alternatives ?? []).slice(0, 3).join(", ");
+    const altPart = altList ? ` | alt: ${altList}` : "";
+    return `- ${ex.id} | ${ex.name} | ${ex.level} | ${muscles}${altPart}`;
   });
 
   return [
@@ -188,6 +195,46 @@ ESEMPIO 3 — Sessione FORZA FULL BODY advanced (75min, 1RM squat=120 / bench=95
   "details": "Full body classico forza: squat 5x5 @82% + bench 4x5-6 @80% + pull-up 4x6-8 + RDL 3x8-10.",
   "rationale": "Schema 5x5 per main lifts (massima espressione di forza con 1RM disponibili). Pull-up + RDL come accessori per pattern complementari (vertical pull + hinge). Rest 4min su squat per recupero ATP-CP.",
   "progressionRule": { "triggerCondition": "se squat 5x5 completato @RPE ≤8", "action": "+2.5 kg back squat la prossima settimana" }
+}
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EQUIPMENT SUBSTITUTION RULES (Wave 3.5, G8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Istruzioni esplicite per l'LLM su come gestire la chain di alternative quando
+ * l'esercizio "canonico" preferito richiede equipment che l'utente NON ha.
+ *
+ * Razionale: il catalog allowlist è già pre-filtrato sull'equipment dell'utente
+ * (strengthCatalogForPrompt esclude i non-eseguibili), ma per ogni esercizio
+ * mostriamo `alt: id1, id2, id3` — l'LLM deve scegliere il PRIMO alt disponibile
+ * (cioè il primo che compare ANCH'ESSO nella allowlist) se per qualche ragione
+ * vuole "puntare" a un esercizio che non è in lista.
+ *
+ * Token cost: ~120 token. Budget compatibile.
+ */
+export const STRENGTH_SUBSTITUTION_RULES = `
+EQUIPMENT SUBSTITUTION RULES (G8):
+- Il catalog ESERCIZI DISPONIBILI è GIÀ filtrato sull'equipment dichiarato dall'utente.
+- Se proponi un exerciseId che richiede equipment NON disponibile → output rigettato dal validator.
+- Per ogni esercizio, il campo "alt: id1, id2" mostra la chain di sostituti in ordine di preferenza
+  (degradante: barbell → dumbbell → kettlebell → bodyweight).
+- Se l'esercizio "ideale" che vorresti proporre NON appare nella lista (perché manca un attrezzo),
+  scegli il PRIMO id della sua chain "alt:" che SÌ appare nella lista.
+- Esempio: vuoi prescrivere back-squat-barbell ma non è in lista (no barbell). Cerca un esercizio
+  in lista che lo abbia tra le sue alt, oppure usa direttamente goblet-squat-kettlebell o
+  bodyweight-squat se kettlebell/bodyweight sono disponibili.
+
+ESEMPIO SUBSTITUTION — utente SENZA barbell, con dumbbell + bench:
+{
+  "exercises": [
+    { "exerciseId": "goblet-squat-kettlebell", "plannedSets": 4, "repsTarget": {"min": 8, "max": 10}, "rpe_target": 7, "rest_sec": 90, "cue": "Petto alto, KB al petto a due mani" },
+    { "exerciseId": "bench-press-flat-dumbbell", "plannedSets": 4, "repsTarget": {"min": 8, "max": 10}, "rpe_target": 8, "rest_sec": 120, "cue": "Manubri controllati, gomiti 45°" },
+    { "exerciseId": "dumbbell-row-bent-over", "plannedSets": 3, "repsTarget": {"min": 8, "max": 12}, "rpe_target": 7, "rest_sec": 90, "cue": "Busto a 30°, scapole compresse" }
+  ],
+  "details": "Sessione full body adattata: KB squat + DB bench + DB row. NIENTE bilanciere usato.",
+  "rationale": "Substitution G8: back-squat-barbell → goblet-squat-kettlebell (chain alt[0]); bench-press-flat-barbell → bench-press-flat-dumbbell (alt[0]). Stesso pattern motorio, equipment compatibile."
 }
 `.trim();
 
@@ -422,6 +469,8 @@ ${macroPhaseLine}
 
   sections.push("");
   sections.push(rules);
+  sections.push("");
+  sections.push(STRENGTH_SUBSTITUTION_RULES);
   sections.push("");
   sections.push("FEW-SHOT EXAMPLES (riferimento di shape e qualità — NON copiare i valori):");
   sections.push(STRENGTH_FEW_SHOT_EXAMPLES);

@@ -22,12 +22,16 @@ import type {
   TrainingPlan,
   PlannedExercise,
   PlannedSession,
+  EquipmentTag,
 } from "../../types";
 import type {
   PlanValidator,
   PlanValidationIssue,
   RecentWorkoutForValidator,
 } from "../planValidator";
+import { EXERCISES, EXERCISES_BY_ID } from "../../catalog/exercises";
+import { normalizeEquipmentTags } from "../../equipment/equipmentNormalizer";
+import { resolveSubstitution } from "../equipmentSubstitutor";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Internal helpers
@@ -204,3 +208,94 @@ export const validatePct1rmRepsCoherence: PlanValidator = (
 
 // Esportazione opzionale per testing isolato dell'helper di range.
 export { expectedRepRangeForPct1RM };
+
+// ────────────────────────────────────────────────────────────────────────────
+// B.3 validateEquipmentMismatch (Wave 3.5, G8)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per ogni sessione strength* della week 1, verifica che ogni
+ * `PlannedExercise.exerciseId` sia eseguibile con `profile.equipment`.
+ *
+ * Logica:
+ * - Normalizza profile.equipment via normalizeEquipmentTags (free-text IT → canonical).
+ * - Per ogni esercizio chiama resolveSubstitution.
+ * - Se null (unresolved) → issue "equipment_mismatch" (warn): nessuna alternativa.
+ * - Se hop > 0 → issue "equipment_substituted" (warn): segnala il swap.
+ * - hop === 0 → no issue (utente ha l'equipment richiesto).
+ *
+ * NON muta il plan — solo issues. La sostituzione effettiva avviene render-time
+ * (PlannedExercise.effectiveExerciseId) o in Pass-2 prompt che istruisce l'LLM
+ * a scegliere il primo alternative disponibile.
+ *
+ * Scope: solo week 1 (settimana corrente). Le settimane successive 2-N hanno
+ * sessioni "preview" — l'utente potrebbe acquistare equipment nel frattempo,
+ * quindi non ha senso flaggare ora.
+ *
+ * Scope type: solo type.startsWith("forza") — cardio/mobility non usano
+ * exercises[] strutturati di catalog (intervals/blocks invece).
+ */
+export const validateEquipmentMismatch: PlanValidator = (
+  plan,
+  ctx,
+): PlanValidationIssue[] => {
+  const issues: PlanValidationIssue[] = [];
+  const week1 = plan.weeks.find(w => w.weekNumber === 1);
+  if (!week1) return issues;
+
+  // Normalizzazione free-text IT → canonical EquipmentTag[].
+  // bodyweight è sempre incluso da normalizeEquipmentTags.
+  const availableEquipment = normalizeEquipmentTags(ctx.profile.equipment) as EquipmentTag[];
+  const availableLabel = availableEquipment.length > 0
+    ? availableEquipment.join(", ")
+    : "(nessuno)";
+
+  for (const session of week1.sessions) {
+    const type = (session.type || "").toLowerCase();
+    if (!type.startsWith("forza")) continue;
+    const exs = session.exercises;
+    if (!exs || exs.length === 0) continue;
+
+    for (const ex of exs) {
+      const result = resolveSubstitution(ex.exerciseId, availableEquipment, EXERCISES);
+
+      if (result === null) {
+        // Unresolved: né l'originale né nessuna alternativa eseguibile.
+        const catalogEx = EXERCISES_BY_ID[ex.exerciseId];
+        const required = catalogEx
+          ? catalogEx.equipment.join(", ")
+          : "(esercizio non in catalog)";
+        issues.push({
+          weekNumber: week1.weekNumber,
+          type: "equipment_mismatch",
+          category: "equipment_mismatch",
+          message: `Settimana ${week1.weekNumber} / ${session.day} ${session.type}: esercizio "${ex.exerciseId}" richiede [${required}] ma l'utente ha [${availableLabel}]; nessuna alternativa eseguibile entro la chain (G8).`,
+          severity: "warn",
+        });
+        continue;
+      }
+
+      if (result.hop > 0) {
+        // Substitution segnalata (info-warn): il render-time userà il resolved.
+        const catalogOriginal = EXERCISES_BY_ID[result.originalId];
+        const missingTags = catalogOriginal
+          ? catalogOriginal.equipment.filter(
+              t => t !== "bodyweight" && !availableEquipment.includes(t),
+            )
+          : [];
+        const missingLabel = missingTags.length > 0
+          ? missingTags.join("+")
+          : "equipment richiesto";
+        issues.push({
+          weekNumber: week1.weekNumber,
+          type: "equipment_substituted",
+          category: "equipment_substituted",
+          message: `Settimana ${week1.weekNumber} / ${session.day} ${session.type}: sostituito "${result.originalId}" → "${result.resolvedId}" (no ${missingLabel}, hop ${result.hop}).`,
+          severity: "warn",
+        });
+      }
+    }
+  }
+
+  return issues;
+};

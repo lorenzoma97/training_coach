@@ -8,6 +8,7 @@ import { isCanonicalSubtype, WORKOUT_SUBTYPES } from "../workoutCatalog";
 import {
   validateStrengthLoadProgression,
   validatePct1rmRepsCoherence,
+  validateEquipmentMismatch,
 } from "./validators/strengthValidators";
 import { validateReadiness } from "./validators/readinessValidator";
 
@@ -28,7 +29,13 @@ export interface PlanValidationIssue {
     | "strength_load_progression"
     | "pct1rm_reps_mismatch"
     // Wave 3.4 — readiness auto-correction (G7, ARCHITECTURE.md §6 I7).
-    | "readiness_override_required";
+    | "readiness_override_required"
+    // Wave 3.5 — equipment substitution G8 (ARCHITECTURE.md §3.3).
+    // - equipment_mismatch: nessuna alternativa eseguibile (esercizio impossibile).
+    // - equipment_substituted: hop > 0 nella chain alternatives (info-warn,
+    //   non blocca il piano — render-time mostrerà SubstitutionBadge).
+    | "equipment_mismatch"
+    | "equipment_substituted";
   message: string;
   severity: "warn" | "error";
   /** Categoria usata per metriche/raggruppamento (coincide con `type`). */
@@ -89,6 +96,11 @@ const VALIDATORS: PlanValidator[] = [
   // intercettate da validatePlan per applicare il downgrade Z4-5 → Z3 sul
   // correctedPlan (immutability del plan input preservata).
   validateReadiness,
+  // Wave 3.5 — equipment substitution G8.
+  // Emette equipment_substituted (warn, hop>0) e equipment_mismatch (warn,
+  // unresolved). Solo segnalazioni: NON muta plan. La sostituzione effettiva
+  // avviene render-time (effectiveExerciseId) o in Pass-2 prompt.
+  validateEquipmentMismatch,
 ];
 
 export interface PlanValidationResult {

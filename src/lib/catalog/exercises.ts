@@ -32,7 +32,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Petto alto, ginocchia in linea con piedi, schiena neutra. Discesa controllata sotto parallelo se mobilità lo consente.",
     cautions: ["lombare ernia", "ginocchio acuto"],
-    alternatives: ["goblet-squat-kettlebell", "front-squat-barbell", "hack-squat-machine", "leg-press-machine"],
+    alternatives: ["goblet-squat-kettlebell", "dumbbell-squat", "bodyweight-squat"],
     loadable: true,
   },
   {
@@ -46,7 +46,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Bilanciere su deltoidi anteriori, gomiti alti. Busto più verticale che back squat, riduce stress lombare.",
     cautions: ["lombare ernia", "polso rigido"],
-    alternatives: ["goblet-squat-kettlebell", "back-squat-barbell", "zercher-squat-barbell"],
+    alternatives: ["goblet-squat-kettlebell", "dumbbell-squat", "bodyweight-squat"],
     loadable: true,
   },
   {
@@ -210,7 +210,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Bilanciere sopra metà piede, presa larghezza spalle, schiena neutra dall'inizio. Spinta gambe + estensione anca simultanee.",
     cautions: ["lombare ernia", "discopatia attiva"],
-    alternatives: ["deadlift-romanian-barbell", "deadlift-sumo-barbell", "trap-bar-deadlift", "kettlebell-swing"],
+    alternatives: ["deadlift-romanian-dumbbell", "kettlebell-swing", "glute-bridge-bodyweight"],
     loadable: true,
   },
   {
@@ -224,7 +224,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Stance largo (oltre spalle), punte aperte 30-45°, presa interna alle gambe. Range più corto vs convenzionale, busto più verticale.",
     cautions: ["lombare ernia", "anca rigida"],
-    alternatives: ["deadlift-conventional-barbell", "deadlift-romanian-barbell", "kettlebell-swing"],
+    alternatives: ["deadlift-romanian-dumbbell", "kettlebell-swing", "glute-bridge-bodyweight"],
     loadable: true,
   },
   {
@@ -238,7 +238,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Ginocchia leggermente piegate, hip hinge spostando bacino indietro. Discesa fino tibie con bilanciere vicino. Schiena neutra.",
     cautions: ["lombare acuto", "femorale strain recente"],
-    alternatives: ["deadlift-romanian-dumbbell", "good-morning-barbell", "kettlebell-swing", "single-leg-rdl-dumbbell"],
+    alternatives: ["deadlift-romanian-dumbbell", "kettlebell-swing", "glute-bridge-bodyweight"],
     loadable: true,
   },
   {
@@ -252,7 +252,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Manubri davanti alle cosce, hip hinge controllato. Versione più accessibile vs barbell per home gym.",
     cautions: ["lombare acuto"],
-    alternatives: ["deadlift-romanian-barbell", "single-leg-rdl-dumbbell", "kettlebell-swing"],
+    alternatives: ["kettlebell-swing", "single-leg-rdl-dumbbell", "glute-bridge-bodyweight"],
     loadable: true,
   },
   {
@@ -265,7 +265,7 @@ export const EXERCISES: Exercise[] = [
     level: "intermediate",
     unilateral: true,
     technique: "Manubrio nella mano opposta alla gamba di appoggio. Hip hinge mantenendo allineamento spalla-anca-tallone in linea.",
-    alternatives: ["deadlift-romanian-dumbbell", "kickback-glute-band", "good-morning-barbell"],
+    alternatives: ["deadlift-romanian-dumbbell", "kickback-glute-band", "single-leg-glute-bridge"],
     loadable: true,
   },
   {
@@ -279,7 +279,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Posizionarsi al centro della trap bar, presa neutra. Riduce stress lombare vs convenzionale, più simile a uno squat-deadlift ibrido.",
     cautions: ["lombare cronico"],
-    alternatives: ["deadlift-conventional-barbell", "deadlift-romanian-barbell", "goblet-squat-kettlebell"],
+    alternatives: ["deadlift-romanian-dumbbell", "kettlebell-swing", "glute-bridge-bodyweight"],
     loadable: true,
   },
   {
@@ -293,7 +293,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Hip hinge esplosivo. Kettlebell oscilla per momentum dell'anca, NON per sollevamento di braccio. Endpoint altezza spalle (russian) o overhead (american).",
     cautions: ["lombare acuto"],
-    alternatives: ["deadlift-romanian-dumbbell", "hip-thrust-barbell", "good-morning-barbell"],
+    alternatives: ["deadlift-romanian-dumbbell", "hip-thrust-barbell", "glute-bridge-bodyweight"],
     loadable: true,
   },
   {
@@ -307,7 +307,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Bilanciere sui trapezi alti, hip hinge mantenendo curva lombare. Carico moderato, focus sulla tecnica.",
     cautions: ["lombare ernia", "discopatia"],
-    alternatives: ["deadlift-romanian-barbell", "kettlebell-swing", "single-leg-rdl-dumbbell"],
+    alternatives: ["deadlift-romanian-dumbbell", "kettlebell-swing", "glute-bridge-bodyweight"],
     loadable: true,
   },
   {
@@ -664,7 +664,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Bilanciere clavicola, gomiti leggermente avanti. Spinta verticale, testa indietro per passare la bar, push dietro al top. Glutei contratti.",
     cautions: ["spalla impingement", "lombare cronico"],
-    alternatives: ["seated-shoulder-press-dumbbell", "push-press-barbell", "dumbbell-shoulder-press-standing"],
+    alternatives: ["dumbbell-shoulder-press-standing", "kettlebell-push-press", "pike-push-up"],
     loadable: true,
   },
   {
@@ -677,7 +677,7 @@ export const EXERCISES: Exercise[] = [
     level: "beginner",
     unilateral: false,
     technique: "Schienale 90° o leggermente indietro. Manubri si toccano al top o quasi. ROM ampio.",
-    alternatives: ["dumbbell-shoulder-press-standing", "military-press-standing-barbell", "shoulder-press-machine"],
+    alternatives: ["dumbbell-shoulder-press-standing", "shoulder-press-machine", "pike-push-up"],
     loadable: true,
   },
   {
@@ -690,7 +690,7 @@ export const EXERCISES: Exercise[] = [
     level: "intermediate",
     unilateral: false,
     technique: "Versione in piedi richiede stabilità core. Manubri partono spalle, spingere verticali. Evitare iperestensione lombare.",
-    alternatives: ["seated-shoulder-press-dumbbell", "military-press-standing-barbell", "arnold-press-dumbbell"],
+    alternatives: ["seated-shoulder-press-dumbbell", "kettlebell-push-press", "pike-push-up"],
     loadable: true,
   },
   {
@@ -704,7 +704,7 @@ export const EXERCISES: Exercise[] = [
     unilateral: false,
     technique: "Mini-squat, esplosione gambe + push verticale spalle simultanei. Permette carichi maggiori vs strict press.",
     cautions: ["spalla impingement", "ginocchio acuto"],
-    alternatives: ["military-press-standing-barbell", "kettlebell-push-press", "dumbbell-shoulder-press-standing"],
+    alternatives: ["kettlebell-push-press", "dumbbell-shoulder-press-standing", "pike-push-up"],
     loadable: true,
   },
   {
@@ -717,7 +717,7 @@ export const EXERCISES: Exercise[] = [
     level: "intermediate",
     unilateral: true,
     technique: "Kettlebell in rack position. Mini-dip e drive verticale. Versione monolaterale = challenge stabilità core.",
-    alternatives: ["push-press-barbell", "dumbbell-shoulder-press-standing", "military-press-standing-barbell"],
+    alternatives: ["dumbbell-shoulder-press-standing", "push-press-barbell", "pike-push-up"],
     loadable: true,
   },
   {
@@ -730,7 +730,7 @@ export const EXERCISES: Exercise[] = [
     level: "intermediate",
     unilateral: false,
     technique: "Partenza supinato davanti al viso. Rotazione + spinta in un movimento fluido fino pronato sopra la testa.",
-    alternatives: ["seated-shoulder-press-dumbbell", "dumbbell-shoulder-press-standing", "military-press-standing-barbell"],
+    alternatives: ["seated-shoulder-press-dumbbell", "dumbbell-shoulder-press-standing", "pike-push-up"],
     loadable: true,
   },
   {
@@ -770,7 +770,7 @@ export const EXERCISES: Exercise[] = [
     level: "beginner",
     unilateral: false,
     technique: "Sedile regolato con manopole all'altezza spalle. Spinta verticale controllata.",
-    alternatives: ["seated-shoulder-press-dumbbell", "dumbbell-shoulder-press-standing", "military-press-standing-barbell"],
+    alternatives: ["seated-shoulder-press-dumbbell", "dumbbell-shoulder-press-standing", "pike-push-up"],
     loadable: true,
   },
 
@@ -880,7 +880,7 @@ export const EXERCISES: Exercise[] = [
     level: "beginner",
     unilateral: false,
     technique: "Elastico tenuto a braccia tese davanti, tirare orizzontalmente fino petto, scapole pinch.",
-    alternatives: ["face-pull-cable", "rear-delt-fly-dumbbell"],
+    alternatives: ["face-pull-cable", "rear-delt-fly-dumbbell", "inverted-row-bodyweight"],
     loadable: false,
   },
   {
@@ -893,7 +893,7 @@ export const EXERCISES: Exercise[] = [
     level: "beginner",
     unilateral: false,
     technique: "Hip hinge a 45°, manubri leggeri in mano. Sollevare lateralmente con leggera flessione gomito. Range corto.",
-    alternatives: ["face-pull-cable", "band-pull-apart"],
+    alternatives: ["face-pull-cable", "band-pull-apart", "inverted-row-bodyweight"],
     loadable: true,
   },
   {
@@ -1127,7 +1127,7 @@ export const EXERCISES: Exercise[] = [
     level: "beginner",
     unilateral: true,
     technique: "Quadrupedia, braccio dx + gamba sx estesi paralleli al pavimento, bacino stabile (no rotazioni). Tenuta 2-3s, alternare.",
-    alternatives: ["dead-bug-bodyweight", "plank-front-bodyweight", "single-leg-balance"],
+    alternatives: ["dead-bug-bodyweight", "plank-front-bodyweight", "single-leg-balance-bodyweight"],
     loadable: false,
   },
   {
@@ -1197,7 +1197,7 @@ export const EXERCISES: Exercise[] = [
     level: "intermediate",
     unilateral: true,
     technique: "Cavo alto, tirare diagonalmente verso anca opposta. Movimento generato da rotazione anca + core, NO solo braccia.",
-    alternatives: ["pallof-press-cable", "russian-twist-bodyweight"],
+    alternatives: ["pallof-press-cable", "pallof-press-band", "russian-twist-bodyweight"],
     loadable: true,
   },
   {
@@ -1504,7 +1504,7 @@ export const EXERCISES: Exercise[] = [
     level: "beginner",
     unilateral: false,
     technique: "Manubri leggeri lungo i fianchi. Sollevare lateralmente fino spalla, leggera flessione gomito. NO scendere sotto il livello.",
-    alternatives: ["lateral-raise-cable", "shoulder-press-machine"],
+    alternatives: ["lateral-raise-cable", "band-pull-apart", "pike-push-up"],
     loadable: true,
   },
   {
@@ -1517,7 +1517,7 @@ export const EXERCISES: Exercise[] = [
     level: "intermediate",
     unilateral: true,
     technique: "Cavo basso, maniglia singola. Tensione costante in tutto il ROM (vantaggio vs manubri). Range corto controllato.",
-    alternatives: ["lateral-raise-dumbbell"],
+    alternatives: ["lateral-raise-dumbbell", "band-pull-apart", "pike-push-up"],
     loadable: true,
   },
   {

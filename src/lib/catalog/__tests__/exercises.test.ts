@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { EXERCISES, EXERCISES_BY_ID, EXERCISE_IDS } from "../exercises";
 import type { ExercisePattern } from "../../types/exercise";
+import { walkAlternativeChain } from "../../coach/equipmentSubstitutor";
 
 describe("Exercise catalog", () => {
   it("contains at least 80 exercises (G2 acceptance)", () => {
@@ -101,5 +102,69 @@ describe("Exercise catalog", () => {
   it("all IDs are kebab-case (no spaces, no underscores, lowercase)", () => {
     const broken = EXERCISES.filter(e => !/^[a-z0-9-]+$/.test(e.id));
     expect(broken.map(e => e.id)).toEqual([]);
+  });
+
+  // ============================================================================
+  // G8 — Equipment Substitution chain validation (Wave 3.5)
+  // ============================================================================
+
+  it("G8: alternatives chain has no orphan IDs (every alt resolves in catalog)", () => {
+    const orphans: Array<{ exerciseId: string; missingAlt: string }> = [];
+    for (const ex of EXERCISES) {
+      for (const altId of ex.alternatives) {
+        if (!EXERCISES_BY_ID[altId]) {
+          orphans.push({ exerciseId: ex.id, missingAlt: altId });
+        }
+      }
+    }
+    expect(orphans).toEqual([]);
+  });
+
+  it("G8: alternatives chain has no 2-cycles A→B→A unless paired with a 3rd-party fallback (regression-friendly)", () => {
+    // Bidirectional refs (es. push-up-standard <-> push-up-knees) sono OK e attesi
+    // come progressione/regression. Questo test verifica solo che NON esistano
+    // catene chiuse di 2 esercizi senza nessun altro fallback (deadlock).
+    const deadlockPairs: Array<[string, string]> = [];
+    for (const ex of EXERCISES) {
+      if (ex.alternatives.length === 1) {
+        const onlyAlt = ex.alternatives[0];
+        const altEx = EXERCISES_BY_ID[onlyAlt];
+        if (altEx && altEx.alternatives.length === 1 && altEx.alternatives[0] === ex.id) {
+          deadlockPairs.push([ex.id, onlyAlt]);
+        }
+      }
+    }
+    expect(deadlockPairs).toEqual([]);
+  });
+
+  it("G8: alternatives chain length max 3 (per ARCHITECTURE max 3 hop contract)", () => {
+    const tooLong = EXERCISES.filter(e => e.alternatives.length > 3);
+    expect(tooLong.map(e => `${e.id}: ${e.alternatives.length} alts`)).toEqual([]);
+  });
+
+  it("G8: every non-bodyweight exercise reaches a bodyweight alternative within 3 hops (excl. carry)", () => {
+    // Carry pattern è loadable per definizione (trasporto peso esterno) → exempt.
+    // Pull-up/chin-up richiedono pullup_bar IN AGGIUNTA a bodyweight → escluse
+    // (un utente "casa no attrezzi" non le può eseguire neanche).
+    // Test SEMANTICAMENTE allineato al runtime: usa walkAlternativeChain reale
+    // con availableEquipment=[] → verifica che il prod algorithm raggiunga un
+    // esercizio eseguibile (solo bodyweight, no pullup_bar) entro 3 hop.
+    const unreachable: string[] = [];
+    for (const ex of EXERCISES) {
+      // Esercizi eseguibili a corpo libero PURO (solo "bodyweight", nessun
+      // altro tag richiesto come pullup_bar/box). Sono già un endpoint valido.
+      if (ex.equipment.length === 1 && ex.equipment[0] === "bodyweight") continue;
+      if (ex.pattern === "carry") continue;
+      const result = walkAlternativeChain(ex.id, [], EXERCISES, 3);
+      if (result === null) unreachable.push(ex.id);
+    }
+    expect(unreachable).toEqual([]);
+  });
+
+  it("G8: every non-bodyweight exercise (excl. carry) has at least 2 alternatives for graceful degrade", () => {
+    const tooShort = EXERCISES.filter(
+      e => !e.equipment.includes("bodyweight") && e.pattern !== "carry" && e.alternatives.length < 2,
+    );
+    expect(tooShort.map(e => `${e.id}: ${e.alternatives.length} alts`)).toEqual([]);
   });
 });

@@ -11,6 +11,7 @@ import { describe, it, expect } from "vitest";
 import {
   validateStrengthLoadProgression,
   validatePct1rmRepsCoherence,
+  validateEquipmentMismatch,
   expectedRepRangeForPct1RM,
 } from "../strengthValidators";
 import type {
@@ -467,5 +468,76 @@ describe("expectedRepRangeForPct1RM (Ratamess matrix)", () => {
     expect(expectedRepRangeForPct1RM(75)).toMatchObject({ min: 6, max: 12 });
     expect(expectedRepRangeForPct1RM(65)).toMatchObject({ min: 8, max: 15 });
     expect(expectedRepRangeForPct1RM(50)).toMatchObject({ min: 12, max: 25 });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// validateEquipmentMismatch (Wave 3.5, G8) — diretti, post-fix BLOCKER BFS
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("validateEquipmentMismatch (G8)", () => {
+  function makeCtx(equipment: string[] | undefined): ValidatorCtx {
+    return {
+      profile: { ...baseProfile, equipment: (equipment ?? []) as string[] },
+      recentWorkouts: [],
+      options: {},
+    };
+  }
+
+  it("profile.equipment=undefined → solo bodyweight implicito, esercizi non-bw producono substitution o mismatch", () => {
+    const plan = makePlan([
+      { weekNumber: 1, sessions: [makeSession([makeEx({ exerciseId: "back-squat-barbell" })])] },
+    ]);
+    const ctx = makeCtx(undefined);
+    const issues = validateEquipmentMismatch(plan, ctx);
+    // L'utente legacy senza equipment → bodyweight only. Substitutor BFS dovrebbe
+    // raggiungere bodyweight-squat (esiste nel catalog reale).
+    expect(issues.length).toBeGreaterThan(0);
+    const types = new Set(issues.map(i => i.type));
+    // Almeno uno dei due tipi G8 deve essere emesso (sub o mismatch).
+    expect([...types].some(t => t === "equipment_substituted" || t === "equipment_mismatch")).toBe(true);
+  });
+
+  it("profile con barbell → back-squat-barbell hop 0, nessuna issue", () => {
+    const plan = makePlan([
+      { weekNumber: 1, sessions: [makeSession([makeEx({ exerciseId: "back-squat-barbell" })])] },
+    ]);
+    const ctx = makeCtx(["barbell"]);
+    const issues = validateEquipmentMismatch(plan, ctx);
+    expect(issues.filter(i => i.type === "equipment_substituted")).toEqual([]);
+    expect(issues.filter(i => i.type === "equipment_mismatch")).toEqual([]);
+  });
+
+  it("profile bodyweight-only su back-squat-barbell → equipment_substituted (NON mismatch)", () => {
+    const plan = makePlan([
+      { weekNumber: 1, sessions: [makeSession([makeEx({ exerciseId: "back-squat-barbell" })])] },
+    ]);
+    const ctx = makeCtx([]);
+    const issues = validateEquipmentMismatch(plan, ctx);
+    const subs = issues.filter(i => i.type === "equipment_substituted");
+    const miss = issues.filter(i => i.type === "equipment_mismatch");
+    // Post fix BLOCKER BFS: catalog reale deve degradare a bodyweight, mai mismatch.
+    expect(subs.length).toBe(1);
+    expect(miss.length).toBe(0);
+    expect(subs[0].severity).toBe("warn");
+  });
+
+  it("non-week-1 sessions ignored (solo settimana corrente)", () => {
+    const plan = makePlan([
+      { weekNumber: 1, sessions: [] },
+      { weekNumber: 2, sessions: [makeSession([makeEx({ exerciseId: "back-squat-barbell" })])] },
+    ]);
+    const ctx = makeCtx([]);
+    const issues = validateEquipmentMismatch(plan, ctx);
+    expect(issues).toEqual([]);
+  });
+
+  it("session non-strength ignored (es. corsa)", () => {
+    const plan = makePlan([
+      { weekNumber: 1, sessions: [makeSession([makeEx({ exerciseId: "back-squat-barbell" })], "corsa")] },
+    ]);
+    const ctx = makeCtx([]);
+    const issues = validateEquipmentMismatch(plan, ctx);
+    expect(issues).toEqual([]);
   });
 });
