@@ -20,7 +20,7 @@ export interface SubstitutionBadgeProps {
 }
 
 /**
- * Badge "sostituito" inline. Tailwind: bg-amber-100 text-amber-900.
+ * Badge "sostituito" inline. Inline-style (codebase non usa Tailwind).
  * Tooltip nativo via title attr (no librerie esterne).
  */
 export function SubstitutionBadge({ original, resolved, reason }: SubstitutionBadgeProps) {
@@ -30,9 +30,18 @@ export function SubstitutionBadge({ original, resolved, reason }: SubstitutionBa
 
   return (
     <span
-      className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-xs"
       title={tooltip}
       aria-label={tooltip}
+      style={{
+        backgroundColor: "#fef3c7", // amber-100
+        color: "#78350f",           // amber-900
+        padding: "2px 8px",
+        borderRadius: "4px",
+        fontSize: "11px",
+        fontWeight: 600,
+        marginLeft: "6px",
+        verticalAlign: "middle",
+      }}
     >
       sostituito
     </span>

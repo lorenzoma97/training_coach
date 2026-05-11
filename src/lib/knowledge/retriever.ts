@@ -1,4 +1,4 @@
-import { CHUNKS, type KnowledgeChunk } from "./chunks";
+import { CHUNKS, type KnowledgeChunk, type RagContext } from "./chunks";
 import { embedQuery, getCacheStatus } from "./embedder";
 import { getRagCache } from "../ragStorage";
 import { hasApiKey } from "../gemini";
@@ -8,6 +8,19 @@ import type { EmbeddingCache } from "./embedder";
 export interface RetrievalResult {
   chunk: KnowledgeChunk;
   score: number;
+}
+
+/**
+ * Wave 4.2 — opzioni di retrieval con context routing.
+ * - `contexts` omesso o `[]` → no filter (backward compat).
+ * - Se valorizzato → pre-filtra CHUNKS per intersezione tag.
+ * - Se subset filtrato < topK → fallback su pool completo + warn console.
+ */
+export interface RetrievalOptions {
+  query: string;
+  topK?: number;
+  minScore?: number;
+  contexts?: RagContext[];
 }
 
 function cosine(a: number[], b: number[]): number {
@@ -24,16 +37,12 @@ function cosine(a: number[], b: number[]): number {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
-export async function retrieveRelevantChunks(params: {
-  query: string;
-  topK?: number;
-  minScore?: number;
-}): Promise<RetrievalResult[]> {
+export async function retrieveRelevantChunks(params: RetrievalOptions): Promise<RetrievalResult[]> {
   // minScore alzato da 0.55 → 0.60 con la KB v3 (37 chunks): più chunks
   // significa maggior rischio di false-positive match tangenziali. Soglia
   // più selettiva mantiene precisione a scapito di recall (preferibile: se
   // nessun chunk passa, il coach risponde da conoscenza interna — spesso ok).
-  const { query, topK = 3, minScore = 0.60 } = params;
+  const { query, topK = 3, minScore = 0.60, contexts } = params;
   if (!query.trim()) return [];
   if (!hasApiKey()) return [];
   // Se il provider corrente non supporta embeddings, salta RAG silenziosamente.
@@ -49,12 +58,30 @@ export async function retrieveRelevantChunks(params: {
     const cache = await getRagCache<EmbeddingCache>();
     if (!cache) return [];
     const qVec = await embedQuery(query);
+
+    // Wave 4.2 — context routing.
+    // Pre-filtra il pool su intersezione tag, poi fallback se subset < topK.
+    const filterActive = Array.isArray(contexts) && contexts.length > 0;
+    const filteredPool = filterActive
+      ? CHUNKS.filter(c => c.contexts.some(ctx => contexts!.includes(ctx)))
+      : CHUNKS;
+
+    let workingPool = filteredPool;
+    if (filterActive && filteredPool.length < topK) {
+      console.warn(
+        `[RAG] Context filter ${JSON.stringify(contexts)} matched only ${filteredPool.length} chunks (< topK=${topK}); falling back to full pool.`
+      );
+      workingPool = CHUNKS;
+    }
+
     const scored: RetrievalResult[] = [];
     // Teniamo traccia di TUTTI i punteggi per stale-cache detection (fix #8),
     // prima del filtro minScore — così possiamo capire se la cache è degradata
     // (es. provider cambiato, embeddings vecchi) anche quando tutto viene filtrato via.
+    // Nota: allScores è calcolato sul workingPool effettivo (post fallback), non
+    // sull'intero CHUNKS — coerente con il pool su cui si fa similarity.
     const allScores: number[] = [];
-    for (const chunk of CHUNKS) {
+    for (const chunk of workingPool) {
       const v = cache.vectors[chunk.id];
       if (!v) continue;
       const s = cosine(qVec, v);

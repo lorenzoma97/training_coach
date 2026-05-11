@@ -10,6 +10,10 @@ import { workoutSubtypesForPrompt, isCanonicalSubtype } from "../workoutCatalog"
 import { loadActiveMacroContext } from "./macroLookup";
 import { getCurrentReadiness } from "./readinessScoring";
 import { sanitizePII } from "../promptSanitizer";
+// Wave 4.1 — multi-pass orchestrator. Default attivo; se MULTI_PASS_ENABLED
+// e' false (override locale per debug), si ricade sul codice single-pass legacy
+// che resta integralmente sotto.
+import { runMultiPass, MULTI_PASS_ENABLED } from "./passes/passOrchestrator";
 
 // WHY: appiattisce i giorni del diario nella shape attesa dal validator per
 // lo spike check Johansen (14gg). Senza questo i call-site passavano [] e lo
@@ -304,6 +308,30 @@ export async function generateInitialPlan(
   const goalConflictHint = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
   const effectiveDays = effectiveAvailableDays(opts?.availableDaysOverride, profile.availableDays);
   const availableDaysBlock = buildAvailableDaysBlock(effectiveDays, "GIORNI ALLENABILI");
+
+  // Wave 4.1 — multi-pass path (default). Fallback graceful: se l'orchestrator
+  // fallisce (Pass-1 LLM down o JSON malformato), ricadiamo sul piano di
+  // emergenza hard-coded — stessa garanzia del path legacy.
+  if (MULTI_PASS_ENABLED) {
+    try {
+      const readiness = await getCurrentReadiness();
+      const result = await runMultiPass({
+        profile,
+        goals,
+        recentDays: recentDaysForZones,
+        macroContext: macroLookupInit?.macroContext ?? null,
+        readiness,
+        zones: zonesCtxInit?.zones ?? null,
+        mode: "initial",
+        availableDays: effectiveDays,
+      });
+      return result.plan;
+    } catch (e) {
+      console.error("[planGenerator] runMultiPass failed in onboarding, returning fallback plan:", e);
+      return buildFallbackPlan(profile, goals);
+    }
+  }
+
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
@@ -481,6 +509,49 @@ non includere sessioni per essi.${minimalWindowGuard}
     ? `Genera la NUOVA settimana (weekNumber=1, una sola) a partire dalla settimana prossima, adattando in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.\nSe rilevi red flag, proponi deload esplicito.`
     : `Genera la settimana corrente parziale (weekNumber=1, una sola) coprendo solo i ${remainingLabels.length} giorni rimanenti. Adatta volume/intensità in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.`;
 
+  // Wave 4.1 — multi-pass path (default). NB: errori in regen NON sono gracefully
+  // fallback-ati (a differenza di onboarding) per preservare il comportamento
+  // legacy che throwa al caller.
+  if (MULTI_PASS_ENABLED) {
+    const recentDaysForZonesRegenMP = await getLastNDays(60).catch(() => []);
+    const zonesCtxRegenMP = computeZonesContext(profile, recentDaysForZonesRegenMP);
+    const macroLookupRegenMP = await loadActiveMacroContext(profile).catch(() => null);
+    const effectiveDaysRegenMP = effectiveAvailableDays(
+      opts?.availableDaysOverride,
+      profile.availableDays,
+      mode === "rest-of-week" ? remainingLabels : undefined,
+    );
+    const readiness = await getCurrentReadiness();
+    const expectedDayLabelsMP: string[] | undefined = mode === "rest-of-week"
+      ? [...(effectiveDaysRegenMP ?? remainingLabels)]
+      : effectiveDaysRegenMP ? [...effectiveDaysRegenMP] : undefined;
+    const result = await runMultiPass(
+      {
+        profile,
+        goals,
+        recentDays: recentDaysForZonesRegenMP,
+        macroContext: macroLookupRegenMP?.macroContext ?? null,
+        readiness,
+        zones: zonesCtxRegenMP?.zones ?? null,
+        mode: "regen",
+        currentPlan,
+        recentDaysText,
+        availableDays: effectiveDaysRegenMP,
+        remainingThisWeek: mode === "rest-of-week" ? remainingLabels : undefined,
+      },
+      { expectedDayLabels: expectedDayLabelsMP },
+    );
+    // Override startDate per "next-week": l'orchestrator default = lunedi'
+    // corrente; per next-week serve lunedi' PROSSIMO (mirror del path legacy).
+    if (mode === "next-week") {
+      const nextMonday = new Date(now);
+      const todayIdxLocal = (now.getDay() + 6) % 7;
+      nextMonday.setDate(now.getDate() + (7 - todayIdxLocal));
+      result.plan.startDate = `${nextMonday.getFullYear()}-${String(nextMonday.getMonth() + 1).padStart(2, "0")}-${String(nextMonday.getDate()).padStart(2, "0")}`;
+    }
+    return result.plan;
+  }
+
   const goalConflictHintRegen = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
   // Se mode=rest-of-week intersechiamo l'override (o profilo) con i giorni
   // RIMANENTI: l'utente non può "selezionare" un giorno passato.
@@ -593,6 +664,31 @@ export async function adaptPlan(
   const goalConflictHintAdapt = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
   const effectiveDaysAdapt = effectiveAvailableDays(opts?.availableDaysOverride, profile.availableDays);
   const availableDaysBlockAdapt = buildAvailableDaysBlock(effectiveDaysAdapt, "GIORNI ALLENABILI");
+
+  // Wave 4.1 — multi-pass path (default). Errore propagato al caller (parita'
+  // con legacy throw "Il coach non e' riuscito...").
+  if (MULTI_PASS_ENABLED) {
+    const recentDaysForZonesAdaptMP = await getLastNDays(60).catch(() => []);
+    const zonesCtxAdaptMP = computeZonesContext(profile, recentDaysForZonesAdaptMP);
+    const macroLookupAdaptMP = await loadActiveMacroContext(profile).catch(() => null);
+    const readiness = await getCurrentReadiness();
+    const result = await runMultiPass(
+      {
+        profile,
+        goals,
+        recentDays: recentDaysForZonesAdaptMP,
+        macroContext: macroLookupAdaptMP?.macroContext ?? null,
+        readiness,
+        zones: zonesCtxAdaptMP?.zones ?? null,
+        mode: "adapt",
+        currentPlan,
+        recentDaysText,
+        availableDays: effectiveDaysAdapt,
+      },
+      { userRequest: sanitizePII(userRequest) },
+    );
+    return result.plan;
+  }
   const userPrompt = `
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}

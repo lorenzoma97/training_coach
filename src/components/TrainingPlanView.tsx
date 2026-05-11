@@ -10,8 +10,14 @@ import { translateGeminiError } from "../lib/geminiErrors";
 import { savePlanWithHistory, getPlanHistory, getNextPlan, saveNextPlan, clearNextPlan, maybePromoteNextPlan } from "../lib/coach/planHistory";
 import ZonesCard from "./ZonesCard";
 import { computeZonesContext, inferSessionZone, stripInlineHRRange, type ZonesResult } from "../lib/coach/zones";
-import type { PlannedSession } from "../lib/types";
+import type { PlannedSession, PlannedExercise } from "../lib/types";
 import { useNotify } from "./Notification";
+import ReadinessBanner from "./coach/ReadinessBanner";
+import MacroUpdatedBanner from "./coach/MacroUpdatedBanner";
+import SubstitutionBadge from "./coach/SubstitutionBadge";
+import { resolveSubstitution } from "../lib/coach/equipmentSubstitutor";
+import { normalizeEquipmentTags } from "../lib/equipment/equipmentNormalizer";
+import { EXERCISES } from "../lib/catalog/exercises";
 
 const ADAPT_QUICK_PROMPTS = [
   "Più intenso",
@@ -20,6 +26,83 @@ const ADAPT_QUICK_PROMPTS = [
   "Aggiungi più forza",
   "Non posso allenarmi giovedì",
 ];
+
+/**
+ * Wave 4.3 — Sub-componente per il render della lista esercizi forza con
+ * SubstitutionBadge wired. Estratto da inline IIFE per evitare un quirk del
+ * type checker su JSX dentro `{cond && (() => return JSX)()}`.
+ *
+ * Pure render: per ogni `PlannedExercise.exerciseId` chiama `resolveSubstitution`
+ * (pure, no async) e mostra:
+ *  - hop=0   → solo nome esercizio
+ *  - hop>0   → nome resolved + SubstitutionBadge ambra
+ *  - null    → badge errore rosso "esercizio non eseguibile"
+ */
+function ExercisesList({
+  exercises,
+  availableEquipment,
+}: {
+  exercises: PlannedExercise[];
+  availableEquipment: ReturnType<typeof normalizeEquipmentTags>;
+}) {
+  return (
+    <ul style={{
+      margin: "8px 0 0", padding: 0, listStyle: "none",
+      display: "flex", flexDirection: "column", gap: "4px",
+    }}>
+      {exercises.map((ex, exIdx) => {
+        const result = resolveSubstitution(ex.exerciseId, availableEquipment, EXERCISES);
+        const repsLabel = ex.repsTarget.min === ex.repsTarget.max
+          ? `${ex.repsTarget.min}`
+          : `${ex.repsTarget.min}-${ex.repsTarget.max}`;
+        return (
+          <li
+            key={`${ex.exerciseId}-${exIdx}`}
+            style={{
+              fontSize: "12px", color: "#CBD5E1",
+              display: "flex", flexWrap: "wrap",
+              alignItems: "center", gap: "6px",
+              padding: "4px 0",
+            }}
+          >
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#94A3B8" }}>
+              {ex.plannedSets}x{repsLabel}
+            </span>
+            <span style={{ fontWeight: 600 }}>
+              {result && result.hop > 0 ? result.resolvedId : ex.exerciseId}
+            </span>
+            {result && result.hop > 0 && (
+              <SubstitutionBadge
+                original={result.originalId}
+                resolved={result.resolvedId}
+                reason={result.reason}
+              />
+            )}
+            {result === null && (
+              <span
+                role="alert"
+                title="Esercizio non eseguibile: il tuo profilo equipment non e' sufficiente nemmeno dopo 3 sostituzioni."
+                style={{
+                  backgroundColor: "#fee2e2", // red-100
+                  color: "#7f1d1d",           // red-900
+                  border: "1px solid #fca5a5", // red-300
+                  padding: "2px 8px",
+                  borderRadius: "4px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  marginLeft: "6px",
+                  verticalAlign: "middle",
+                }}
+              >
+                esercizio non eseguibile, profilo equipment insufficiente
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 export default function TrainingPlanView() {
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
@@ -145,6 +228,14 @@ export default function TrainingPlanView() {
     if (!plan || !currentProfile || !plan.profileHash) return false;
     return plan.profileHash !== planStateHash(currentProfile, currentGoals);
   }, [plan, currentProfile, currentGoals]);
+
+  // Wave 4.3 — Equipment dell'utente normalizzato per il SubstitutionBadge
+  // wiring. Pure derivation, ricomputo solo se cambia profile.equipment.
+  // bodyweight è SEMPRE incluso (vedi normalizeEquipmentTags).
+  const availableEquipmentForRender = useMemo(
+    () => normalizeEquipmentTags(currentProfile?.equipment ?? []),
+    [currentProfile?.equipment],
+  );
 
   // Stesso check ma sul nextPlan: se l'utente ha modificato profilo dopo aver
   // generato la preview prossima settimana, anche quella diventa obsoleta.
@@ -655,6 +746,13 @@ export default function TrainingPlanView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
       {/* Banner success → ora via NotificationHost popup (vedi showSuccess) */}
+
+      {/* Wave 4.3 — Banner readiness (low/high di oggi) + macro updated.
+          Stanno IN CIMA al tab Plan: top-of-funnel awareness prima dei dettagli
+          settimana. ReadinessBanner si auto-mute per band="moderate" o assenza
+          snapshot. MacroUpdatedBanner è dismissibile per macroId. */}
+      <ReadinessBanner />
+      <MacroUpdatedBanner onRegenerate={() => handleRegenerate("next-week")} />
 
       {/* Z2 in cima per avere il range bpm sempre visibile */}
       <ZonesCard compact highlightZone={2} />
@@ -1211,6 +1309,17 @@ export default function TrainingPlanView() {
                     </div>
                   )}
                   <div style={{ color: "#CBD5E1", lineHeight: 1.5 }}>{stripInlineHRRange(s.details)}</div>
+                  {/* Wave 4.3 — Render esercizi forza con SubstitutionBadge.
+                      Per ogni PlannedExercise.exerciseId, calcoliamo a render-time
+                      la sostituzione equipment-aware (pure, no async). hop>0 →
+                      badge ambra; null → badge errore rosso. Backward compat:
+                      se exercises è undefined o vuoto, niente render extra. */}
+                  {Array.isArray(s.exercises) && s.exercises.length > 0 && (
+                    <ExercisesList
+                      exercises={s.exercises}
+                      availableEquipment={availableEquipmentForRender}
+                    />
+                  )}
                   <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", marginTop: "6px", lineHeight: 1.5 }}>{s.rationale}</div>
                   {/* Action row: Registra (se non completata) + Chiedi al coach (sempre).
                       SALTATA actionable: anche se isPast && !isCompleted, l'utente può
