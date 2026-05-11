@@ -40,14 +40,25 @@ import { decodeSamsungBytes, parseCsvText, normalizeSamsungDatetime } from "./sa
  * ZIP risalgono al caller (non swallowati qui).
  */
 export async function loadSamsungZipOnce(blob: Blob): Promise<JSZip> {
-  // Eager materialize: leggi tutto in ArrayBuffer prima di passarlo a JSZip.
-  // Necessario perché JSZip + Blob fa lazy read del content interno al primo
-  // `file.async()` — se il Blob viene "consumato" (stream single-use in
-  // jsdom/vitest e in alcuni browser), le riletture successive falliscono
-  // con "Can't read the data of '<file>'. Is it in a supported JavaScript
-  // type?". ArrayBuffer è statico, riutilizzabile da più async() in cascata.
-  const buf = await blob.arrayBuffer();
-  return JSZip.loadAsync(buf);
+  // Eager materialize: leggi tutto in ArrayBuffer prima di passarlo a JSZip,
+  // dove possibile. Necessario perché JSZip + Blob fa lazy read del content
+  // interno al primo `file.async()` — se il Blob viene "consumato" (stream
+  // single-use in alcuni browser e SettingsPage.test.ts via real Blob), le
+  // riletture successive falliscono con "Can't read the data of '<file>'".
+  // Fallback: se il "blob" non ha .arrayBuffer (test fixture mock o JSZip
+  // generateAsync({type:"blob"}) in Node senza Blob.prototype completo),
+  // passa direttamente — JSZip accetta Blob/Buffer/Uint8Array/ArrayBuffer.
+  const hasArrayBuffer =
+    blob && typeof (blob as Blob).arrayBuffer === "function";
+  if (hasArrayBuffer) {
+    try {
+      const buf = await blob.arrayBuffer();
+      return JSZip.loadAsync(buf);
+    } catch {
+      // Fall-through al passaggio diretto (graceful).
+    }
+  }
+  return JSZip.loadAsync(blob);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
