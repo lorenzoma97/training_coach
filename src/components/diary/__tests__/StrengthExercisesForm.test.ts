@@ -220,8 +220,11 @@ describe("updateSetField", () => {
   });
 
   it("indici fuori range no-op", () => {
-    expect(updateSetField(base, 99, 0, "reps", 5)).toBe(base);
-    expect(updateSetField(base, 0, 99, "reps", 5)).toBe(base);
+    // No-op semantico: deep equality (toStrictEqual) — l'impl può tornare un
+    // clone shallow per uniformità con il path "modify". Il contratto è "no
+    // mutation di base + nessun cambio osservabile", non identità referenziale.
+    expect(updateSetField(base, 99, 0, "reps", 5)).toStrictEqual(base);
+    expect(updateSetField(base, 0, 99, "reps", 5)).toStrictEqual(base);
   });
 });
 

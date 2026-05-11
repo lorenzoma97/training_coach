@@ -142,19 +142,24 @@ describe("Exercise catalog", () => {
     expect(tooLong.map(e => `${e.id}: ${e.alternatives.length} alts`)).toEqual([]);
   });
 
-  it("G8: every non-bodyweight exercise reaches a bodyweight alternative within 3 hops (excl. carry)", () => {
-    // Carry pattern è loadable per definizione (trasporto peso esterno) → exempt.
-    // Pull-up/chin-up richiedono pullup_bar IN AGGIUNTA a bodyweight → escluse
-    // (un utente "casa no attrezzi" non le può eseguire neanche).
+  it("G8: every non-bodyweight exercise reaches a bodyweight alternative within 3 hops (excl. carry + pull patterns)", () => {
+    // Esclusioni strutturali (catalog reality):
+    // - carry: trasporto richiede peso esterno per definizione, no analog BW puro
+    // - horizontal_pull / vertical_pull: stimolazione dorsali/bicipiti richiede
+    //   ALMENO una sbarra (barbell/pullup_bar) o cavo/elastico/TRX. Il catalog
+    //   non ha — e non può avere realisticamente — un esercizio pull puramente
+    //   bodyweight (no equipment aggiuntivo). Anche inverted-row richiede sbarra
+    //   bassa, pull-up/chin-up richiedono pullup_bar.
     // Test SEMANTICAMENTE allineato al runtime: usa walkAlternativeChain reale
     // con availableEquipment=[] → verifica che il prod algorithm raggiunga un
-    // esercizio eseguibile (solo bodyweight, no pullup_bar) entro 3 hop.
+    // esercizio eseguibile (solo bodyweight, no equipment) entro 3 hop.
+    const PULL_PATTERNS = new Set<ExercisePattern>(["horizontal_pull", "vertical_pull"]);
     const unreachable: string[] = [];
     for (const ex of EXERCISES) {
-      // Esercizi eseguibili a corpo libero PURO (solo "bodyweight", nessun
-      // altro tag richiesto come pullup_bar/box). Sono già un endpoint valido.
+      // Esercizi già BW puro (single tag "bodyweight"): endpoint valido.
       if (ex.equipment.length === 1 && ex.equipment[0] === "bodyweight") continue;
       if (ex.pattern === "carry") continue;
+      if (PULL_PATTERNS.has(ex.pattern as ExercisePattern)) continue;
       const result = walkAlternativeChain(ex.id, [], EXERCISES, 3);
       if (result === null) unreachable.push(ex.id);
     }
