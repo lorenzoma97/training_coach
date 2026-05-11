@@ -30,6 +30,13 @@ export type EventMap = {
    *  (es. "parlami della sessione di mer"). Tipicamente accoppiato a
    *  `nav:goto` tab="coach" dal chiamante. */
   "chat:openWith": { prompt: string };
+  /** Emesso quando il MacroCycle attivo è stato ricalcolato (Wave 3.3): può
+   *  significare creazione, sostituzione o pulizia (clear) del macro. La UI
+   *  delle race + il banner "macrociclo attivo" si rinfresca leggendo da
+   *  storage `user-races` e `macro-cycle:<id>`. Payload `activeMacroCycleId`
+   *  è null se non c'è più alcun macro attivo (es. utente ha rimosso l'ultima
+   *  race priority=A). */
+  "macro:updated": { at: string; activeMacroCycleId: string | null };
 };
 
 const listeners = new Map<keyof EventMap, Set<Handler<any>>>();
@@ -61,6 +68,13 @@ const PAYLOAD_VALIDATORS: Partial<Record<keyof EventMap, PayloadValidator>> = {
     !!p && typeof p === "object" && typeof (p as any).length === "number",
   "chat:openWith": (p) =>
     !!p && typeof p === "object" && typeof (p as any).prompt === "string",
+  "macro:updated": (p) => {
+    if (!p || typeof p !== "object") return false;
+    const o = p as Record<string, unknown>;
+    if (typeof o.at !== "string") return false;
+    if (o.activeMacroCycleId !== null && typeof o.activeMacroCycleId !== "string") return false;
+    return true;
+  },
   "llm:migrated": (p) =>
     !!p && typeof p === "object" &&
     typeof (p as any).fromModelId === "string" &&

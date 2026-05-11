@@ -19,6 +19,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import JSZip from "jszip";
 import SettingsPage from "../SettingsPage";
+import RaceCalendarSection from "../../components/races/RaceCalendarSection";
 import {
   previewImport,
   commitImport,
@@ -63,6 +64,15 @@ describe("SettingsPage (smoke)", () => {
   it("imports without throwing", () => {
     expect(SettingsPage).toBeDefined();
     expect(typeof SettingsPage).toBe("function");
+  });
+
+  it("RaceCalendarSection è importabile (Wave 3.3 wiring)", () => {
+    // Smoke contract: il SettingsPage rende RaceCalendarSection nella sezione
+    // "Gestione dati". Senza RTL non possiamo asserire il render, ma
+    // l'import side-by-side garantisce che il modulo sia risolvibile dal
+    // bundler (stesso path che usa SettingsPage internamente).
+    expect(RaceCalendarSection).toBeDefined();
+    expect(typeof RaceCalendarSection).toBe("function");
   });
 });
 

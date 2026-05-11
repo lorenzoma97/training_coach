@@ -330,6 +330,21 @@ export interface TrainingPlan {
    * Default undefined per piani pre-v2 — letto come "single".
    */
   generationMode?: "single" | "multi";
+  /**
+   * Marker di staleness: il piano è ancora valido ma c'è un evento esterno
+   * che lo rende sub-ottimale. NON invalida il piano (utente può continuare
+   * a usarlo); UI mostra banner "ricalcola consigliato".
+   *
+   * - "macro_changed": l'utente ha aggiunto/modificato/rimosso una race
+   *   priority=A → MacroCycle attivo è cambiato → il piano corrente
+   *   appartiene a una fase potenzialmente vecchia (I3 ARCHITECTURE.md §6).
+   * - "profile_changed": campi del profilo che hanno influenzato la
+   *   generazione sono cambiati (riservato a futura implementazione).
+   * - "goals_changed": gli obiettivi sono cambiati significativamente.
+   */
+  staleReason?: "macro_changed" | "profile_changed" | "goals_changed";
+  /** ISO datetime in cui è stato marcato stale. */
+  staleAt?: string;
 }
 
 export type FeedType = "session-feedback" | "weekly-report" | "alert" | "motivation" | "plan-update";

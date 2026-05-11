@@ -1,15 +1,30 @@
-import type { UserProfile } from "../types";
+import type { UserProfile, MacroPhase } from "../types";
 import { nutritionGuardrailBlock } from "./promptModules/nutritionGuardrail";
 import { resistancePrescriptionBlock } from "./promptModules/resistancePrescription";
 import { strengthForEnduranceBlock } from "./promptModules/strengthForEndurance";
 import { masterAthleteBlock } from "./promptModules/masterAthleteRules";
-import { taperingBlock } from "./promptModules/taperingRules";
+import { taperingBlock, macroPhaseBlock } from "./promptModules/taperingRules";
 import { chronicConditionBlock } from "./promptModules/chronicConditionRules";
 import { recoveryBlock } from "./promptModules/recoveryModalities";
 import { cadenceAdviceBlock } from "./promptModules/biomechanicsRunning";
 import { bodyCompositionBlock, type BodyCompSummary } from "./promptModules/bodyComposition";
 import { zonesBlock } from "./promptModules/zonesBlock";
 import type { ZonesResult, TimeInZone } from "./zones";
+
+/**
+ * Contesto macrociclo corrente per iniezione nel prompt Pass 1 (Wave 3.3).
+ * Popolato da `macroLookup.loadActiveMacroContext` quando il profile ha
+ * un `activeMacroCycleId` valido. Vedi ARCHITECTURE.md §5.5.
+ */
+export interface BuildContextMacroCtx {
+  phase: MacroPhase;
+  weekNumber: number;
+  totalWeeks: number;
+  weeksToRace: number;
+  volumeMultiplier: number;
+  intensityHighPct: number;
+  race: { name: string; sport: string };
+}
 
 export type WorkoutTypeId = "corsa" | "forza_gambe" | "forza_upper" | "sport" | "mobilita";
 
@@ -46,6 +61,13 @@ export interface BuildContext {
   includeNutritionGuardrail?: boolean;
   /** Se il workout corrente ha fc_media + kcal tracciati (segnale indiretto di interesse nutrition). */
   workoutHasEnergyMetrics?: boolean;
+  /**
+   * Macro context corrente, se piano ha macroCycleId attivo (Wave 3.3).
+   * Quando presente attiva `macroPhaseBlock` con direttive specifiche per
+   * la fase corrente (base/build/peak/taper/transition). Quando assente
+   * cade sul fallback storico `taperingBlock` se daysToNearestRace ≤21.
+   */
+  macroContext?: BuildContextMacroCtx;
 }
 
 /**
@@ -103,7 +125,28 @@ export function buildConditionalPrompt(ctx: BuildContext): string {
   if (ctx.profile?.age && ctx.profile.age >= 50) {
     blocks.push(masterAthleteBlock(ctx.profile.age));
   }
-  if (ctx.daysToNearestRace !== undefined && ctx.daysToNearestRace <= 21) {
+  // Wave 3.3 — periodizzazione race-driven.
+  // Priorità: se è disponibile un MacroCycle attivo, iniettiamo il block
+  // specifico per la fase corrente (più ricco di taperingBlock, copre
+  // anche base/build/peak — non solo le ultime 3 settimane). Il vecchio
+  // taperingBlock resta come SAFETY NET per due scenari:
+  //   (a) utente con race "B"/"C" (no macro generato, solo countdown ≤21gg)
+  //   (b) macroContext non caricato (errore storage / migrazione)
+  // Se la fase corrente è "taper", il macroPhaseBlock copre già le direttive
+  // di Mujika 2003 con specificità migliore — NON aggiungiamo anche il
+  // taperingBlock per evitare istruzioni duplicate al modello.
+  if (ctx.macroContext) {
+    blocks.push(macroPhaseBlock({
+      phase: ctx.macroContext.phase,
+      weekNumber: ctx.macroContext.weekNumber,
+      totalWeeks: ctx.macroContext.totalWeeks,
+      weeksToRace: ctx.macroContext.weeksToRace,
+      raceName: ctx.macroContext.race.name,
+      raceSport: ctx.macroContext.race.sport,
+      volumeMultiplier: ctx.macroContext.volumeMultiplier,
+      intensityHighPct: ctx.macroContext.intensityHighPct,
+    }));
+  } else if (ctx.daysToNearestRace !== undefined && ctx.daysToNearestRace <= 21) {
     blocks.push(taperingBlock(ctx.daysToNearestRace));
   }
   const conds = ctx.detectedConditions ?? extractConditionsFromProfile(ctx.profile);

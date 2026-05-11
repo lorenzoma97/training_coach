@@ -7,6 +7,7 @@ import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, 
 import { validatePlan, planStateHash, computePlanStartDate } from "./planValidator";
 import { computeZonesContext } from "./zones";
 import { workoutSubtypesForPrompt, isCanonicalSubtype } from "../workoutCatalog";
+import { loadActiveMacroContext } from "./macroLookup";
 
 // WHY: appiattisce i giorni del diario nella shape attesa dal validator per
 // lo spike check Johansen (14gg). Senza questo i call-site passavano [] e lo
@@ -295,6 +296,9 @@ export async function generateInitialPlan(
   // comunque per sicurezza (es. onboarding ripetuto con diario esistente).
   const recentDaysForZones = await getLastNDays(60).catch(() => []);
   const zonesCtxInit = computeZonesContext(profile, recentDaysForZones);
+  // Wave 3.3: macro context per fase corrente (se profile ha race "A" attiva).
+  // Errori storage gestiti silenziosamente: degradiamo a prompt senza macro.
+  const macroLookupInit = await loadActiveMacroContext(profile).catch(() => null);
   const goalConflictHint = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
   const effectiveDays = effectiveAvailableDays(opts?.availableDaysOverride, profile.availableDays);
   const availableDaysBlock = buildAvailableDaysBlock(effectiveDays, "GIORNI ALLENABILI");
@@ -319,6 +323,7 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
     zonesTimeInZone: zonesCtxInit?.timeInZone,
     zonesPolar: zonesCtxInit?.polar,
     zonesTotalSessions: zonesCtxInit?.totalSessions,
+    macroContext: macroLookupInit?.macroContext,
   };
   const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
@@ -498,6 +503,8 @@ ${modeInstruction}
 
   const recentDaysForZonesRegen = await getLastNDays(60).catch(() => []);
   const zonesCtxRegen = computeZonesContext(profile, recentDaysForZonesRegen);
+  // Wave 3.3: macro context per fase corrente (se profile ha race "A" attiva).
+  const macroLookupRegen = await loadActiveMacroContext(profile).catch(() => null);
   const bCtx: BuildContext = {
     profile,
     hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
@@ -509,6 +516,7 @@ ${modeInstruction}
     zonesTimeInZone: zonesCtxRegen?.timeInZone,
     zonesPolar: zonesCtxRegen?.polar,
     zonesTotalSessions: zonesCtxRegen?.totalSessions,
+    macroContext: macroLookupRegen?.macroContext,
   };
   const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
@@ -613,6 +621,8 @@ Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le
 
   const recentDaysForZonesAdapt = await getLastNDays(60).catch(() => []);
   const zonesCtxAdapt = computeZonesContext(profile, recentDaysForZonesAdapt);
+  // Wave 3.3: macro context per fase corrente.
+  const macroLookupAdapt = await loadActiveMacroContext(profile).catch(() => null);
   const bCtx: BuildContext = {
     profile,
     hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
@@ -622,6 +632,7 @@ Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le
     zonesTimeInZone: zonesCtxAdapt?.timeInZone,
     zonesPolar: zonesCtxAdapt?.polar,
     zonesTotalSessions: zonesCtxAdapt?.totalSessions,
+    macroContext: macroLookupAdapt?.macroContext,
   };
   const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 

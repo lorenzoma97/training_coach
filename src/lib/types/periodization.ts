@@ -98,8 +98,11 @@ export interface MacroCycle {
   /** Settimane taggate per fase. Ordine cronologico. */
   phases: MesoCycle[];
   /**
-   * Hash deterministico di {raceId, race.date, race.targetTimeSec, profile.experience}.
+   * Hash deterministico FNV-1a 32-bit di {race.id, race.date, race.sport,
+   * race.targetTimeSec, startDate} (vedi macroPlanner.macroInputHash).
    * Cambia → rigenerazione necessaria. Drift detection analoga a planStateHash.
+   * NB: profile.experience NON incluso (drift profilo è gestito da planStateHash
+   * separatamente, non dal macro).
    */
   inputHash: string;
 }

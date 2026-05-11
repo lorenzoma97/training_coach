@@ -11,6 +11,7 @@ import { events } from "../lib/events";
 import BackupSection from "../components/BackupSection";
 import GoalsEditor from "../components/GoalsEditor";
 import ProfileEditor from "../components/ProfileEditor";
+import RaceCalendarSection from "../components/races/RaceCalendarSection";
 import {
   previewImport as samsungPreviewImport,
   commitImport as samsungCommitImport,
@@ -548,6 +549,9 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
             </div>
             <GoalsEditor />
           </div>
+
+          {/* ───── Race calendar + Macrociclo (Wave 3.3) ───── */}
+          <RaceCalendarSection />
 
           <BackupSection />
 
