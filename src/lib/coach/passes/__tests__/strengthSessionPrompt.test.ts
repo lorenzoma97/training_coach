@@ -95,6 +95,39 @@ describe("strengthCatalogForPrompt", () => {
     const lines = out.split("\n").filter(l => l.startsWith("- "));
     expect(lines.length).toBeLessThanOrEqual(40);
   });
+
+  it("pre-filtra le alt[] mostrando SOLO id eseguibili con l'equipment dell'utente (Wave 3.5 minor #2)", () => {
+    // Utente bodyweight-only: nelle righe del catalog non devono apparire alt
+    // che richiedono attrezzi non-disponibili (barbell, dumbbell, ecc.).
+    // Estraiamo le sezioni "alt: ..." e verifichiamo che ogni id elencato
+    // sia disponibile direttamente con bodyweight.
+    const out = strengthCatalogForPrompt(["bodyweight"]);
+    const altMentions: string[] = [];
+    for (const line of out.split("\n")) {
+      const m = line.match(/\|\s*alt:\s*([^|]+)$/);
+      if (m) {
+        altMentions.push(...m[1].split(",").map(s => s.trim()).filter(Boolean));
+      }
+    }
+    // Devono essere tutti id senza requisito di attrezzo (bodyweight-only):
+    // niente "*-barbell", "*-dumbbell", "*-kettlebell", "*-cable" ecc.
+    const NON_BODYWEIGHT_SUFFIXES = /-(barbell|dumbbell|kettlebell|cable|machine|band|trx)$/;
+    const bad = altMentions.filter(id => NON_BODYWEIGHT_SUFFIXES.test(id));
+    expect(bad).toEqual([]);
+  });
+
+  it("pre-filtra le alt[] coerentemente all'equipment: con barbell+bench compaiono alt barbell, con bodyweight-only no", () => {
+    const outBw = strengthCatalogForPrompt(["bodyweight"]);
+    const outBb = strengthCatalogForPrompt(["bodyweight", "barbell", "bench"]);
+    // Sanity: il pool catalog è non-vuoto in entrambi i casi.
+    expect(outBw).toMatch(/^ESERCIZI DISPONIBILI/);
+    expect(outBb).toMatch(/^ESERCIZI DISPONIBILI/);
+    // Numero di "alt:" mention almeno >= con equipment più ricco (più alt
+    // potenzialmente eseguibili → più visibili). Confronto soft: l'invariante
+    // chiave è "nessun alt fantasma" (testato sopra); qui solo sanity.
+    const countAlts = (s: string) => (s.match(/\|\s*alt:/g) || []).length;
+    expect(countAlts(outBb)).toBeGreaterThanOrEqual(countAlts(outBw));
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

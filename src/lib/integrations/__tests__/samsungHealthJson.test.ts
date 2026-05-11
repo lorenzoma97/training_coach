@@ -16,6 +16,7 @@ import {
   parseSamsungSleepFromZip,
   parseHrLiveDataJson,
   parseHrLiveDataForWorkout,
+  loadSamsungZipOnce,
 } from "../samsungHealthJson";
 
 beforeEach(() => {
@@ -333,5 +334,168 @@ describe("parseHrLiveDataForWorkout", () => {
     const blob = await zip.generateAsync({ type: "blob" });
     const result = await parseHrLiveDataForWorkout(blob, uuid);
     expect(result).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reviewer 3.4 — Single-load ZIP optimization
+//
+// Verifica che passando un'istanza JSZip precaricata via `loadSamsungZipOnce`,
+// i parser non chiamino di nuovo `JSZip.loadAsync` (3x → 1x decompression).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadSamsungZipOnce + single-load refactor (Reviewer 3.4)", () => {
+  it("loadSamsungZipOnce ritorna un'istanza JSZip riusabile", async () => {
+    const zip = new JSZip();
+    zip.file("com.samsung.shealth.hrv.20260510.csv", "start_time,rmssd\n2026-05-08 07:00:00,40");
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    const loaded = await loadSamsungZipOnce(blob);
+    expect(loaded).toBeDefined();
+    // L'istanza deve permettere di iterare i file (proprietà di JSZip)
+    let foundHrv = false;
+    loaded.forEach((path) => {
+      if (path.includes("hrv")) foundHrv = true;
+    });
+    expect(foundHrv).toBe(true);
+  });
+
+  it("parseSamsungHrvFromZip con preloadedZip NON chiama loadAsync di nuovo", async () => {
+    const csv = "start_time,rmssd\n2026-05-08 07:00:00,40\n2026-05-08 08:00:00,50";
+    const zip = new JSZip();
+    zip.file("com.samsung.shealth.hrv.20260510.csv", csv);
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    // Spy: dopo il loadSamsungZipOnce iniziale, nessun ulteriore loadAsync
+    const loaded = await loadSamsungZipOnce(blob);
+    const loadAsyncSpy = vi.spyOn(JSZip, "loadAsync");
+
+    const result = await parseSamsungHrvFromZip(blob, loaded);
+    expect(loadAsyncSpy).not.toHaveBeenCalled();
+    expect(result.length).toBe(1);
+    expect(result[0]).toMatchObject({ date: "2026-05-08", rmssd_ms: 45 });
+
+    loadAsyncSpy.mockRestore();
+  });
+
+  it("parseSamsungSleepFromZip con preloadedZip NON chiama loadAsync di nuovo", async () => {
+    const csv = "start_time,end_time,efficiency\n2026-05-07 23:00:00,2026-05-08 07:00:00,88";
+    const zip = new JSZip();
+    zip.file("com.samsung.shealth.sleep.20260510.csv", csv);
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    const loaded = await loadSamsungZipOnce(blob);
+    const loadAsyncSpy = vi.spyOn(JSZip, "loadAsync");
+
+    const result = await parseSamsungSleepFromZip(blob, loaded);
+    expect(loadAsyncSpy).not.toHaveBeenCalled();
+    expect(result.length).toBe(1);
+    expect(result[0]).toMatchObject({ date: "2026-05-08", durationMinutes: 480 });
+
+    loadAsyncSpy.mockRestore();
+  });
+
+  it("parseHrLiveDataForWorkout con preloadedZip NON chiama loadAsync di nuovo", async () => {
+    const uuid = "abc-123";
+    const liveData = JSON.stringify([{ heart_rate: 140 }, { heart_rate: 160 }]);
+    const zip = new JSZip();
+    zip.file(
+      `jsons/com.samsung.shealth.exercise/00/${uuid}.com.samsung.health.exercise.live_data.json`,
+      liveData,
+    );
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    const loaded = await loadSamsungZipOnce(blob);
+    const loadAsyncSpy = vi.spyOn(JSZip, "loadAsync");
+
+    const result = await parseHrLiveDataForWorkout(blob, uuid, loaded);
+    expect(loadAsyncSpy).not.toHaveBeenCalled();
+    expect(result).not.toBeNull();
+    expect(result!.avg).toBe(150);
+
+    loadAsyncSpy.mockRestore();
+  });
+
+  it("3 parser sequenziali su STESSO preloadedZip → totale 0 loadAsync extra", async () => {
+    // Scenario reale: previewImport apre lo ZIP una volta e lo passa ai 3 parser.
+    // Prima del refactor: 3 chiamate JSZip.loadAsync (oltre a quella di
+    // parseSamsungHealthZipDetailed). Dopo: 0 chiamate extra.
+    const uuid = "workout-uuid-1";
+    const zip = new JSZip();
+    zip.file(
+      "com.samsung.shealth.hrv.20260510.csv",
+      "start_time,rmssd\n2026-05-08 07:00:00,42",
+    );
+    zip.file(
+      "com.samsung.shealth.sleep.20260510.csv",
+      "start_time,end_time\n2026-05-07 23:00:00,2026-05-08 07:00:00",
+    );
+    zip.file(
+      `jsons/com.samsung.shealth.exercise/00/${uuid}.com.samsung.health.exercise.live_data.json`,
+      JSON.stringify([{ heart_rate: 145 }]),
+    );
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    const loaded = await loadSamsungZipOnce(blob);
+    const loadAsyncSpy = vi.spyOn(JSZip, "loadAsync");
+
+    await parseSamsungHrvFromZip(blob, loaded);
+    await parseSamsungSleepFromZip(blob, loaded);
+    await parseHrLiveDataForWorkout(blob, uuid, loaded);
+
+    // Reviewer 3.4 hard assert: 3 parser → 0 nuove loadAsync (era 3 prima)
+    expect(loadAsyncSpy).toHaveBeenCalledTimes(0);
+
+    loadAsyncSpy.mockRestore();
+  });
+
+  // ─── Backward compat ──────────────────────────────────────────────────────
+  // Le firme dei 3 parser sono additive: chiamate senza `preloadedZip`
+  // devono continuare a funzionare aprendo lo ZIP internamente.
+
+  it("backward compat: parseSamsungHrvFromZip senza preloadedZip apre lo ZIP", async () => {
+    const csv = "start_time,rmssd\n2026-05-08 07:00:00,40";
+    const zip = new JSZip();
+    zip.file("com.samsung.shealth.hrv.20260510.csv", csv);
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    const loadAsyncSpy = vi.spyOn(JSZip, "loadAsync");
+    const result = await parseSamsungHrvFromZip(blob);
+    // Legacy: 1 loadAsync chiamato internamente
+    expect(loadAsyncSpy).toHaveBeenCalledTimes(1);
+    expect(result.length).toBe(1);
+
+    loadAsyncSpy.mockRestore();
+  });
+
+  it("backward compat: parseSamsungSleepFromZip senza preloadedZip apre lo ZIP", async () => {
+    const csv = "start_time,end_time\n2026-05-07 23:00:00,2026-05-08 07:00:00";
+    const zip = new JSZip();
+    zip.file("com.samsung.shealth.sleep.20260510.csv", csv);
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    const loadAsyncSpy = vi.spyOn(JSZip, "loadAsync");
+    const result = await parseSamsungSleepFromZip(blob);
+    expect(loadAsyncSpy).toHaveBeenCalledTimes(1);
+    expect(result.length).toBe(1);
+
+    loadAsyncSpy.mockRestore();
+  });
+
+  it("backward compat: parseHrLiveDataForWorkout senza preloadedZip apre lo ZIP", async () => {
+    const uuid = "abc-xyz";
+    const zip = new JSZip();
+    zip.file(
+      `jsons/com.samsung.shealth.exercise/00/${uuid}.com.samsung.health.exercise.live_data.json`,
+      JSON.stringify([{ heart_rate: 140 }]),
+    );
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    const loadAsyncSpy = vi.spyOn(JSZip, "loadAsync");
+    const result = await parseHrLiveDataForWorkout(blob, uuid);
+    expect(loadAsyncSpy).toHaveBeenCalledTimes(1);
+    expect(result).not.toBeNull();
+
+    loadAsyncSpy.mockRestore();
   });
 });

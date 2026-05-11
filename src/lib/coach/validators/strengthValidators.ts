@@ -221,7 +221,8 @@ export { expectedRepRangeForPct1RM };
  * - Normalizza profile.equipment via normalizeEquipmentTags (free-text IT → canonical).
  * - Per ogni esercizio chiama resolveSubstitution.
  * - Se null (unresolved) → issue "equipment_mismatch" (warn): nessuna alternativa.
- * - Se hop > 0 → issue "equipment_substituted" (warn): segnala il swap.
+ * - Se hop > 0 → issue "equipment_substituted" (info): alt trovata, render-time
+ *   mostrerà SubstitutionBadge. NON è un problema, solo una segnalazione neutra.
  * - hop === 0 → no issue (utente ha l'equipment richiesto).
  *
  * NON muta il plan — solo issues. La sostituzione effettiva avviene render-time
@@ -276,7 +277,9 @@ export const validateEquipmentMismatch: PlanValidator = (
       }
 
       if (result.hop > 0) {
-        // Substitution segnalata (info-warn): il render-time userà il resolved.
+        // Substitution segnalata (severity "info"): il render-time userà il resolved.
+        // Info-level perché l'alt è eseguibile → nessun problema da risolvere, solo
+        // trasparenza sul swap (Wave 3.5 Reviewer-deferred minor #1).
         const catalogOriginal = EXERCISES_BY_ID[result.originalId];
         const missingTags = catalogOriginal
           ? catalogOriginal.equipment.filter(
@@ -291,7 +294,7 @@ export const validateEquipmentMismatch: PlanValidator = (
           type: "equipment_substituted",
           category: "equipment_substituted",
           message: `Settimana ${week1.weekNumber} / ${session.day} ${session.type}: sostituito "${result.originalId}" → "${result.resolvedId}" (no ${missingLabel}, hop ${result.hop}).`,
-          severity: "warn",
+          severity: "info",
         });
       }
     }

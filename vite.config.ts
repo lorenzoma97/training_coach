@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -78,5 +79,19 @@ export default defineConfig({
   ],
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") }
-  }
+  },
+  // Wave 4.3+ — Configurazione vitest:
+  //   - environment: "jsdom" → abilita test UI con DOM (RTL, screen.getByText,
+  //     matchers @testing-library/jest-dom). Retrocompatibile con i test
+  //     Node-only esistenti (es. equipmentSubstitutor.test.ts) perché jsdom
+  //     espone window/document ma non interferisce con logica pura.
+  //   - globals: true → describe/it/expect senza import esplicito (allinea
+  //     allo stile dei test esistenti che già fanno import { describe, it,
+  //     expect } esplicito; non rompe perché gli import overridano i globals).
+  //   - setupFiles: registra matchers RTL e cleanup automatico DOM tra test.
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./vitest.setup.ts"],
+  },
 });

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { hasApiKey } from "../lib/gemini";
 import {
   ADAPTERS, getLLMConfig, setLLMConfig, type LLMConfig, type LLMModel, type ProviderId,
+  getOllamaBaseUrl, setOllamaBaseUrl, ollamaHealthCheck, invalidateOllamaHealthCache,
 } from "../lib/llm";
 import { storage, getJSON } from "../lib/storage";
 import { CHUNKS, clearEmbeddings, ensureEmbeddings, getCacheStatus, type CacheStatus, type EmbeddingCache } from "../lib/knowledge";
@@ -22,16 +23,19 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   gemini: "Google Gemini (consigliato)",
   openai: "OpenAI",
   anthropic: "Anthropic Claude",
+  ollama: "Ollama (locale, zero cloud)",
 };
 const PROVIDER_HELP: Record<ProviderId, { url: string; label: string }> = {
   gemini: { url: "https://aistudio.google.com/apikey", label: "aistudio.google.com/apikey" },
   openai: { url: "https://platform.openai.com/api-keys", label: "platform.openai.com/api-keys" },
   anthropic: { url: "https://console.anthropic.com/settings/keys", label: "console.anthropic.com/settings/keys" },
+  ollama: { url: "https://ollama.com/download", label: "ollama.com/download" },
 };
 const PROVIDER_PLACEHOLDER: Record<ProviderId, string> = {
   gemini: "AIza...",
   openai: "sk-...",
   anthropic: "sk-ant-...",
+  ollama: "(non richiesta — locale)",
 };
 
 export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding: () => void }) {
@@ -44,6 +48,10 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+
+  // Ollama-specific: base URL configurabile (default http://localhost:11434).
+  // Salvato in localStorage chiave dedicata via setOllamaBaseUrl (non LLMConfig).
+  const [ollamaBaseUrl, setOllamaBaseUrlState] = useState<string>(getOllamaBaseUrl());
 
   const [resetting, setResetting] = useState(false);
   const [kbStatus, setKbStatus] = useState<CacheStatus>("missing");
@@ -130,14 +138,19 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
     setModelsError(null);
     setTestResult(null);
     setModelId(ADAPTERS[p].defaultChatModel);
+    // Ollama non richiede apiKey: svuota il campo per chiarezza UI.
+    if (p === "ollama") setApiKeyState("");
   };
 
   const discoverModels = async () => {
-    if (!apiKey.trim()) return;
+    // Ollama: bypass apiKey check (locale). Per gli altri: serve apiKey.
+    if (provider !== "ollama" && !apiKey.trim()) return;
     setLoadingModels(true);
     setModelsError(null);
     try {
-      const list = await adapter.listModels(apiKey.trim());
+      // Per Ollama applichiamo prima l'eventuale baseUrl modificato (sync via storage).
+      if (provider === "ollama") setOllamaBaseUrl(ollamaBaseUrl);
+      const list = await adapter.listModels(apiKey.trim() || "local");
       setModels(list);
       // Preseleziona default se presente, altrimenti il primo.
       const def = list.find(m => m.id === adapter.defaultChatModel)
@@ -152,16 +165,26 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   };
 
   const saveAndTest = async () => {
-    if (!apiKey.trim() || !modelId.trim()) return;
+    // Ollama: apiKey opzionale. Per gli altri serve obbligatoria.
+    const needsKey = provider !== "ollama";
+    if ((needsKey && !apiKey.trim()) || !modelId.trim()) return;
     setSaving(true);
     setTestResult(null);
     setSaved(false);
-    const config: LLMConfig = { provider, apiKey: apiKey.trim(), modelId: modelId.trim() };
+    const effectiveKey = provider === "ollama" ? "local" : apiKey.trim();
+    const config: LLMConfig = { provider, apiKey: effectiveKey, modelId: modelId.trim() };
     try {
+      // Per Ollama, persist baseUrl prima del save+ping (ping legge da storage).
+      if (provider === "ollama") {
+        setOllamaBaseUrl(ollamaBaseUrl);
+        invalidateOllamaHealthCache();
+      }
       await setLLMConfig(config);
       setSaved(true);
       const r = await adapter.ping(config.apiKey, config.modelId);
-      setTestResult(r.ok ? "✓ Chiave valida, connessione OK" : `✗ ${r.error || "Errore"}`);
+      setTestResult(r.ok
+        ? (provider === "ollama" ? "✓ Ollama raggiungibile e modello installato" : "✓ Chiave valida, connessione OK")
+        : `✗ ${r.error || "Errore"}`);
       await refreshKbStatus();
     } catch (e: any) {
       setTestResult(`✗ ${e?.message || String(e)}`);
@@ -169,6 +192,20 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       setSaving(false);
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       savedTimerRef.current = setTimeout(() => setSaved(false), 1500);
+    }
+  };
+
+  // Test connessione Ollama dedicato (read-only, non salva config).
+  const testOllamaConnection = async () => {
+    setTestResult("Test in corso…");
+    invalidateOllamaHealthCache();
+    setOllamaBaseUrl(ollamaBaseUrl);
+    const h = await ollamaHealthCheck(ollamaBaseUrl);
+    if (h.ok) {
+      const count = h.models?.length ?? 0;
+      setTestResult(`✓ Ollama raggiungibile. Modelli installati: ${count}`);
+    } else {
+      setTestResult(`✗ ${h.error || "Ollama non raggiungibile"}`);
     }
   };
 
@@ -347,25 +384,76 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
           ))}
         </select>
 
-        <div style={{ marginTop: "14px" }}>
-          <label style={labelStyle}>Chiave API</label>
-          <input
-            type="password" style={inputStyle}
-            value={apiKey}
-            onChange={e => { setApiKeyState(e.target.value); setTestResult(null); }}
-            placeholder={PROVIDER_PLACEHOLDER[provider]}
-            autoComplete="off"
-          />
-          <div style={{ fontSize: "12px", color: "#64748B", marginTop: "8px", lineHeight: 1.5 }}>
-            Ottieni la chiave su <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{help.label}</a>.
-            La chiave resta sul tuo dispositivo (localStorage), mai inviata a server terzi.
-            {!providerSupportsEmbeddings && (
-              <div style={{ marginTop: "6px", color: "#F59E0B" }}>
-                Nota: {PROVIDER_LABELS[provider].replace(" (consigliato)", "")} non fornisce embeddings nativi. La knowledge base RAG sarà disabilitata.
-              </div>
-            )}
+        {provider === "ollama" && (
+          <div style={{
+            marginTop: "14px", padding: "12px 14px",
+            background: "#1A1A2E", border: "1px solid #F59E0B44",
+            borderRadius: "10px",
+            fontSize: "12px", color: "#FCD34D", lineHeight: 1.6,
+          }}>
+            <div style={{ fontWeight: 700, color: "#F59E0B", marginBottom: "4px" }}>
+              ⚠ Modalità Ollama (locale)
+            </div>
+            <div>
+              Dati e prompt restano sul tuo PC (zero cloud).
+              <b> RAG (paper scientifici) DISABILITATO</b> — Ollama non fornisce embeddings compatibili.
+              Funziona <b>solo</b> da desktop con Ollama in esecuzione su {ollamaBaseUrl}.
+              Su mobile o quando Ollama non risponde, l'app fa fallback automatico a Gemini (se configurato).
+            </div>
           </div>
-        </div>
+        )}
+
+        {provider === "ollama" ? (
+          <>
+            <div style={{ marginTop: "14px" }}>
+              <label style={labelStyle}>URL Ollama</label>
+              <input
+                type="text" style={inputStyle}
+                value={ollamaBaseUrl}
+                onChange={e => { setOllamaBaseUrlState(e.target.value); setTestResult(null); }}
+                placeholder="http://localhost:11434"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "8px", lineHeight: 1.5 }}>
+                Endpoint locale di Ollama. Installa da <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{help.label}</a>{" "}
+                e avvia il demone (<code>ollama serve</code>).
+                Scarica un modello: <code>ollama pull qwen2.5:7b-instruct</code>.
+              </div>
+              <button
+                onClick={testOllamaConnection}
+                style={{
+                  marginTop: "8px",
+                  padding: "8px 12px", background: "#1A1A2E",
+                  border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+                  color: "#E2E8F0", fontSize: "12px", fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                Testa connessione Ollama
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={{ marginTop: "14px" }}>
+            <label style={labelStyle}>Chiave API</label>
+            <input
+              type="password" style={inputStyle}
+              value={apiKey}
+              onChange={e => { setApiKeyState(e.target.value); setTestResult(null); }}
+              placeholder={PROVIDER_PLACEHOLDER[provider]}
+              autoComplete="off"
+            />
+            <div style={{ fontSize: "12px", color: "#64748B", marginTop: "8px", lineHeight: 1.5 }}>
+              Ottieni la chiave su <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{help.label}</a>.
+              La chiave resta sul tuo dispositivo (localStorage), mai inviata a server terzi.
+              {!providerSupportsEmbeddings && (
+                <div style={{ marginTop: "6px", color: "#F59E0B" }}>
+                  Nota: {PROVIDER_LABELS[provider].replace(" (consigliato)", "")} non fornisce embeddings nativi. La knowledge base RAG sarà disabilitata.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div style={{ marginTop: "14px" }}>
           <label style={labelStyle}>Modello</label>
@@ -389,13 +477,13 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
             </select>
             <button
               onClick={discoverModels}
-              disabled={loadingModels || !apiKey.trim()}
+              disabled={loadingModels || (provider !== "ollama" && !apiKey.trim())}
               style={{
                 padding: "10px 14px", background: "#1A1A2E",
                 border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px",
                 color: "#E2E8F0", fontWeight: 600, cursor: "pointer",
                 whiteSpace: "nowrap",
-                opacity: (loadingModels || !apiKey.trim()) ? 0.5 : 1,
+                opacity: (loadingModels || (provider !== "ollama" && !apiKey.trim())) ? 0.5 : 1,
               }}
             >
               {loadingModels ? "Carico…" : "Scopri modelli"}
@@ -414,13 +502,13 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
         <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
           <button
             onClick={saveAndTest}
-            disabled={saving || !apiKey.trim() || !modelId.trim()}
+            disabled={saving || (provider !== "ollama" && !apiKey.trim()) || !modelId.trim()}
             style={{
               padding: "10px 16px",
               background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
               border: "none", borderRadius: "10px", color: "#FFF",
               fontWeight: 700, cursor: "pointer",
-              opacity: (saving || !apiKey.trim() || !modelId.trim()) ? 0.5 : 1,
+              opacity: (saving || (provider !== "ollama" && !apiKey.trim()) || !modelId.trim()) ? 0.5 : 1,
             }}
           >
             {saving ? "Testo…" : saved ? "✓ Salvata" : "Salva e testa"}

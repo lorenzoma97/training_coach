@@ -601,11 +601,261 @@ Aree in cui il coach può migliorare integrando l'evidenza raccolta (priorità a
 
 ---
 
+## Estensioni Fase 5 (2026-05-11) — 9 aree paper-backed
+
+Le seguenti sezioni 11-19 estendono il doc con paper peer-reviewed per le 9 aree
+target del plan `imperative-wandering-raccoon.md` (P1 critiche + F+J+K+M+N):
+A. Resistance training, D. Strength-for-endurance, F. Master/aging,
+B. Sleep, C. Nutrizione, J. Recovery, K. Biomeccanica corsa,
+M. Wearable HR/HRV validity, N. Ambiente (heat/altitude).
+
+**Totale paper aggiunti**: 56 (Ratamess 2009, Schoenfeld 2017/2019, Grgic 2018,
+Refalo 2023, Currier 2023, Rønnestad 2014, Beattie 2014, Blagrove 2018,
+Berryman 2018, Fyfe 2014, Schumann 2022, Chodzko-Zajko 2009, Tanaka 2001/2008,
+Lepers 2016, Fragala 2019, Borde 2015, Bauer 2013, Izquierdo 2021, Watson 2015,
+Fullagar 2015, Mah 2011, Bonnar 2018, Charest 2020, Walker 2009, Maughan 2018,
+Thomas 2016, Jäger 2017, Kerksick 2018, Sawka 2007, McCubbin 2020, Dupuy 2018,
+Wiewelhove 2019, Leeder 2012, Roberts 2015, Hill 2014, Bishop 2008,
+Heiderscheit 2011, Napier 2018, Daoud 2012, Anderson 2020, Schubert 2014,
+Malisoux 2020, Nelson 2019, Bent 2020, Dooley 2017, Cosoli 2020, Singh 2018,
+Hinde 2021, Armstrong 2007, Périard 2015/2021, Casa 2015, Wilber 2007,
+Chapman 2013).
+
+NB: WebFetch è stato negato durante la stesura — link PMID/DOI sono i canonici
+noti. Verifica spot consigliata prima di pubblicazione (es. Watson 2015 PMID
+26039963, Dupuy 2018 PMC5932411, Roberts 2015 PMC4594298, Refalo 2023 PMID
+36622555, Currier 2023 PMID 37127349).
+
+---
+
+### 11. Resistance training — progressione e dosaggio (estensione di §11)
+
+**Cosa fa il coach oggi**: workout types `forza_gambe` (HIIT, esplosiva, massimale, circuito) e `forza_upper` (upper, core, combo) gestiti da `planGenerator.ts`. `strengthValidators.ts` impone progressione carico ≤+10% w/w (Schoenfeld 2017). `safetyRules.ts:SAFETY.weeklyLoadIncreaseMaxPct = 10` come soglia globale. Tracking 1RM tramite `lib/strength/oneRM.ts` (Epley). Mancano in prompt: range espliciti di set/rep/%1RM per fascia di esperienza, volume settimanale per gruppo muscolare, frequenza minima per stimolo.
+
+**Evidenza scientifica**:
+
+| Paper | Anno | Sintesi | Link |
+|---|---|---|---|
+| Ratamess NA. et al. (ACSM), *Progression Models in Resistance Training for Healthy Adults — Position Stand* | 2009 | Position stand fondativo. Novizi: 1-3 set, 8-12 rep, 60-70% 1RM, 2-3x/sett. Intermedi: 3-6 set, 1-12 rep, 70-85%, 3-4x/sett. Avanzati: periodizzazione undulating con 1-12 rep continuum, 4-6x/sett. Progressione carico 2-10% quando l'utente completa 1-2 rep extra del target per 2 sessioni consecutive. | [PMID 19204579](https://pubmed.ncbi.nlm.nih.gov/19204579/) |
+| Schoenfeld BJ., Ogborn D., Krieger JW., *Dose-response relationship between weekly resistance training volume and increases in muscle mass: A systematic review and meta-analysis* | 2017 | Meta-analisi dose-risposta: ≥10 set/muscolo/settimana massimizzano ipertrofia (vs. <5 set: effetto sub-ottimale). Relazione curvilinea, non lineare oltre ~20 set. | [PMID 27433992](https://pubmed.ncbi.nlm.nih.gov/27433992/) |
+| Grgic J. et al., *Effect of Resistance Training Frequency on Gains in Muscular Strength: A Systematic Review and Meta-Analysis* | 2018 | A parità di volume settimanale, frequenza 2-3x/sett per gruppo muscolare > 1x/sett su guadagni di forza (effect size moderato). Implica split su 2+ giorni. | [PMID 29470825](https://pubmed.ncbi.nlm.nih.gov/29470825/) |
+| Schoenfeld BJ., Grgic J., Krieger J., *How many times per week should a muscle be trained to maximize muscle hypertrophy? A systematic review and meta-analysis* | 2019 | Frequenza per gruppo muscolare: ≥2x/sett superiore a 1x/sett su ipertrofia quando volume è equiparato. | [PMID 30558493](https://pubmed.ncbi.nlm.nih.gov/30558493/) |
+| Refalo MC. et al., *Influence of Resistance Training Proximity-to-Failure on Skeletal Muscle Hypertrophy: A Systematic Review with Meta-analysis* | 2023 | Lavorare a 0-3 RIR (Reps In Reserve) ottimizza ipertrofia; failure assoluto non superiore e aumenta fatigue/recovery cost. | [PMID 36622555](https://pubmed.ncbi.nlm.nih.gov/36622555/) |
+| Currier BS. et al., *Resistance training prescription for muscle strength and hypertrophy in healthy adults: a systematic review and Bayesian network meta-analysis* | 2023 | Network meta-analysis BJSM: forza ottimale con carichi pesanti (>80% 1RM), ipertrofia robusta in range 30-80% 1RM se vicino a failure. Conferma volume ≥10 set/sett ma con effetto in plateau dopo 20. | [PMID 37127349](https://pubmed.ncbi.nlm.nih.gov/37127349/) |
+
+**Implicazione per il coach** (mapping paper → codice):
+- Ratamess 2009 → suggerimento prompt in `systemPrompts.ts` (Pass-2 strength): range per livello — "novizio 8-12 rep @ 60-70%, intermedio 6-12 @ 70-85%, esplosiva 3-5 @ 30-60% high velocity, massimale 1-5 @ 85-100%". **PENDENTE v3.**
+- Schoenfeld 2017 → già implementato in `strengthValidators.ts` + `safetyRules.ts:SAFETY.weeklyLoadIncreaseMaxPct`. **IMPLEMENTATO.**
+- Schoenfeld 2017 (volume) → regola "MEV 10 set/muscolo/sett, MAV 16-20, MRV ~22" in `planGenerator.ts` Pass-1. **PENDENTE v3.**
+- Grgic 2018 + Schoenfeld 2019 → vincolo: se goal ipertrofia/forza, distribuire ogni gruppo su ≥2 sessioni/sett. **PENDENTE v3.**
+- Refalo 2023 → suggerimento prompt: RPE/RIR target invece di carico assoluto (RIR 1-3). **PENDENTE v2.**
+- Currier 2023 → warning se utente con goal "max strength" lavora cronicamente <70% 1RM. **ROADMAP v3.**
+
+---
+
+### 12. Strength training per endurance — interferenza e periodizzazione
+
+**Cosa fa il coach oggi**: `planGenerator.ts` può schedulare `forza_gambe` per utenti con goal endurance ma **senza enforce** di 2-3 sessioni/sett né separazione temporale obbligatoria da sessione di corsa chiave. Mancano: caratterizzazione heavy vs. plyo, gestione interferenza ordinale, periodizzazione su mesocicli.
+
+**Evidenza scientifica**:
+
+| Paper | Anno | Sintesi | Link |
+|---|---|---|---|
+| Rønnestad BR., Mujika I., *Optimizing strength training for running and cycling endurance performance: A review* | 2014 | Heavy strength (1-5 rep, 85-90% 1RM) 2-3x/sett per ≥8 sett migliora economia 3-8% senza ipertrofia significativa. | [PMID 23914932](https://pubmed.ncbi.nlm.nih.gov/23914932/) |
+| Beattie K. et al., *The Effect of Strength Training on Performance in Endurance Athletes* | 2014 | Systematic review: strength concomitante non compromette VO2max, migliora economia e performance 1500m–marathon. | [PMID 24532151](https://pubmed.ncbi.nlm.nih.gov/24532151/) |
+| Blagrove RC. et al., *Effects of Strength Training on the Physiological Determinants of Middle- and Long-Distance Running Performance: A Systematic Review* | 2018 | 2-3 sessioni forza/sett per ≥6 sett → running economy 2-8% e/o time-trial. Heavy strength + pliometria prioritari. | [PMID 29249083](https://pubmed.ncbi.nlm.nih.gov/29249083/) |
+| Berryman N. et al., *Strength Training for Middle- and Long-Distance Performance: A Meta-Analysis* | 2018 | Effect size moderato (Hedges g ~0.52). Heavy e plyometric > endurance-strength tradizionale. | [PMID 28872271](https://pubmed.ncbi.nlm.nih.gov/28872271/) |
+| Fyfe JJ. et al., *Interference between Concurrent Resistance and Endurance Exercise* | 2014 | Interference effect AMPK/mTOR. Mitigazione: separare ≥3-6h, forza prima dell'endurance se stessa sessione. | [PMID 24728927](https://pubmed.ncbi.nlm.nih.gov/24728927/) |
+| Schumann M. et al., *Compatibility of Concurrent Aerobic and Strength Training* | 2022 | Update 2022: interferenza dose-dipendente; >5h endurance/sett compromette ipertrofia. <5h compatibile. | [PMID 34757594](https://pubmed.ncbi.nlm.nih.gov/34757594/) |
+
+**Implicazione per il coach**:
+- Rønnestad 2014 + Blagrove 2018 → Pass-1 regola: se goal corsa, inserire 2 sessioni `forza_gambe` heavy/sett (3-5 rep @ 85% 1RM). **PENDENTE v2.**
+- Beattie 2014 → safety prompt rassicurante "forza heavy non penalizza VO2max". **PENDENTE v2.**
+- Berryman 2018 → alternare heavy + plyometric/sett per runner. **PENDENTE v3.**
+- Fyfe 2014 → `planValidator.ts`: warning se corsa Z3+ e forza_gambe stessa giornata senza separazione. **PENDENTE v2.**
+- Schumann 2022 → `feasibility.ts`: warning interferenza se >5h endurance + goal ipertrofia gambe. **ROADMAP v3.**
+
+---
+
+### 13. Master athletes / aging — volume, recupero, sarcopenia
+
+**Cosa fa il coach oggi**: `safetyRules.ts:restDaysMinForAge(age)` implementa giorni riposo age-tiered. Formula Tanaka HRmax. `safetyRulesAsPrompt(ctx)` inietta nota "≥65 anni: max 2 giorni consecutivi". Manca: differenziazione volume HIIT per fascia, raccomandazione esplicita forza 2x/sett 8-10 gruppi, screening sarcopenia, soglia proteine, gestione caduta/equilibrio.
+
+**Evidenza scientifica**:
+
+| Paper | Anno | Sintesi | Link |
+|---|---|---|---|
+| Chodzko-Zajko WJ. et al. (ACSM), *Exercise and Physical Activity for Older Adults* | 2009 | Position stand ACSM 65+: aerobica 150min mod o 75min vigorosa/sett. Forza 2x/sett 8-10 gruppi (8-12 rep, RPE 5-8). Equilibrio regolare. | [PMID 19516148](https://pubmed.ncbi.nlm.nih.gov/19516148/) |
+| Tanaka H. et al., *Age-predicted maximal heart rate revisited* | 2001 | HRmax = 208 − 0.7 × età. Errore standard ridotto vs. "220−età". Indipendente da sesso/livello/etnia. | [PMID 11153730](https://pubmed.ncbi.nlm.nih.gov/11153730/) |
+| Tanaka H., Seals DR., *Endurance exercise performance in Masters athletes* | 2008 | Declino ~10% per decade dopo 30-40 anni, accelerazione >70. VO2max + lattate threshold relativo cause primarie. | [PMID 18056103](https://pubmed.ncbi.nlm.nih.gov/18056103/) |
+| Lepers R., Stapley PJ., *Master Athletes Are Extending the Limits of Human Endurance* | 2016 | Master ben allenati mantengono livelli competitivi fino a 60-70 anni; declino non lineare (più ripido oltre 75). Forza crolla prima di aerobica. | [PMID 27512371](https://pubmed.ncbi.nlm.nih.gov/27512371/) |
+| Fragala MS. et al. (NSCA), *Resistance Training for Older Adults* | 2019 | Forza anziani con 70-85% 1RM è sicura ed efficace; periodizzazione; 2-3x/sett; power training (40-60% 1RM) per prevenzione caduta. | [PMID 31343601](https://pubmed.ncbi.nlm.nih.gov/31343601/) |
+| Borde R. et al., *Dose-Response Relationships of Resistance Training in Healthy Old Adults* | 2015 | Dosi ottimali: 70-79% 1RM, 2-3 set, 7-9 rep, 2 d/sett con 48-72h tra sessioni, durata programma 50-53 sett. | [PMID 26420238](https://pubmed.ncbi.nlm.nih.gov/26420238/) |
+| Bauer J. et al. (PROT-AGE), *Evidence-based recommendations for optimal dietary protein intake in older people* | 2013 | Soglia proteine anziani: ≥1.0-1.2 g/kg/die sani, 1.2-1.5 g/kg/die se attivi/cronici. 25-30g/pasto. | [PMID 23867520](https://pubmed.ncbi.nlm.nih.gov/23867520/) |
+| Izquierdo M. et al. (ICFSR), *International Exercise Recommendations in Older Adults* | 2021 | Consensus: aerobic+resistance+balance+flexibility. Sarcopenia screening SARC-F/forza presa. Power priority cadute. | [PMID 33710585](https://pubmed.ncbi.nlm.nih.gov/33710585/) |
+
+**Implicazione per il coach**:
+- Chodzko-Zajko 2009 + Borde 2015 → parzialmente in `safetyRules.ts:restDaysMinForAge`. **IMPLEMENTATO.**
+- Tanaka 2001 → formula HRmax age-adjusted. **IMPLEMENTATO.**
+- Chodzko-Zajko 2009 (volume aerobic) → regola età ≥65: 150min mod o 75min vigorosa. **PENDENTE v3.**
+- Tanaka & Seals 2008 + Lepers 2016 → tarare aspettative weekly report per ≥50. **PENDENTE v3.**
+- Fragala 2019 → per ≥65 includere 1 sessione/sett power training. **PENDENTE v3.**
+- Borde 2015 → dose 70-79% 1RM, 2-3 set, 7-9 rep, 2x/sett per `age ≥65`. **PENDENTE v2.**
+- Bauer 2013 → chat: soglia proteine 1.0-1.2 g/kg/die per ≥65. **PENDENTE v3.**
+- Izquierdo 2021 → screening cadute ≥70. **ROADMAP v3.**
+
+---
+
+### 14. Sleep — recupero atletico e performance
+
+**Cosa fa il coach oggi**: il sonno è uno dei tre pilastri di `readinessScoring.ts` con **peso 30/100** (vs HRV 40, soggettivo 20, soreness 10). Componenti `daily.sleep` (ore) e `daily.sleepQ` (qualità multiplicatore). Pipeline Samsung Health `SAMSUNG_SLEEP_HISTORY_KEY` per import oggettivo. Manca: sleep-debt tracking 3gg, suggerimento sleep-extension pre-gara.
+
+**Evidenza scientifica**:
+
+| Paper | Anno | Sintesi | Link |
+|---|---|---|---|
+| Watson NF. et al. (AASM/SRS Consensus), *Recommended Amount of Sleep for a Healthy Adult* | 2015 | Adulti 18-60 anni dovrebbero dormire ≥7h/notte regolarmente. Sotto 7h: deficit cognitivo, immunitario, cardiovascolare. | [PMID 26039963](https://pubmed.ncbi.nlm.nih.gov/26039963/) |
+| Fullagar HHK. et al., *Sleep and Athletic Performance* | 2015 | Privazione parziale (4-6h × 2-4 notti) compromette tempo a esaurimento, accuratezza, reaction time. Cronica → cortisol↑, testosterone↓, GH↓. | [PMID 25315456](https://pubmed.ncbi.nlm.nih.gov/25315456/) |
+| Mah CD. et al., *Sleep extension and athletic performance of collegiate basketball players* | 2011 | RCT Stanford: 11 cestisti estesi a ≥10h/notte per 5-7 sett. Sprint -0.7s, tiri liberi +9%, 3pt +9.2%, reaction time migliorato. | [PMID 21731144](https://pubmed.ncbi.nlm.nih.gov/21731144/) |
+| Bonnar D. et al., *Sleep Interventions Designed to Improve Athletic Performance and Recovery: A Systematic Review* | 2018 | 8 interventi: sleep extension più replicato; nap 20-90 min post-pranzo recupera deficit notte parziale. | [PMID 29352373](https://pubmed.ncbi.nlm.nih.gov/29352373/) |
+| Charest J., Grandner MA., *Sleep and Athletic Performance: Impacts on Physical Performance, Mental Performance, Injury Risk, Recovery, Mental Health* | 2020 | Sonno <7h moltiplica rischio infortuni 1.7-2.4x. Sleep banking 5-7gg pre-evento attenua debito acuto. | [PMID 32088053](https://pubmed.ncbi.nlm.nih.gov/32088053/) |
+| Walker MP., *Sleep, memory, and emotional regulation* | 2009 | Sonno REM/NREM: consolidamento procedurale (motor learning) e riparazione tissutale via GH-pulse. | [PMID 18929315](https://pubmed.ncbi.nlm.nih.gov/18929315/) |
+
+**Implicazione per il coach**:
+- Watson 2015 → soglia 7h in `readinessScoring.ts:209` (`hoursScore=100` se hours≥7). **IMPLEMENTATO.**
+- Fullagar 2015 + Bonnar 2018 → peso sleep=30 in `readinessScoring.ts:39`. **IMPLEMENTATO.**
+- Mah 2011 → suggerimento sleep extension pre-gara in `taperingRules.ts`. **PENDENTE v2.**
+- Charest 2020 → regola overtraining "sonno <7h × 3gg consecutivi" via `checkSleepDebt`. **PENDENTE v2.**
+- Bonnar 2018 (nap) → chip in CoachChat. **ROADMAP v3.**
+- Walker 2009 → quality multiplier "scarso"=0.4 in `readinessScoring.ts:219`. **IMPLEMENTATO.**
+
+---
+
+### 15. Nutrizione & idratazione
+
+**Cosa fa il coach oggi**: diario raccoglie `daily.meds` (sanitizzato `promptSanitizer.ts`) e `workout.fields.kcal`. Coach applica **guardrail attivo** in `promptModules/nutritionGuardrail.ts` che vieta prescrizione di diete/integratori. Blocco incluso condizionalmente via keyword-match.
+
+**Evidenza scientifica**:
+
+| Paper | Anno | Sintesi | Link |
+|---|---|---|---|
+| Maughan RJ. et al. (IOC Consensus), *Dietary supplements and the high-performance athlete* | 2018 | Solo **5 integratori** con evidenza robusta: caffeina, creatina, beta-alanina, bicarbonato Na, nitrati. | [PMID 29540367](https://pubmed.ncbi.nlm.nih.gov/29540367/) |
+| Thomas DT. et al. (ACSM/AND/Dietitians Canada), *Nutrition and Athletic Performance* | 2016 | Macro: CHO 3-12 g/kg/die modulati; proteine 1.2-2.0 g/kg/die; grassi ≥20% energy. | [PMID 26891166](https://pubmed.ncbi.nlm.nih.gov/26891166/) |
+| Jäger R. et al. (ISSN), *Protein and exercise* | 2017 | Proteine: 0.4 g/kg/pasto × 4 pasti (~1.6 g/kg/die); finestra post-workout 2-4h; leucina ≥3g/pasto. | [PMID 28642676](https://pubmed.ncbi.nlm.nih.gov/28642676/) |
+| Kerksick CM. et al. (ISSN), *ISSN exercise & sports nutrition review update* | 2018 | Timing CHO: 30-60 g/h durante sforzi >60 min; 60-90 g/h con co-ingestione fruttosio >2.5h. | [PMID 30068354](https://pubmed.ncbi.nlm.nih.gov/30068354/) |
+| Sawka MN. et al. (ACSM), *Exercise and Fluid Replacement* | 2007 | Idratazione: pre 5-10 mL/kg in 2-4h; durante: deficit max 2% BW; post: 1.25-1.5 L/kg perso. | [PMID 17277604](https://pubmed.ncbi.nlm.nih.gov/17277604/) |
+| McCubbin AJ. et al. (Sports Dietitians Australia), *Nutrition for Exercise in Hot Environments* | 2020 | Ad-libitum drinking sufficiente per la maggior parte sforzi <2h in clima temperato. | [PMID 31891914](https://pubmed.ncbi.nlm.nih.gov/31891914/) |
+
+**Implicazione per il coach**:
+- Maughan IOC 2018 → guardrail integratori hardcoded in `nutritionGuardrail.ts:9`. **IMPLEMENTATO.**
+- Thomas 2016 → range macro hardcoded. **IMPLEMENTATO.**
+- Sawka 2007 → idratazione 5-10 mL/kg + deficit 2% red flag. **IMPLEMENTATO.**
+- Jäger 2017 → `proteinDistributionTip` in weeklyReport. **PENDENTE v2.**
+- Kerksick 2018 → fuel hint 30-60 g CHO/h se `workoutDuration > 60 min`. **PENDENTE v3.**
+- McCubbin 2020 → caveat ad-libitum. **PENDENTE v2.**
+
+---
+
+### 16. Recovery modalities — efficacia comparata post-sforzo
+
+**Cosa fa il coach oggi**: workout type `mobilita` come categoria primaria. `MobilityLibrary` (Wave 3.4) cataloga 6 routine. Prompt `recoveryBlock` (`promptModules/recoveryModalities.ts`) attivo quando `lastSessionIntensity === "hard"`.
+
+**Evidenza scientifica**:
+
+| Paper | Anno | Sintesi | Link |
+|---|---|---|---|
+| Dupuy O. et al., *Evidence-Based Approach for Choosing Post-exercise Recovery Techniques* | 2018 | Meta-analisi 99 studi, 9 tecniche. **Massaggio** effect size più ampio (g=0.85). Stretching statico passivo: 0 beneficio. | [PMID 29755363](https://pubmed.ncbi.nlm.nih.gov/29755363/) |
+| Wiewelhove T. et al., *Meta-Analysis of Foam Rolling on Performance and Recovery* | 2019 | Effetto piccolo: sprint +0.7%, flessibilità +4%, attenuazione DOMS post-sessione. | [PMID 31024339](https://pubmed.ncbi.nlm.nih.gov/31024339/) |
+| Leeder J. et al., *Cold water immersion and recovery from strenuous exercise: meta-analysis* | 2012 | CWI 11-15°C × 11-15 min riduce DOMS a 24h e 48h vs recupero passivo. | [PMID 22260513](https://pubmed.ncbi.nlm.nih.gov/22260513/) |
+| Roberts LA. et al., *Post-exercise cold water immersion attenuates acute anabolic signalling and long-term adaptations in muscle to strength training* | 2015 | RCT 12 sett: **CWI post-forza riduce ipertrofia e guadagni di forza**. Attenuazione mTOR/p70S6K. | [PMID 26174323](https://pubmed.ncbi.nlm.nih.gov/26174323/) |
+| Hill J. et al., *Compression garments and recovery from exercise-induced muscle damage: meta-analysis* | 2014 | 12 studi. Compressione 12-48h post riduce DOMS (g=0.40), CK, accelera ripristino forza. | [PMID 23757486](https://pubmed.ncbi.nlm.nih.gov/23757486/) |
+| Bishop PA. et al., *Recovery from training: a brief review* | 2008 | Tassonomia: immediate/<1h, short-term 1-12h, long-term >12h. Active recovery 10-20 min FC bassa. | [PMID 18438226](https://pubmed.ncbi.nlm.nih.gov/18438226/) |
+
+**Implicazione per il coach**:
+- Dupuy 2018 → ranking hardcoded `recoveryModalities.ts:9-13`. **IMPLEMENTATO.**
+- Wiewelhove 2019 → modalità "moderate" foam rolling 8-10 min. **IMPLEMENTATO.**
+- Leeder 2012 → parametri CWI "11-15°C × 11-15 min". **IMPLEMENTATO.**
+- Roberts 2015 → WARNING "CWI post-forza attenua adattamenti". **IMPLEMENTATO.**
+- Hill 2014 → compression 12-48h. **IMPLEMENTATO.**
+- Bishop 2008 → active recovery 10-20 min FC bassa. **IMPLEMENTATO.**
+- Ranking dinamico per workoutType (corsa hard → CWI ok; forza_gambe hard → evita CWI). **ROADMAP v3.**
+
+---
+
+### 17. Biomeccanica corsa — cadenza, scarpe e foot strike
+
+**Cosa fa il coach oggi**: il diario corsa raccoglie campi `cadenza` (spm), `scarpe`, `superficie` come metadata libero. Nessun validator attivo cross-controlla questi valori. La biomeccanica resta input descrittivo, non leva di coaching.
+
+**Evidenza scientifica**:
+
+| Paper | Anno | Sintesi | Link |
+|---|---|---|---|
+| Heiderscheit BC et al., *Effects of step rate manipulation on joint mechanics during running* | 2011 | +5-10% step rate vs cadenza preferita riduce carico anca/ginocchio (-20% energy absorption ginocchio). Razionale 170-180 spm per PFP/ITBS. | [PMID 21131862](https://pubmed.ncbi.nlm.nih.gov/21131862/) |
+| Napier C et al., *Kinetic risk factors of running-related injuries in female recreational runners* | 2018 | Vertical loading rate + impact peak marker più consistenti per RRI; intervento cadenza riduce loading rate 18-20%. Minimaliste non riducono RRI. | [PMID 29055178](https://pubmed.ncbi.nlm.nih.gov/29055178/) |
+| Daoud AI et al., *Foot strike and injury rates in endurance runners: a retrospective study* | 2012 | 52 corridori NCAA Harvard: RFS injury rate ~2x vs FFS/MFS. Studio retrospettivo, non causale. | [PMID 22318203](https://pubmed.ncbi.nlm.nih.gov/22318203/) |
+| Anderson LM et al., *What are the benefits and risks associated with changing foot strike pattern during running? A systematic review and meta-analysis* | 2020 | 53 studi: switch RFS→FFS riduce loading rate ginocchio ma aumenta carico caviglia/Achille; nessuna riduzione RRI. Cadenza > foot strike change. | [PMID 31845152](https://pubmed.ncbi.nlm.nih.gov/31845152/) |
+| Schubert AG et al., *Influence of stride frequency and length on running mechanics: a systematic review* | 2014 | +5-10% step rate riduce loading senza penalizzare VO2 (<3%). Sweet spot 170-180 spm recreational. | [PMID 24587864](https://pubmed.ncbi.nlm.nih.gov/24587864/) |
+| Malisoux L et al., *Shoe cushioning influences the running injury risk according to body mass: RCT 848 recreational runners* | 2020 | Cushioning soft vs hard non differisce in injury rate complessivo, ma interagisce con BW (>71 kg → soft protettivo). | [PMID 31877062](https://pubmed.ncbi.nlm.nih.gov/31877062/) |
+
+**Implicazione per il coach**:
+- Heiderscheit 2011 + Schubert 2014 → validator soft in `safetyRules.ts` cadenza <160 spm + sintomi ginocchio. **PENDENTE v3.**
+- Daoud 2012 + Anderson 2020 → guardrail hardcoded: NO conversione foot strike pattern. **PENDENTE v2.**
+- Malisoux 2020 → suggerimento refresh scarpa basato su BW + km accumulati. **PENDENTE v3.**
+- Napier 2018 → copy onboarding: minimaliste richiedono 12+ settimane transizione. **PENDENTE v2.**
+
+---
+
+### 18. Wearable / FC validity — accuratezza optical wrist HR e HRV
+
+**Cosa fa il coach oggi**: import Samsung Health (Wave 3.2) popola `fc_media`/`fc_max`. Wave 3.4 estende a HRV per readiness. Validator FC age-tiered in `safetyRules.ts` flagga deviazioni `fc_max > Tanaka_pred + 15 bpm` come probabile artefatto wearable.
+
+**Evidenza scientifica**:
+
+| Paper | Anno | Sintesi | Link |
+|---|---|---|---|
+| Nelson BW, Allen NB, *Accuracy of consumer wearable heart rate measurement during an ecologically valid 24-hour period* | 2019 | Validation 24h: ±3 bpm a riposo, MAPE 5-8% walking, errori >10% durante HIIT. Wrist-based sottostima HR di picco. | [PMID 30855232](https://pubmed.ncbi.nlm.nih.gov/30855232/) |
+| Bent B et al., *Investigating sources of inaccuracy in wearable optical heart rate sensors* | 2020 | Skin tone scuri (Fitzpatrick V-VI) → errore +15% MAE; movimento polso → degrado accuracy 2-3x vs running. | [PMID 32047863](https://pubmed.ncbi.nlm.nih.gov/32047863/) |
+| Dooley EE et al., *Estimating accuracy at exercise intensities: comparative study of self-monitoring HR wearables* | 2017 | 4 wearable consumer vs ECG: accuracy HR cala linearmente con intensità (r=0.92 riposo → r=0.67 VO2max). | [PMID 28288955](https://pubmed.ncbi.nlm.nih.gov/28288955/) |
+| Cosoli G et al., *Wrist-worn and chest-strap wearable devices: systematic review on accuracy* | 2020 | 19 studi: chest strap MAE <2 bpm; wrist 3-5 bpm riposo, 8-15 bpm dynamic. Chest strap per zone training, wrist per trend. | [DOI 10.1016/j.measurement.2020.108247](https://doi.org/10.1016/j.measurement.2020.108247) |
+| Singh N et al., *Heart rate variability: an old metric with new meaning in the era of using mHealth technologies* | 2018 | Morning resting RMSSD via wrist sensor marker affidabile (ICC 0.85-0.92 vs ECG); HRV durante esercizio unreliable. | [PMID 30310690](https://pubmed.ncbi.nlm.nih.gov/30310690/) |
+| Hinde K et al., *Wearable devices suitable for monitoring twenty-four hour heart rate variability* | 2021 | Polar H10 gold standard; wrist Garmin/Fitbit affidabili solo HRV notturna. Trust score context-aware. | [PMID 33806595](https://pubmed.ncbi.nlm.nih.gov/33806595/) |
+
+**Implicazione per il coach**:
+- Dooley 2017 + Nelson 2019 → `safetyRules.ts:HR_VALIDATOR` flag artefatto wearable >+15 bpm. **IMPLEMENTATO.**
+- Bent 2020 → campo `skin_tone` opzionale onboarding (Fitzpatrick I-VI) per calibrare confidence score. **ROADMAP v3.**
+- Cosoli 2020 → disclaimer in `sessionFeedback.ts` per `intensita_percepita >= 8/10`. **PENDENTE v2.**
+- Singh 2018 + Hinde 2021 → HRV readiness usa SOLO morning resting RMSSD wrist. **IMPLEMENTATO** (readinessScoring.ts).
+
+---
+
+### 19. Ambiente — heat stress e altitude
+
+**Cosa fa il coach oggi**: **nulla è tracciato attualmente**. Il diario corsa non ha `temperatura_ambiente`, `umidita_relativa`, `WBGT` né `altitudine`. Blind spot noto (Bologna estate 35°C + 70% RH, uso in vacanza/quota). Tutta l'area è **pendente roadmap v3**.
+
+**Evidenza scientifica**:
+
+| Paper | Anno | Sintesi | Link |
+|---|---|---|---|
+| Armstrong LE et al. (ACSM), *Exertional heat illness during training and competition* | 2007 | WBGT metrica autoritativa. Rischio >28°C WBGT; sospensione >32°C in non-acclimatati. FC +1 bpm per °C oltre 25°C. | [PMID 17473783](https://pubmed.ncbi.nlm.nih.gov/17473783/) |
+| Périard JD et al., *Adaptations and mechanisms of human heat acclimation* | 2015 | 10-14 gg esposizione progressiva 35-40°C → plasma volume +10-15%, HR -10 bpm, core temp -0.4°C. | [PMID 25943654](https://pubmed.ncbi.nlm.nih.gov/25943654/) |
+| Casa DJ et al. (NATA), *Exertional heat illnesses position statement* | 2015 | Heat illness continuum. Cold-water immersion gold standard cooling (>10°C swing in <15 min). Hydration solo non previene EHS. | [PMID 26381473](https://pubmed.ncbi.nlm.nih.gov/26381473/) |
+| Wilber RL, *Application of altitude/hypoxic training by elite athletes* | 2007 | "Live high, train low" 2000-2500m: Hb-mass +3-5%, VO2max +1-3% in 3-4 sett. Acute >2500m → desaturazione, FC riposo +5-10 bpm. | [PMID 17909409](https://pubmed.ncbi.nlm.nih.gov/17909409/) |
+| Périard JD et al., *Exercise under heat stress: thermoregulation, hydration, performance implications and mitigation* | 2021 | >30°C ambient: performance -0.3-0.5% per °C oltre 25°C. Pre-cooling +1-3%. Hydration 0.4-0.8 L/h. | [PMID 33760638](https://pubmed.ncbi.nlm.nih.gov/33760638/) |
+| Chapman RF, *The individual response to training and competition at altitude* | 2013 | 30-40% "non-responder" anche con LHTL. Serve tracking individuale Hb/ferritina pre-camp. | [PMID 24282206](https://pubmed.ncbi.nlm.nih.gov/24282206/) |
+
+**Implicazione per il coach** (TUTTO ROADMAP v3 — nessun campo ambiente nel diario):
+- Armstrong 2007 + Périard 2021 → nuovo campo `condizioni_ambiente` (temp+RH+WBGT). Auto-fetch via Open-Meteo API. **ROADMAP v3.**
+- Périard 2015 → prompt `sessionFeedback.ts`: WBGT >28°C → pace -5-8% e FC +5-10 bpm; warning >32°C. **ROADMAP v3.**
+- Casa 2015 → `HEAT_ILLNESS_DETECTOR` in `safetyRules.ts`: sintomi + WBGT >28 → escalation cooling/idratazione. **ROADMAP v3.**
+- Wilber 2007 + Chapman 2013 → campo `altitudine_sessione_m`; >2000m warning FC riposo elevata primi 3-5gg. **ROADMAP v3** (priorità bassa).
+
+---
+
 ## Come citare questo tool in un contesto clinico
 
 Il coach **non è un dispositivo medico**. È una PWA personale basata su:
 - Regole di sicurezza da linee guida ACSM/ECSS
 - Scale validate (Borg RPE, Silbernagel pain-monitoring)
-- LLM generalista (Gemini 2.0 Flash) con prompt engineering strutturato
+- LLM generalista (Gemini Flash) con prompt engineering strutturato
 
 Per uso clinico o in popolazioni a rischio, integrare con professionista qualificato.

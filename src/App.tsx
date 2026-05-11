@@ -6,12 +6,13 @@ import OnboardingWizard from "./pages/OnboardingWizard";
 import TrendsPage from "./pages/TrendsPage";
 import ProactiveFeedback from "./components/ProactiveFeedback";
 import ErrorBoundary from "./components/ErrorBoundary";
+import OfflineBanner from "./components/OfflineBanner";
+import PwaInstallBanner from "./components/PwaInstallBanner";
 import { NotificationHost, useNotify } from "./components/Notification";
 import { getJSON, setJSON, safeBool } from "./lib/storage";
 import { maybeRunWeeklyReport } from "./lib/scheduler";
 import { maybePromoteNextPlan } from "./lib/coach/planHistory";
 import type { CoachFeedItem } from "./lib/types";
-import { useOnline } from "./lib/useOnline";
 import { events } from "./lib/events";
 import { checkPendingRestore, clearPendingRestoreFlag } from "./lib/backup";
 
@@ -33,7 +34,6 @@ function AppShell() {
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("diary");
   const [unreadCoach, setUnreadCoach] = useState(0);
-  const online = useOnline();
   const { notify } = useNotify();
 
   // Toast globali per eventi di sistema (migrazione modello, fallback LLM).
@@ -189,7 +189,9 @@ function AppShell() {
     return (
       <>
         <ProactiveFeedback />
+        <OfflineBanner />
         <OnboardingWizard onDone={() => setOnboarded(true)} />
+        <PwaInstallBanner />
       </>
     );
   }
@@ -198,17 +200,11 @@ function AppShell() {
     <>
       <ProactiveFeedback />
 
-      {/* Banner offline globale */}
-      {!online && (
-        <div role="status" style={{
-          position: "sticky", top: 0, zIndex: 60,
-          background: "#78350F", color: "#FEF3C7",
-          padding: "8px 16px", fontSize: "13px", fontWeight: 600,
-          textAlign: "center", borderBottom: "1px solid #92400E",
-        }}>
-          📡 Offline — diario disponibile, coach richiede connessione
-        </div>
-      )}
+      {/* Banner offline globale (gestisce internamente useOnline) */}
+      <OfflineBanner />
+
+      {/* Install PWA prompt (iOS Safari istruzioni / Android Chrome beforeinstallprompt) */}
+      <PwaInstallBanner />
 
       <div className="page-pad-bottom">
         {/* Un ErrorBoundary per pagina: un crash nel Coach non deve abbattere

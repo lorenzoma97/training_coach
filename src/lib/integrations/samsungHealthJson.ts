@@ -24,6 +24,26 @@ import JSZip from "jszip";
 import { decodeSamsungBytes, parseCsvText, normalizeSamsungDatetime } from "./samsungHealth";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ZIP single-load helper (Reviewer 3.4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Apre uno ZIP Samsung UNA volta sola e restituisce l'istanza JSZip riusabile.
+ *
+ * Rationale: gli export annuali Samsung Health pesano 50-100MB. Aprire lo ZIP
+ * 3+ volte (HRV CSV, Sleep CSV, exercise CSV, HR live_data per workout)
+ * triplica il costo di decompressione. Chiamando `loadSamsungZipOnce(blob)`
+ * una volta in `previewImport` e passando l'istanza ai parser, si ottiene un
+ * singolo `JSZip.loadAsync` invece di N.
+ *
+ * Pure function (no side-effects, no I/O su storage). Errori di parsing dello
+ * ZIP risalgono al caller (non swallowati qui).
+ */
+export async function loadSamsungZipOnce(blob: Blob): Promise<JSZip> {
+  return JSZip.loadAsync(blob);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tipi pubblici
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -194,13 +214,24 @@ export function aggregateHrvByDay(samples: SamsungHrvSample[]): DailyHrvAggregat
  * granulari per sample, perché il CSV ha già RMSSD pre-calcolato).
  *
  * Aggrega per giorno (RMSSD media giornaliera).
+ *
+ * @param zipBlob ZIP blob originale (usato come fallback se `preloadedZip` non passato).
+ * @param preloadedZip Istanza JSZip già caricata via `loadSamsungZipOnce` (single-load
+ *   optimization). Se omesso → comportamento legacy (apre lo ZIP qui).
  */
-export async function parseSamsungHrvFromZip(zipBlob: Blob): Promise<DailyHrvAggregate[]> {
+export async function parseSamsungHrvFromZip(
+  zipBlob: Blob,
+  preloadedZip?: JSZip,
+): Promise<DailyHrvAggregate[]> {
   let zip: JSZip;
-  try {
-    zip = await JSZip.loadAsync(zipBlob);
-  } catch {
-    return [];
+  if (preloadedZip) {
+    zip = preloadedZip;
+  } else {
+    try {
+      zip = await JSZip.loadAsync(zipBlob);
+    } catch {
+      return [];
+    }
   }
 
   const csvFiles: JSZip.JSZipObject[] = [];
@@ -335,13 +366,24 @@ export function aggregateSleepByDay(samples: SamsungSleepSample[]): DailySleepAg
 
 /**
  * Parsa file Sleep Samsung dal ZIP. Aggrega per giorno (durata + efficiency).
+ *
+ * @param zipBlob ZIP blob originale (fallback se `preloadedZip` non passato).
+ * @param preloadedZip Istanza JSZip già caricata (single-load optimization).
+ *   Se omesso → comportamento legacy (apre lo ZIP qui).
  */
-export async function parseSamsungSleepFromZip(zipBlob: Blob): Promise<DailySleepAggregate[]> {
+export async function parseSamsungSleepFromZip(
+  zipBlob: Blob,
+  preloadedZip?: JSZip,
+): Promise<DailySleepAggregate[]> {
   let zip: JSZip;
-  try {
-    zip = await JSZip.loadAsync(zipBlob);
-  } catch {
-    return [];
+  if (preloadedZip) {
+    zip = preloadedZip;
+  } else {
+    try {
+      zip = await JSZip.loadAsync(zipBlob);
+    } catch {
+      return [];
+    }
   }
 
   const csvFiles: JSZip.JSZipObject[] = [];
@@ -436,16 +478,26 @@ export function parseHrLiveDataJson(text: string): number[] {
  * basilari: avg, max, samples count.
  *
  * Ritorna null se il file non viene trovato o non contiene sample validi.
+ *
+ * @param zipBlob ZIP blob originale (fallback se `preloadedZip` non passato).
+ * @param uuid UUID del workout target.
+ * @param preloadedZip Istanza JSZip già caricata (single-load optimization).
+ *   Se omesso → comportamento legacy (apre lo ZIP qui).
  */
 export async function parseHrLiveDataForWorkout(
   zipBlob: Blob,
   uuid: string,
+  preloadedZip?: JSZip,
 ): Promise<{ samples: number[]; avg: number; max: number } | null> {
   let zip: JSZip;
-  try {
-    zip = await JSZip.loadAsync(zipBlob);
-  } catch {
-    return null;
+  if (preloadedZip) {
+    zip = preloadedZip;
+  } else {
+    try {
+      zip = await JSZip.loadAsync(zipBlob);
+    } catch {
+      return null;
+    }
   }
 
   const pattern = liveDataPatternFor(uuid);

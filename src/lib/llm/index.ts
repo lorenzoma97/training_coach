@@ -6,11 +6,13 @@ import { LLMKeyMissingError } from "./types";
 import { geminiAdapter } from "./gemini";
 import { openaiAdapter } from "./openai";
 import { anthropicAdapter } from "./anthropic";
+import { ollamaAdapter, ollamaHealthCheck } from "./ollama";
 import { getJSON, setJSON, storage } from "../storage";
 import { events } from "../events";
 
 export * from "./types";
-export { geminiAdapter, openaiAdapter, anthropicAdapter };
+export { geminiAdapter, openaiAdapter, anthropicAdapter, ollamaAdapter, ollamaHealthCheck };
+export { getOllamaBaseUrl, setOllamaBaseUrl, OLLAMA_BASE_URL_KEY } from "./ollama";
 
 /**
  * Registry degli adapter LLM.
@@ -48,6 +50,7 @@ export const ADAPTERS: Record<ProviderId, ProviderAdapter> = {
   gemini: geminiAdapter,
   openai: openaiAdapter,
   anthropic: anthropicAdapter,
+  ollama: ollamaAdapter,
 };
 
 export const CONFIG_KEY = "llm-config";
@@ -60,7 +63,14 @@ function readConfigSync(): LLMConfig | null {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as LLMConfig;
-      if (parsed && parsed.provider && parsed.apiKey && parsed.modelId) return parsed;
+      if (parsed && parsed.provider && parsed.modelId) {
+        // Ollama: apiKey opzionale (locale). Normalizza placeholder se mancante.
+        if (parsed.provider === "ollama") {
+          if (!parsed.apiKey) parsed.apiKey = "local";
+          return parsed;
+        }
+        if (parsed.apiKey) return parsed;
+      }
     }
   } catch { /* ignore */ }
   // Migrazione: se esiste chiave Gemini legacy, costruisci config al volo
@@ -91,6 +101,11 @@ function isUnstableModel(modelId: string): boolean {
 
 export async function getLLMConfig(): Promise<LLMConfig | null> {
   const parsed = await getJSON<LLMConfig | null>(CONFIG_KEY, null);
+  // Normalizzazione Ollama: apiKey può essere assente (locale).
+  if (parsed && parsed.provider === "ollama" && parsed.modelId) {
+    if (!parsed.apiKey) parsed.apiKey = "local";
+    return parsed;
+  }
   if (parsed && parsed.provider && parsed.apiKey && parsed.modelId) {
     // Auto-migrazione: se l'utente ha un modello preview/exp Gemini (causa 503),
     // switch automatico al default stabile. L'utente può sempre ri-sceglierlo manualmente.
@@ -134,7 +149,10 @@ export async function clearLLMConfig(): Promise<void> {
 export function hasLLMConfig(): boolean {
   const c = readConfigSync();
   if (!c) return false;
-  return !!c.apiKey && c.apiKey.trim().length >= 10 && !!c.provider && !!c.modelId;
+  if (!c.provider || !c.modelId) return false;
+  // Ollama gira in locale: nessuna apiKey richiesta (placeholder "local" è ok).
+  if (c.provider === "ollama") return true;
+  return !!c.apiKey && c.apiKey.trim().length >= 10;
 }
 
 export function getCurrentConfigSync(): LLMConfig | null {
@@ -149,6 +167,67 @@ export function getCurrentClient(): LLMClient {
   const adapter = ADAPTERS[cfg.provider];
   if (!adapter) throw new LLMKeyMissingError();
   return adapter.createClient(cfg);
+}
+
+// ---------- Ollama health-check + fallback automatico a Gemini ----------
+// Lo stato del health-check è memorizzato in modulo (cache process-locale):
+// l'orchestratore può chiamare `ensureOllamaReachable()` al boot e cachiare
+// l'esito. Se Ollama non risponde e una config Gemini è disponibile,
+// "currentEffectiveConfig" punta a quella di Gemini per evitare crash a runtime.
+let ollamaHealthCache: { ok: boolean; checkedAt: number; error?: string } | null = null;
+const OLLAMA_HEALTH_TTL_MS = 30_000;
+
+export async function ensureOllamaReachable(): Promise<{ ok: boolean; error?: string }> {
+  const now = Date.now();
+  if (ollamaHealthCache && now - ollamaHealthCache.checkedAt < OLLAMA_HEALTH_TTL_MS) {
+    return { ok: ollamaHealthCache.ok, error: ollamaHealthCache.error };
+  }
+  const h = await ollamaHealthCheck();
+  ollamaHealthCache = { ok: h.ok, checkedAt: now, error: h.error };
+  return { ok: h.ok, error: h.error };
+}
+
+/** Forza il refresh del cache health-check (es. dopo che l'utente avvia Ollama). */
+export function invalidateOllamaHealthCache(): void {
+  ollamaHealthCache = null;
+}
+
+/**
+ * Ritorna un client. Se config = Ollama ma non è raggiungibile, fa fallback
+ * a Gemini SE esiste una chiave legacy o una config Gemini precedente salvata.
+ * Altrimenti rilancia l'errore (l'utente vede banner "Ollama unreachable" in UI).
+ * NB: il fallback è "best-effort" e logga warning + emit evento.
+ */
+export async function getCurrentClientWithFallback(): Promise<LLMClient> {
+  const cfg = readConfigSync();
+  if (!cfg) throw new LLMKeyMissingError();
+  if (cfg.provider !== "ollama") {
+    return ADAPTERS[cfg.provider].createClient(cfg);
+  }
+  const health = await ensureOllamaReachable();
+  if (health.ok) {
+    return ollamaAdapter.createClient(cfg);
+  }
+  // Tentativo fallback: chiave legacy Gemini
+  const legacy = (localStorage.getItem(LEGACY_GEMINI_KEY) || "").trim();
+  if (legacy) {
+    const fallbackCfg: LLMConfig = {
+      provider: "gemini",
+      apiKey: legacy,
+      modelId: geminiAdapter.defaultChatModel,
+    };
+    console.warn(`[Ollama] Non raggiungibile (${health.error}). Fallback automatico a Gemini.`);
+    events.emit("llm:fallbackActivated", {
+      primary: `ollama:${cfg.modelId}`,
+      fallback: `gemini:${fallbackCfg.modelId}`,
+      reason: health.error || "Ollama unreachable",
+    });
+    return geminiAdapter.createClient(fallbackCfg);
+  }
+  // Nessun fallback disponibile: lancia errore esplicito.
+  const err = new LLMKeyMissingError("ollama");
+  err.message = `Ollama non raggiungibile (${health.error || "unknown"}). Configura una chiave Gemini come fallback o avvia Ollama.`;
+  throw err;
 }
 
 export function getEmbeddingClient(): LLMClient | null {

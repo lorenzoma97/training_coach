@@ -737,7 +737,12 @@ Tabella sintetica dello stato di tutte le wave implementate. Test count = `it()`
 
 ### Wave Tests — infrastructure gap
 
-- **jsdom + @testing-library/react setup**: `MacroUpdatedBanner.test.tsx`, `ReadinessBanner.test.tsx`, `SubstitutionBadgeWiring.test.tsx` esistono come `*.test.tsx` ma vitest non ha jsdom + RTL configurati → asserzioni runtime su DOM non eseguibili. Setup `vite.config.ts` con `test.environment: "jsdom"` + dependency `@testing-library/react` + `@testing-library/jest-dom`. Effort: ~0.5 sw + audit migration test esistenti.
+- **jsdom + @testing-library/react setup** — RISOLTO (Wave 4.3+, 2026-05-11):
+  - `vite.config.ts` ora include sezione `test:` con `environment: "jsdom"`, `globals: true`, `setupFiles: ["./vitest.setup.ts"]`.
+  - `vitest.setup.ts` (NEW) registra matchers `@testing-library/jest-dom/vitest` + `cleanup()` automatico afterEach.
+  - `package.json` devDeps aggiornate con `jsdom@^25`, `@testing-library/react@^16`, `@testing-library/jest-dom@^6.5`, `@testing-library/user-event@^14.5`.
+  - `SubstitutionBadgeWiring.test.tsx` promosso a vero render test (PROOF), gli altri 2 banner restano smoke (convertibili seguendo lo stesso pattern).
+  - **STEP MANUALE LORENZO**: dopo merge, runnare `npm install` in CI/GitHub Actions (Lorenzo non ha Node locale) per recepire le nuove devDeps. Verificare poi che `npm test` passi sia per i test Node-only esistenti (jsdom retrocompatibile) sia per il nuovo render test del badge.
 
 ---
 

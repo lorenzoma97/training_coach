@@ -17,8 +17,8 @@
 //
 // USAGE PATTERN:
 // - Validator (planValidator) chiama resolveSubstitution per ogni planned exercise →
-//   se hop > 0 emette issue "equipment_substituted" (warn);
-//   se null emette "equipment_mismatch" (warn).
+//   se hop > 0 emette issue "equipment_substituted" (info, segnalazione neutra);
+//   se null emette "equipment_mismatch" (warn, serve attenzione).
 // - Render-time / Pass-2 prompt usa il resolvedId per mostrare l'effettivo esercizio
 //   eseguito. NON muta il piano persistito (effectiveExerciseId resta render-time).
 

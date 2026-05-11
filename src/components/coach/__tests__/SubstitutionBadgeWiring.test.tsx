@@ -1,8 +1,14 @@
-// Wave 4.3 — Smoke + integration test per il wiring SubstitutionBadge ↔
-// resolveSubstitution + normalizeEquipmentTags. Pattern Node-only smoke.
+// Wave 4.3 — Smoke + integration + render test per il wiring SubstitutionBadge
+// ↔ resolveSubstitution + normalizeEquipmentTags.
+//
+// Wave 4.3+ — Promosso da "Node-only smoke" a vero render test (jsdom + RTL)
+// per la sezione "SubstitutionBadge render". Le sezioni di wiring restano
+// pure-logic (non richiedono DOM).
 //
 // Cosa testiamo:
 //   - smoke import del componente SubstitutionBadge
+//   - render reale del badge con jsdom + @testing-library/react (PROOF jsdom
+//     setup funzionante)
 //   - wiring contract: dato un PlannedExercise.exerciseId, una lista equipment
 //     normalizzata e EXERCISES, resolveSubstitution ritorna un risultato che
 //     determina la presenza/assenza del badge.
@@ -12,6 +18,7 @@
 //     errore rosso)
 
 import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
 import SubstitutionBadge from "../SubstitutionBadge";
 import { resolveSubstitution } from "../../../lib/coach/equipmentSubstitutor";
 import { normalizeEquipmentTags } from "../../../lib/equipment/equipmentNormalizer";
@@ -21,6 +28,34 @@ describe("SubstitutionBadge (smoke)", () => {
   it("imports without throwing", () => {
     expect(SubstitutionBadge).toBeDefined();
     expect(typeof SubstitutionBadge).toBe("function");
+  });
+});
+
+describe("SubstitutionBadge render", () => {
+  it("renders with original→resolved text and exposes aria-label con reason", () => {
+    // PROOF jsdom + RTL setup: rendering reale del componente, query DOM,
+    // matchers @testing-library/jest-dom (.toBeInTheDocument).
+    render(
+      <SubstitutionBadge
+        original="back-squat-bb"
+        resolved="goblet-squat-kb"
+        reason="no barbell"
+      />,
+    );
+    // Testo visibile del badge: "sostituito" (case-insensitive).
+    expect(screen.getByText(/sostituito/i)).toBeInTheDocument();
+    // aria-label / title contengono original, resolved e reason → tooltip
+    // accessibile per screen reader. Usiamo getByLabelText su sub-string.
+    expect(screen.getByLabelText(/back-squat-bb/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/goblet-squat-kb/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/no barbell/i)).toBeInTheDocument();
+  });
+
+  it("renders senza reason → aria-label minimale (original→resolved soltanto)", () => {
+    render(<SubstitutionBadge original="bench-press-bb" resolved="dumbbell-bench" />);
+    expect(screen.getByText(/sostituito/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/bench-press-bb/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/dumbbell-bench/i)).toBeInTheDocument();
   });
 });
 

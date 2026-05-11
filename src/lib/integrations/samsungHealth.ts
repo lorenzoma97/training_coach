@@ -26,6 +26,7 @@ import type { WearableSample } from "../types/wearable";
 import {
   parseSamsungHrvFromZip,
   parseSamsungSleepFromZip,
+  loadSamsungZipOnce,
   type DailyHrvAggregate,
   type DailySleepAggregate,
 } from "./samsungHealthJson";
@@ -587,8 +588,15 @@ export async function parseSamsungHealthZip(zipBlob: Blob): Promise<WearableSamp
 
 /**
  * Variante con report dettagliato (usata da previewImport).
+ *
+ * @param zipBlob ZIP blob originale (fallback se `preloadedZip` non passato).
+ * @param preloadedZip Istanza JSZip già caricata via `loadSamsungZipOnce`
+ *   (single-load optimization Reviewer 3.4). Se omesso → apre lo ZIP qui.
  */
-export async function parseSamsungHealthZipDetailed(zipBlob: Blob): Promise<{
+export async function parseSamsungHealthZipDetailed(
+  zipBlob: Blob,
+  preloadedZip?: JSZip,
+): Promise<{
   samples: WearableSample[];
   parseErrors: Array<{ file: string; error: string }>;
   unrecognizedTypes: Set<string>;
@@ -598,11 +606,15 @@ export async function parseSamsungHealthZipDetailed(zipBlob: Blob): Promise<{
   const unrecognizedTypes = new Set<string>();
 
   let zip: JSZip;
-  try {
-    zip = await JSZip.loadAsync(zipBlob);
-  } catch (e) {
-    parseErrors.push({ file: "<zip>", error: `ZIP non valido: ${e instanceof Error ? e.message : String(e)}` });
-    return { samples, parseErrors, unrecognizedTypes };
+  if (preloadedZip) {
+    zip = preloadedZip;
+  } else {
+    try {
+      zip = await JSZip.loadAsync(zipBlob);
+    } catch (e) {
+      parseErrors.push({ file: "<zip>", error: `ZIP non valido: ${e instanceof Error ? e.message : String(e)}` });
+      return { samples, parseErrors, unrecognizedTypes };
+    }
   }
 
   const exerciseFiles: Array<{ name: string; file: JSZip.JSZipObject }> = [];
@@ -803,7 +815,21 @@ async function appendWorkoutToDay(date: string, workout: Workout): Promise<void>
  * NON scrive nulla. La conferma avviene via `commitImport`.
  */
 export async function previewImport(zipBlob: Blob): Promise<ImportPreview> {
-  const { samples, parseErrors, unrecognizedTypes } = await parseSamsungHealthZipDetailed(zipBlob);
+  // Reviewer 3.4: apri lo ZIP UNA volta sola e ripassa l'istanza ai parser.
+  // Export annuali Samsung sono 50-100MB: prima si decomprimeva 3x (exercise,
+  // HRV, Sleep), ora 1x. Se loadAsync fallisce, fall-back a comportamento
+  // legacy: parseSamsungHealthZipDetailed loggerà l'errore e ritornerà vuoto.
+  let preloadedZip: JSZip | undefined;
+  try {
+    preloadedZip = await loadSamsungZipOnce(zipBlob);
+  } catch {
+    preloadedZip = undefined;
+  }
+
+  const { samples, parseErrors, unrecognizedTypes } = await parseSamsungHealthZipDetailed(
+    zipBlob,
+    preloadedZip,
+  );
 
   // Carica workout esistenti ±90 giorni per dedup
   const recentDays = await loadRecentWorkouts();
@@ -834,15 +860,16 @@ export async function previewImport(zipBlob: Blob): Promise<ImportPreview> {
   // Wave 3.4: parse HRV + Sleep dal medesimo ZIP. Storage separati, non sostituiscono
   // daily check. parseErrors NON è inquinato perché i parser aggregati non
   // espongono per-file errors (sono best-effort).
+  // Reviewer 3.4: passa l'istanza ZIP precaricata per evitare ri-decompressione.
   let hrvDaily: DailyHrvAggregate[] = [];
   let sleepDaily: DailySleepAggregate[] = [];
   try {
-    hrvDaily = await parseSamsungHrvFromZip(zipBlob);
+    hrvDaily = await parseSamsungHrvFromZip(zipBlob, preloadedZip);
   } catch (e) {
     parseErrors.push({ file: "<hrv>", error: e instanceof Error ? e.message : String(e) });
   }
   try {
-    sleepDaily = await parseSamsungSleepFromZip(zipBlob);
+    sleepDaily = await parseSamsungSleepFromZip(zipBlob, preloadedZip);
   } catch (e) {
     parseErrors.push({ file: "<sleep>", error: e instanceof Error ? e.message : String(e) });
   }

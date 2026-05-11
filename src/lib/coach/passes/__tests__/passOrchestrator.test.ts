@@ -14,7 +14,28 @@ vi.mock("../../../gemini", () => ({
   generateJSON: vi.fn(),
 }));
 
+// Wave 4.1 OQ4.1.1 — mock RAG retrieval per intercettare le chiamate dal Pass-2.
+// Default: retrieveRelevantChunks ritorna [] (no chunks, nessun effetto sul prompt).
+// chunksAsPromptBlock(< [] >) → "" (vedi knowledge/retriever.ts).
+// I test che vogliono validare il wiring verificheranno gli args di
+// retrieveRelevantChunks (contexts, query).
+vi.mock("../../../knowledge", () => ({
+  retrieveRelevantChunks: vi.fn(async () => []),
+  chunksAsPromptBlock: vi.fn(() => ""),
+  contextsForPass: vi.fn((pass: string) => {
+    switch (pass) {
+      case "pass2_strength":
+        return ["strength_db", "macro_periodization"];
+      case "pass2_cardio":
+        return ["cardio_intervals", "macro_periodization"];
+      default:
+        return [];
+    }
+  }),
+}));
+
 import { generateJSON } from "../../../gemini";
+import { retrieveRelevantChunks, contextsForPass } from "../../../knowledge";
 import { runMultiPass, type OrchestratorContext } from "../passOrchestrator";
 import type { UserProfile, UserGoal } from "../../../types";
 
@@ -23,6 +44,8 @@ import type { UserProfile, UserGoal } from "../../../types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const mockedGenerateJSON = generateJSON as unknown as ReturnType<typeof vi.fn>;
+const mockedRetrieveChunks = retrieveRelevantChunks as unknown as ReturnType<typeof vi.fn>;
+const mockedContextsForPass = contextsForPass as unknown as ReturnType<typeof vi.fn>;
 
 function mkProfile(overrides: Partial<UserProfile> = {}): UserProfile {
   const now = "2026-05-09T08:00:00.000Z";
@@ -128,6 +151,21 @@ const cardioPass2Sample = {
 
 beforeEach(() => {
   mockedGenerateJSON.mockReset();
+  mockedRetrieveChunks.mockReset();
+  mockedRetrieveChunks.mockImplementation(async () => []);
+  mockedContextsForPass.mockClear();
+  // Riapplica l'implementazione dopo il reset (mockClear non resetta l'impl, ma
+  // mockReset sì — ri-istanziamo per sicurezza nel test che chiama mockReset).
+  mockedContextsForPass.mockImplementation((pass: string) => {
+    switch (pass) {
+      case "pass2_strength":
+        return ["strength_db", "macro_periodization"];
+      case "pass2_cardio":
+        return ["cardio_intervals", "macro_periodization"];
+      default:
+        return [];
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -353,5 +391,307 @@ describe("runMultiPass — plan metadata", () => {
 
     const upperSession = result.plan.weeks[0].sessions.find(s => s.type === "forza_upper");
     expect(upperSession?.macroPhase).toBe("build");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 4.1 OQ4.1.1 — RAG wiring (Pass-2 strength + cardio)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runMultiPass — Wave 4.1 OQ4.1.1 RAG wiring", () => {
+  it("calls retrieveRelevantChunks for each strength session with contexts=pass2_strength", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonSample)         // Pass-1
+      .mockResolvedValueOnce(strengthPass2Sample)    // forza_upper
+      .mockResolvedValueOnce(strengthPass2Sample);   // forza_gambe
+
+    await runMultiPass(mkCtx());
+
+    // 2 strength sessions → 2 RAG calls (cardio Z2 e mobility skip Pass-2 e RAG).
+    expect(mockedRetrieveChunks).toHaveBeenCalledTimes(2);
+
+    // Verifica args: ogni call deve avere contexts da pass2_strength.
+    const callArgs = mockedRetrieveChunks.mock.calls.map(c => c[0]);
+    for (const args of callArgs) {
+      expect(args.contexts).toEqual(["strength_db", "macro_periodization"]);
+      // Query attesa: subtype + (macroPhase opzionale). Nei sample no macroCtx → solo subtype.
+      expect(typeof args.query).toBe("string");
+      expect(args.query.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("calls retrieveRelevantChunks for cardio Z5 session with contexts=pass2_cardio", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonWithZ5)       // Pass-1
+      .mockResolvedValueOnce(cardioPass2Sample);   // Pass-2 cardio Z5
+
+    await runMultiPass(mkCtx());
+
+    // Solo 1 sessione cardio Z5 eligibile → 1 RAG call.
+    expect(mockedRetrieveChunks).toHaveBeenCalledTimes(1);
+    const args = mockedRetrieveChunks.mock.calls[0][0];
+    expect(args.contexts).toEqual(["cardio_intervals", "macro_periodization"]);
+    expect(args.query).toMatch(/Ripetute/i);
+  });
+
+  it("RAG query includes macroPhase when macroContext is provided", async () => {
+    const macroCtx = {
+      phase: "peak" as const,
+      weekNumber: 8,
+      totalWeeks: 12,
+      weeksToRace: 4,
+      volumeMultiplier: 1.0,
+      intensityHighPct: 35,
+      race: { name: "Half Marathon", sport: "running" },
+    };
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonWithZ5)
+      .mockResolvedValueOnce(cardioPass2Sample);
+
+    await runMultiPass(mkCtx({ macroContext: macroCtx }));
+
+    const args = mockedRetrieveChunks.mock.calls[0][0];
+    expect(args.query).toContain("peak");
+    expect(args.query).toContain("Ripetute");
+  });
+
+  it("does NOT call retrieveRelevantChunks for mobility/cardio Z1-Z3", async () => {
+    // skeletonSample include mobility e corsa Z2 — entrambe NON eligibili Pass-2 → no RAG.
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonSample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample);
+
+    await runMultiPass(mkCtx());
+
+    // 2 RAG calls (solo le strength), no calls per mobility o corsa Z2.
+    expect(mockedRetrieveChunks).toHaveBeenCalledTimes(2);
+  });
+
+  it("RAG retrieval failure is non-fatal (warning + continue)", async () => {
+    // Forziamo retrieve a throw → orchestrator deve continuare.
+    mockedRetrieveChunks.mockRejectedValue(new Error("network down"));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonSample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample);
+
+    const result = await runMultiPass(mkCtx());
+
+    // Plan ancora generato, sessions arricchite.
+    const upperSession = result.plan.weeks[0].sessions.find(s => s.type === "forza_upper");
+    expect(upperSession?.exercises).toBeDefined();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("RAG retrieval"));
+
+    warnSpy.mockRestore();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 4.1 OQ4.1.2 — token telemetry (estimate)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runMultiPass — Wave 4.1 OQ4.1.2 token estimate", () => {
+  it("Pass-1 PassLog has tokens > 0 (estimated)", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonSample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample);
+
+    const result = await runMultiPass(mkCtx());
+
+    const pass1Log = result.passLogs.find(l => l.pass === 1);
+    expect(pass1Log?.tokens).toBeDefined();
+    expect(pass1Log!.tokens!).toBeGreaterThan(0);
+  });
+
+  it("Pass-2 PassLog has tokens summed across all enriched sessions", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonSample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample);
+
+    const result = await runMultiPass(mkCtx());
+
+    const pass2Log = result.passLogs.find(l => l.pass === 2);
+    expect(pass2Log?.tokens).toBeDefined();
+    expect(pass2Log!.tokens!).toBeGreaterThan(0);
+  });
+
+  it("Pass-3 PassLog has tokens=undefined when no LLM repair (default)", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonSample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample);
+
+    const result = await runMultiPass(mkCtx());
+
+    const pass3Log = result.passLogs.find(l => l.pass === 3);
+    // Pass-3 deterministico → no LLM call → tokens undefined.
+    expect(pass3Log?.tokens).toBeUndefined();
+  });
+
+  it("skipPass2 mode: Pass-2 PassLog has tokens undefined", async () => {
+    mockedGenerateJSON.mockResolvedValueOnce(skeletonSample);
+
+    const result = await runMultiPass(mkCtx(), { skipPass2: true });
+
+    const pass2Log = result.passLogs.find(l => l.pass === 2);
+    expect(pass2Log?.tokens).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 4.1 OQ4.1.3 — parallelizzazione Pass-2 (cap=3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runMultiPass — Wave 4.1 OQ4.1.3 parallel Pass-2", () => {
+  /**
+   * Skeleton con 4 sessioni strength → forza il path multi-task. Verifichiamo:
+   * - tutte le call vengono effettuate (count finale corretto).
+   * - tempo totale < tempo seriale (4 task da 50ms → seriale ~200ms, parallel cap=3 ~100ms).
+   */
+  const skeleton4Strength = {
+    weeks: [
+      {
+        weekNumber: 1,
+        focus: "Forza intensa",
+        sessions: [
+          { day: "lun", type: "forza_upper", subtype: "Upper A", duration_min: 60, focus: "push" },
+          { day: "mar", type: "forza_gambe", subtype: "Lower A", duration_min: 60, focus: "squat" },
+          { day: "gio", type: "forza_upper", subtype: "Upper B", duration_min: 60, focus: "pull" },
+          { day: "ven", type: "forza_gambe", subtype: "Lower B", duration_min: 60, focus: "hinge" },
+        ],
+      },
+    ],
+    rationale: "4 sessioni forza split upper/lower",
+  };
+
+  it("invokes Pass-2 once per eligible session (4 strength → 4 calls)", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeleton4Strength)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample);
+
+    await runMultiPass(mkCtx());
+
+    // 1 Pass-1 + 4 Pass-2 strength = 5 totali.
+    expect(mockedGenerateJSON).toHaveBeenCalledTimes(5);
+  });
+
+  it("Pass-2 runs in parallel (4 tasks @ 50ms with cap=3 → significantly faster than serial)", async () => {
+    const TASK_MS = 50;
+    let pass1Called = false;
+
+    mockedGenerateJSON.mockImplementation(async () => {
+      if (!pass1Called) {
+        pass1Called = true;
+        return skeleton4Strength;
+      }
+      // Simula latency Pass-2.
+      await new Promise(resolve => setTimeout(resolve, TASK_MS));
+      return strengthPass2Sample;
+    });
+
+    const t0 = Date.now();
+    await runMultiPass(mkCtx());
+    const elapsed = Date.now() - t0;
+
+    // Seriale: 4 × 50ms = 200ms. Parallel cap=3: ceil(4/3) batches × 50ms = 100ms.
+    // Threshold conservativo: deve essere < 180ms (margin per noise CI).
+    expect(elapsed).toBeLessThan(180);
+  });
+
+  it("preserves session order in output plan after parallel exec", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeleton4Strength)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample);
+
+    const result = await runMultiPass(mkCtx());
+
+    const days = result.plan.weeks[0].sessions.map(s => s.day);
+    expect(days).toEqual(["lun", "mar", "gio", "ven"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 4.1 OQ4.1.4 — Pass-3 LLM-repair (FACOLTATIVO)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runMultiPass — Wave 4.1 OQ4.1.4 Pass-3 LLM repair", () => {
+  it("default (enablePass3Repair=undefined): Pass-3 NEVER calls LLM", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonSample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample);
+
+    await runMultiPass(mkCtx());
+
+    // 1 Pass-1 + 2 Pass-2 = 3. Pass-3 mai LLM di default.
+    expect(mockedGenerateJSON).toHaveBeenCalledTimes(3);
+  });
+
+  it("with enablePass3Repair=true but no errors: still NO LLM call (validator passed)", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonSample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample);
+
+    await runMultiPass(mkCtx(), { enablePass3Repair: true });
+
+    // Nessun error issue → repair branch NON triggers.
+    expect(mockedGenerateJSON).toHaveBeenCalledTimes(3);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 4.1 OQ4.1.5 — focus handover Pass-1 → Pass-2 strength
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runMultiPass — Wave 4.1 OQ4.1.5 focus handover", () => {
+  it("Pass-1 focus is propagated as sessionFocus to Pass-2 strength prompt", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonSample)
+      .mockResolvedValueOnce(strengthPass2Sample)
+      .mockResolvedValueOnce(strengthPass2Sample);
+
+    await runMultiPass(mkCtx());
+
+    // Le call Pass-2 sono quelle dopo la prima (Pass-1).
+    // Il prompt user deve contenere la stringa di focus dello skeleton ("upper push pesante" / "squat focus").
+    const pass2Calls = mockedGenerateJSON.mock.calls.slice(1);
+    const allUserPrompts = pass2Calls.map(c => (c[0] as { userPrompt: string }).userPrompt);
+
+    // Almeno una delle call deve includere il focus dell'upper.
+    const upperFocusFound = allUserPrompts.some(p => p.includes("upper push pesante"));
+    const lowerFocusFound = allUserPrompts.some(p => p.includes("squat focus"));
+    expect(upperFocusFound).toBe(true);
+    expect(lowerFocusFound).toBe(true);
+
+    // Verifica anche che il marker label "Focus della sessione" (introdotto nel prompt) sia presente.
+    const focusMarkerFound = allUserPrompts.some(p => p.includes("Focus della sessione"));
+    expect(focusMarkerFound).toBe(true);
+  });
+
+  it("Pass-1 focus is propagated as sessionFocus to Pass-2 cardio prompt (already wired)", async () => {
+    mockedGenerateJSON
+      .mockResolvedValueOnce(skeletonWithZ5)
+      .mockResolvedValueOnce(cardioPass2Sample);
+
+    await runMultiPass(mkCtx());
+
+    const pass2Calls = mockedGenerateJSON.mock.calls.slice(1);
+    const userPrompt = (pass2Calls[0][0] as { userPrompt: string }).userPrompt;
+
+    // skeletonWithZ5 ha focus="VO2max 6x800m" sulla sessione Z5.
+    expect(userPrompt).toContain("VO2max 6x800m");
+    expect(userPrompt).toContain("Focus dichiarato");
   });
 });

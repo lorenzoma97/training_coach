@@ -24,10 +24,12 @@ import type {
   OneRepMax,
   ExercisePerformance,
   ExerciseSet,
+  EquipmentTag,
 } from "../../types";
 import { EXERCISES, EXERCISES_BY_ID } from "../../catalog/exercises";
 import { profileAsPrompt, type Workout } from "../../diaryContext";
 import { normalizeEquipmentTags } from "../../equipment/equipmentNormalizer";
+import { walkAlternativeChain } from "../equipmentSubstitutor";
 
 /**
  * Contesto necessario per costruire il prompt Pass-2 forza.
@@ -46,6 +48,13 @@ export interface StrengthSessionContext {
   oneRepMaxes: OneRepMax[];
   /** Equipment dell'utente (da profile.equipment). Override di profile.equipment se serve. */
   equipment: string[];
+  /**
+   * Hint testuale "focus" della sessione dal Pass-1 (es. "upper push pesante").
+   * Propagato dall'orchestrator: Pass-1 popola `session.details` con `focus`
+   * dal LLM skeleton, Pass-2 lo passa come `sessionFocus` per orientare la
+   * scelta di pattern motori (push vs pull vs squat vs hinge).
+   */
+  sessionFocus?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -93,6 +102,13 @@ function isExerciseAvailable(ex: Exercise, equipSet: Set<string>): boolean {
  */
 export function strengthCatalogForPrompt(equipment: string[], pattern?: string): string {
   const equipSet = buildEquipmentSet(equipment);
+  // Wave 3.5 Reviewer-deferred minor #2: pre-filtriamo le alt[] di ciascun
+  // esercizio rispetto all'equipment dichiarato. Mostriamo SOLO gli alt che
+  // sono *direttamente* eseguibili dall'utente (hop=0 sul substitutor), così
+  // l'LLM non vede id "fantasma" non disponibili.
+  // EquipmentTag[] derivato dalla canonical Set: i tag in equipSet sono già
+  // normalizzati (es. "manubri" → "dumbbell") e includono "bodyweight" implicito.
+  const availableEquipment = Array.from(equipSet) as EquipmentTag[];
   let pool = EXERCISES.filter(ex => isExerciseAvailable(ex, equipSet));
   if (pattern) {
     pool = pool.filter(ex => ex.pattern === pattern);
@@ -126,12 +142,18 @@ export function strengthCatalogForPrompt(equipment: string[], pattern?: string):
 
   const lines = head.map(ex => {
     const muscles = ex.primaryMuscles.slice(0, 3).join(", ");
-    // Wave 3.5 (G8): mostriamo anche le alternatives (max 3 per token discipline).
-    // Serve all'LLM per scegliere il fallback corretto se l'esercizio "preferito"
-    // non è disponibile (anche se il filtro equipSet già esclude i non-disponibili,
-    // la trasparenza sulla chain aiuta nei rare edge dove un alt è ancora migliore
-    // del canonico per il subtype richiesto).
-    const altList = (ex.alternatives ?? []).slice(0, 3).join(", ");
+    // Wave 3.5 (G8) + Reviewer-deferred minor #2: mostriamo le alternatives
+    // PRE-FILTRATE per l'equipment dell'utente. Pre-filter rule: un alt è
+    // "disponibile" se walkAlternativeChain(altId, hop=0) lo risolve a SE STESSO
+    // (resolvedId === altId), cioè è direttamente eseguibile senza ulteriori swap.
+    // Risultato: l'LLM non vede id che non potrebbe comunque scegliere → niente
+    // confusione tra "alt teoriche" e "alt reali".
+    // Max 3 alt mostrate per token discipline (come pre-fix).
+    const filteredAlts = (ex.alternatives ?? []).filter(altId => {
+      const r = walkAlternativeChain(altId, availableEquipment, EXERCISES, 0);
+      return r !== null && r.resolvedId === altId;
+    });
+    const altList = filteredAlts.slice(0, 3).join(", ");
     const altPart = altList ? ` | alt: ${altList}` : "";
     return `- ${ex.id} | ${ex.name} | ${ex.level} | ${muscles}${altPart}`;
   });
@@ -388,7 +410,7 @@ function summarizeOneRepMaxes(orms: OneRepMax[]): string {
  * Token budget: ~3500-4500 token.
  */
 export function buildStrengthPassPrompt(ctx: StrengthSessionContext): string {
-  const { profile, session, recentStrengthHistory, ragContextStrength, oneRepMaxes, equipment } = ctx;
+  const { profile, session, recentStrengthHistory, ragContextStrength, oneRepMaxes, equipment, sessionFocus } = ctx;
 
   // Pattern hint dal subtype (best-effort): se subtype contiene "upper"/"lower"/etc.,
   // potremmo restringere il catalog. Per Wave 3.1 non filtriamo per pattern: mostriamo
@@ -402,6 +424,10 @@ export function buildStrengthPassPrompt(ctx: StrengthSessionContext): string {
 
   const macroPhaseLine = session.macroPhase
     ? `Fase macrociclo: ${session.macroPhase} (adatta intensità/volume di conseguenza).`
+    : "";
+
+  const focusLine = sessionFocus
+    ? `Focus della sessione (dal Pass-1): "${sessionFocus}" — orienta scelta esercizi e pattern motori in coerenza con questo focus.`
     : "";
 
   const ragBlock = ragContextStrength?.trim()
@@ -441,6 +467,7 @@ SESSIONE DA DETTAGLIARE (skeleton ricevuto da Pass 1):
 - Tipo: ${session.type}${session.subtype ? ` (subtype: ${session.subtype})` : ""}
 - Durata target: ${session.duration_min} min
 ${macroPhaseLine}
+${focusLine}
 `.trim();
 
   // Componiamo il prompt finale.

@@ -56,6 +56,11 @@ import type { Workout } from "../../diaryContext";
 import { buildPass1SkeletonPrompt, type SkeletonContext } from "./skeletonPrompt";
 import { buildStrengthPassPrompt } from "./strengthSessionPrompt";
 import { buildCardioIntervalPrompt } from "./cardioIntervalPrompt";
+import {
+  retrieveRelevantChunks,
+  chunksAsPromptBlock,
+  contextsForPass,
+} from "../../knowledge";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Feature flag — backward compat (default true).
@@ -153,7 +158,11 @@ export interface PassLog {
   pass: 1 | 2 | 3;
   ts: string;
   durationMs: number;
-  /** Token usati (se il provider li riporta — Wave 4.1: undefined). */
+  /**
+   * Token stimati (heuristic: ceil((prompt.length + response.length) / 4)).
+   * NON è una misura precisa del provider — è una stima coarse-grained
+   * utile per telemetria/budget tracking. Wave 4.1 OQ4.1.2.
+   */
   tokens?: number;
   /** Issue/warning rilevati nel pass (es. validator residui). */
   issues?: string[];
@@ -202,6 +211,65 @@ export interface OrchestratorOptions {
   userRequest?: string;
   /** expectedDayLabels da passare al validator (per finestre parziali). */
   expectedDayLabels?: string[];
+  /**
+   * Wave 4.1 OQ4.1.4 (FACOLTATIVO).
+   * Se true E ci sono issue di severity="error" non-fixate da correctedPlan,
+   * Pass-3 emette UN'ulteriore chiamata LLM per "riparare" il piano.
+   * Default false: nessun costo aggiuntivo. Attivare solo per generazioni
+   * "critiche" (es. piano iniziale) dove vogliamo ridurre warning residui.
+   */
+  enablePass3Repair?: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers locali — token estimation + bounded-concurrency Promise.allSettled.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Stima coarse-grained dei token consumati da una call LLM.
+ * Heuristic: ~4 caratteri per token (media inglese/italiano).
+ * NON è precisa: serve solo per telemetria + budget tracking, non per billing.
+ * Wave 4.1 OQ4.1.2.
+ */
+function estimateTokens(prompt: string, response: string): number {
+  return Math.ceil((prompt.length + response.length) / 4);
+}
+
+/**
+ * Promise.allSettled con concurrency cap (no nuova dipendenza).
+ * Usata per Pass-2: parallelizza le call LLM con tetto 3 (Gemini free tier
+ * 15 req/min — 3 concurrent + ~5s per call = ~36 req/min nel worst-case da
+ * orchestrator + chat + embedding altrove → resta sotto soglia).
+ * Wave 4.1 OQ4.1.3.
+ */
+async function pAllSettled<T>(
+  tasks: Array<() => Promise<T>>,
+  opts: { concurrency: number },
+): Promise<PromiseSettledResult<T>[]> {
+  const { concurrency } = opts;
+  if (concurrency <= 0) throw new Error("pAllSettled: concurrency must be > 0");
+
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  let next = 0;
+
+  async function worker() {
+    while (true) {
+      const idx = next++;
+      if (idx >= tasks.length) return;
+      try {
+        const value = await tasks[idx]();
+        results[idx] = { status: "fulfilled", value };
+      } catch (reason) {
+        results[idx] = { status: "rejected", reason };
+      }
+    }
+  }
+
+  const workerCount = Math.min(concurrency, tasks.length);
+  const workers: Array<Promise<void>> = [];
+  for (let i = 0; i < workerCount; i++) workers.push(worker());
+  await Promise.all(workers);
+  return results;
 }
 
 /**
@@ -226,11 +294,13 @@ export async function runMultiPass(
 
   // ───────────────────────────── Pass-1 ─────────────────────────────
   const t1Start = Date.now();
-  const skeletonPlan = await runPass1(ctx, opts);
+  const pass1Result = await runPass1(ctx, opts);
+  const skeletonPlan = pass1Result.plan;
   passLogs.push({
     pass: 1,
     ts: new Date().toISOString(),
     durationMs: Date.now() - t1Start,
+    tokens: pass1Result.tokens,
     note: `${skeletonPlan.weeks[0]?.sessions.length ?? 0} sessioni skeleton`,
   });
 
@@ -251,6 +321,7 @@ export async function runMultiPass(
       pass: 2,
       ts: new Date().toISOString(),
       durationMs: Date.now() - t2Start,
+      tokens: pass2Result.tokens,
       issues: pass2Result.warnings,
       note: `${pass2Result.detailedCount}/${pass2Result.eligibleCount} sessioni dettagliate`,
     });
@@ -261,24 +332,54 @@ export async function runMultiPass(
   const validation = runPass3(detailedPlan, ctx, opts);
   // Marker generationMode="multi" su nuovo oggetto (no mutation del validator output).
   let finalPlan: TrainingPlan = { ...validation.correctedPlan, generationMode: "multi" };
+  let pass3Tokens: number | undefined;
+  let repairNote = "";
 
-  // Se ci sono issue residue di tipo error (non-fixable da correctedPlan),
-  // appendiamo warning al rationale ma NON ri-chiamiamo l'LLM (token-cost).
-  if (!validation.ok) {
-    const errorIssues = validation.issues.filter(i => i.severity === "error").map(i => i.message);
-    finalPlan = {
-      ...finalPlan,
-      rationale: finalPlan.rationale +
-        "\n\n[Validator] Avvertenze residue: " + errorIssues.join(" | "),
-    };
+  // Issue residue di severity="error" (non risolte dal correctedPlan deterministico).
+  const errorIssues = validation.ok
+    ? []
+    : validation.issues.filter(i => i.severity === "error");
+
+  // Wave 4.1 OQ4.1.4 — branch FACOLTATIVO di LLM-repair.
+  // Default: append warning al rationale (no extra LLM call).
+  // Se enablePass3Repair=true E ci sono errorIssues → 1 chiamata LLM di repair.
+  if (errorIssues.length > 0) {
+    if (opts.enablePass3Repair) {
+      try {
+        const repairOut = await repairPlanLLM(
+          finalPlan,
+          errorIssues.map(i => i.message),
+        );
+        finalPlan = { ...repairOut.plan, generationMode: "multi" };
+        pass3Tokens = repairOut.tokens;
+        repairNote = " (repair LLM: applied)";
+      } catch (e) {
+        // Repair fallisce → fallback al comportamento di default (warning).
+        finalPlan = {
+          ...finalPlan,
+          rationale: finalPlan.rationale +
+            "\n\n[Validator] Avvertenze residue: " + errorIssues.map(i => i.message).join(" | "),
+        };
+        repairNote = ` (repair LLM fallito: ${(e as Error).message})`;
+      }
+    } else {
+      finalPlan = {
+        ...finalPlan,
+        rationale: finalPlan.rationale +
+          "\n\n[Validator] Avvertenze residue: " + errorIssues.map(i => i.message).join(" | "),
+      };
+    }
   }
 
   passLogs.push({
     pass: 3,
     ts: new Date().toISOString(),
     durationMs: Date.now() - t3Start,
+    tokens: pass3Tokens,
     issues: validation.issues.map(i => `${i.type}:${i.severity}`),
-    note: validation.ok ? "ok" : `${validation.issues.filter(i => i.severity === "error").length} errori, ${validation.issues.filter(i => i.severity === "warn").length} warning`,
+    // Il count "warning" esclude di proposito le issue "info" (Wave 3.5+:
+    // equipment_substituted è info-level, segnalazione neutra → non rumore di log).
+    note: (validation.ok ? "ok" : `${validation.issues.filter(i => i.severity === "error").length} errori, ${validation.issues.filter(i => i.severity === "warn").length} warning`) + repairNote,
   });
 
   return { plan: finalPlan, passLogs };
@@ -288,10 +389,16 @@ export async function runMultiPass(
 // Pass-1 implementation.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Risultato Pass-1: plan + tokens stimati (OQ4.1.2). */
+interface Pass1Result {
+  plan: TrainingPlan;
+  tokens: number;
+}
+
 async function runPass1(
   ctx: OrchestratorContext,
   opts: OrchestratorOptions,
-): Promise<TrainingPlan> {
+): Promise<Pass1Result> {
   const skeletonCtx: SkeletonContext = {
     profile: ctx.profile,
     goals: ctx.goals,
@@ -326,6 +433,11 @@ async function runPass1(
     maxTokens: 1500,
   });
 
+  // Stima tokens: prompt completo (system + user) + JSON response serializzato.
+  const fullPrompt = systemInstruction + "\n" + userPrompt;
+  const responseStr = JSON.stringify(raw);
+  const tokens = estimateTokens(fullPrompt, responseStr);
+
   const parsed = skeletonPlanSchema.safeParse(raw);
   if (!parsed.success) {
     throw new Error(`[passOrchestrator] Pass-1 Zod parse failed: ${parsed.error.message}`);
@@ -349,12 +461,15 @@ async function runPass1(
   const startDate = computeStartDateForMode(ctx.mode, ctx.currentPlan);
   const now = new Date();
   return {
-    generatedAt: now.toISOString(),
-    validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
-    startDate,
-    profileHash: planStateHash(ctx.profile, ctx.goals),
-    weeks,
-    rationale: parsed.data.rationale,
+    plan: {
+      generatedAt: now.toISOString(),
+      validUntil: new Date(now.getTime() + 14 * 24 * 3600 * 1000).toISOString(),
+      startDate,
+      profileHash: planStateHash(ctx.profile, ctx.goals),
+      weeks,
+      rationale: parsed.data.rationale,
+    },
+    tokens,
   };
 }
 
@@ -379,7 +494,21 @@ interface Pass2Result {
   warnings: string[];
   detailedCount: number;
   eligibleCount: number;
+  /** Somma tokens stimati per tutte le call Pass-2. */
+  tokens: number;
 }
+
+/** Risultato di una singola call Pass-2 (strength o cardio). */
+interface SessionEnrichmentResult {
+  enriched: PlannedSession;
+  tokens: number;
+}
+
+/**
+ * Wave 4.1 OQ4.1.3 — concurrency cap per le call LLM Pass-2.
+ * Gemini free tier = 15 req/min. Cap 3 lascia spazio a chat/embeddings paralleli.
+ */
+const PASS2_CONCURRENCY = 3;
 
 /**
  * Itera le sessioni del Pass-1 e arricchisce quelle che lo richiedono.
@@ -387,6 +516,9 @@ interface Pass2Result {
  * - corsa con zone >= 4 → Pass-2 cardio (intervalli strutturati).
  * - corsa con zone <= 3 → no Pass-2 (skeleton + details testuale sufficiente).
  * - sport / mobilita → no Pass-2 (skeleton sufficiente).
+ *
+ * Wave 4.1 OQ4.1.3 — call eligibili eseguite in parallelo con cap PASS2_CONCURRENCY.
+ * L'ordine delle sessioni nella plan finale resta deterministico (per-week, per-day).
  */
 async function runPass2(
   skeletonPlan: TrainingPlan,
@@ -395,51 +527,84 @@ async function runPass2(
   const warnings: string[] = [];
   let detailedCount = 0;
   let eligibleCount = 0;
+  let totalTokens = 0;
 
   // Carichiamo lo storico forza una volta sola: workouts forza ultimi 30gg.
   const recentStrengthHistory = extractStrengthHistory(ctx.recentDays);
   const oneRepMaxes = ctx.profile.oneRepMaxes ?? [];
   const equipment = ctx.profile.equipment ?? ["bodyweight"];
 
-  const newWeeks: PlanWeek[] = [];
-  for (const week of skeletonPlan.weeks) {
-    const newSessions: PlannedSession[] = [];
-    for (const session of week.sessions) {
-      const needsStrengthPass2 = isStrengthSession(session);
-      const needsCardioPass2 = isHighIntensityCardioSession(session);
+  // Step 1: enumera i task LLM (uno per sessione eligibile) con coordinate (w,s)
+  // → poi flat-parallel con pAllSettled, infine ricostruisci la plan preservando l'ordine.
+  type Task = {
+    weekIdx: number;
+    sessionIdx: number;
+    kind: "strength" | "cardio";
+    sessionLabel: string;
+    run: () => Promise<SessionEnrichmentResult>;
+  };
+  const tasks: Task[] = [];
 
-      if (needsStrengthPass2) {
+  skeletonPlan.weeks.forEach((week, wi) => {
+    week.sessions.forEach((session, si) => {
+      const label = `${session.day}/${session.subtype ?? session.type}`;
+      if (isStrengthSession(session)) {
         eligibleCount++;
-        try {
-          const enriched = await detailStrengthSession(session, ctx, recentStrengthHistory, oneRepMaxes, equipment);
-          newSessions.push(enriched);
-          detailedCount++;
-        } catch (e) {
-          warnings.push(`Pass-2 strength fallito per ${session.day}/${session.subtype ?? session.type}: ${(e as Error).message}`);
-          newSessions.push(session);
-        }
-      } else if (needsCardioPass2) {
+        tasks.push({
+          weekIdx: wi,
+          sessionIdx: si,
+          kind: "strength",
+          sessionLabel: label,
+          run: () => detailStrengthSession(session, ctx, recentStrengthHistory, oneRepMaxes, equipment),
+        });
+      } else if (isHighIntensityCardioSession(session)) {
         eligibleCount++;
-        try {
-          const enriched = await detailCardioSession(session, ctx);
-          newSessions.push(enriched);
-          detailedCount++;
-        } catch (e) {
-          warnings.push(`Pass-2 cardio fallito per ${session.day}/${session.subtype ?? session.type}: ${(e as Error).message}`);
-          newSessions.push(session);
-        }
-      } else {
-        newSessions.push(session);
+        tasks.push({
+          weekIdx: wi,
+          sessionIdx: si,
+          kind: "cardio",
+          sessionLabel: label,
+          run: () => detailCardioSession(session, ctx),
+        });
       }
+    });
+  });
+
+  // Step 2: parallel execution con concurrency cap.
+  const settled = await pAllSettled(
+    tasks.map(t => t.run),
+    { concurrency: PASS2_CONCURRENCY },
+  );
+
+  // Step 3: indicizza i risultati per coordinate (w,s) per ricostruzione O(1).
+  const enrichmentByCoord = new Map<string, SessionEnrichmentResult>();
+  settled.forEach((res, i) => {
+    const task = tasks[i];
+    if (res.status === "fulfilled") {
+      enrichmentByCoord.set(`${task.weekIdx}:${task.sessionIdx}`, res.value);
+      totalTokens += res.value.tokens;
+      detailedCount++;
+    } else {
+      const reason = res.reason instanceof Error ? res.reason.message : String(res.reason);
+      warnings.push(`Pass-2 ${task.kind} fallito per ${task.sessionLabel}: ${reason}`);
     }
-    newWeeks.push({ ...week, sessions: newSessions });
-  }
+  });
+
+  // Step 4: ricostruzione plan con sessioni arricchite/originali (ordine preservato).
+  const newWeeks: PlanWeek[] = skeletonPlan.weeks.map((week, wi) => ({
+    ...week,
+    sessions: week.sessions.map((session, si) => {
+      const hit = enrichmentByCoord.get(`${wi}:${si}`);
+      return hit ? hit.enriched : session;
+    }),
+  }));
 
   return {
     plan: { ...skeletonPlan, weeks: newWeeks },
     warnings,
     detailedCount,
     eligibleCount,
+    tokens: totalTokens,
   };
 }
 
@@ -476,7 +641,26 @@ async function detailStrengthSession(
   recentStrengthHistory: Workout[],
   oneRepMaxes: OneRepMax[],
   equipment: string[],
-): Promise<PlannedSession> {
+): Promise<SessionEnrichmentResult> {
+  // Wave 4.1 OQ4.1.1 — RAG wiring per Pass-2 strength.
+  // Query: combine subtype + macroPhase per orientare il retrieval su
+  // chunks `strength_db` + `macro_periodization`.
+  const ragQuery = [session.subtype, ctx.macroContext?.phase].filter(Boolean).join(" ").trim();
+  let ragContextStrength = "";
+  if (ragQuery) {
+    try {
+      const chunks = await retrieveRelevantChunks({
+        query: ragQuery,
+        contexts: contextsForPass("pass2_strength"),
+        topK: 3,
+      });
+      ragContextStrength = chunksAsPromptBlock(chunks);
+    } catch (e) {
+      // Retrieval failure is non-fatal: il prompt funziona senza RAG, accetta il fallback.
+      console.warn(`[passOrchestrator] RAG retrieval (strength) failed: ${(e as Error).message}`);
+    }
+  }
+
   const userPrompt = buildStrengthPassPrompt({
     profile: ctx.profile,
     session: {
@@ -487,9 +671,12 @@ async function detailStrengthSession(
       macroPhase: ctx.macroContext?.phase,
     },
     recentStrengthHistory,
-    ragContextStrength: "", // RAG retrieval cablato in Wave 4.2.
+    ragContextStrength,
     oneRepMaxes,
     equipment,
+    // Wave 4.1 OQ4.1.5 — focus handover Pass-1 → Pass-2.
+    // Pass-1 ha popolato session.details con il `focus` dello skeleton LLM.
+    sessionFocus: session.details,
   });
 
   // System instruction minimo per Pass-2: il prompt user e' gia' self-contained
@@ -501,6 +688,9 @@ async function detailStrengthSession(
     userPrompt,
     maxTokens: 1000,
   });
+
+  const responseStr = JSON.stringify(raw);
+  const tokens = estimateTokens(systemInstruction + "\n" + userPrompt, responseStr);
 
   const parsed = strengthPass2Schema.safeParse(raw);
   if (!parsed.success) {
@@ -519,7 +709,7 @@ async function detailStrengthSession(
     cue: e.cue,
   }));
 
-  return {
+  const enriched: PlannedSession = {
     ...session,
     exercises,
     details: parsed.data.details ?? session.details,
@@ -529,12 +719,41 @@ async function detailStrengthSession(
     progressionRule: parsed.data.progressionRule ?? session.progressionRule,
     macroPhase: ctx.macroContext?.phase,
   };
+
+  return { enriched, tokens };
 }
 
 async function detailCardioSession(
   session: PlannedSession,
   ctx: OrchestratorContext,
-): Promise<PlannedSession> {
+): Promise<SessionEnrichmentResult> {
+  // Wave 4.1 OQ4.1.1 — RAG wiring per Pass-2 cardio.
+  // Query: combine subtype + macroPhase per orientare il retrieval su
+  // chunks `cardio_intervals` + `macro_periodization`.
+  const ragQuery = [session.subtype, ctx.macroContext?.phase].filter(Boolean).join(" ").trim();
+  let ragContextCardio = "";
+  if (ragQuery) {
+    try {
+      const chunks = await retrieveRelevantChunks({
+        query: ragQuery,
+        contexts: contextsForPass("pass2_cardio"),
+        topK: 3,
+      });
+      ragContextCardio = chunksAsPromptBlock(chunks);
+    } catch (e) {
+      console.warn(`[passOrchestrator] RAG retrieval (cardio) failed: ${(e as Error).message}`);
+    }
+  }
+
+  // sessionFocus (Pass-1 → Pass-2) include sia il focus testuale che, se RAG ha
+  // prodotto chunks, una guida scientifica appendata. Il prompt builder cardio
+  // attualmente NON espone un campo separato per RAG → lo iniettiamo dentro
+  // sessionFocus separato da newline. Backward-compat: se ragContextCardio è
+  // vuoto, sessionFocus resta solo session.details.
+  const sessionFocusWithRag = ragContextCardio
+    ? `${session.details ?? ""}\n\n${ragContextCardio}`.trim()
+    : session.details;
+
   const userPrompt = buildCardioIntervalPrompt({
     profile: ctx.profile,
     session: {
@@ -545,7 +764,7 @@ async function detailCardioSession(
       zone: session.zone,
     },
     zones: ctx.zones,
-    sessionFocus: session.details, // dal Pass-1 abbiamo messo focus in details.
+    sessionFocus: sessionFocusWithRag,
   });
 
   const systemInstruction = "Sei un coach di endurance running. Output: SOLO JSON conforme allo SCHEMA OUTPUT, niente altro testo.";
@@ -555,6 +774,9 @@ async function detailCardioSession(
     userPrompt,
     maxTokens: 800,
   });
+
+  const responseStr = JSON.stringify(raw);
+  const tokens = estimateTokens(systemInstruction + "\n" + userPrompt, responseStr);
 
   const parsed = cardioPass2Schema.safeParse(raw);
   if (!parsed.success) {
@@ -571,7 +793,7 @@ async function detailCardioSession(
     cue: i.cue,
   }));
 
-  return {
+  const enriched: PlannedSession = {
     ...session,
     intervals,
     details: parsed.data.details ?? session.details,
@@ -581,6 +803,8 @@ async function detailCardioSession(
     progressionRule: parsed.data.progressionRule ?? session.progressionRule,
     macroPhase: ctx.macroContext?.phase,
   };
+
+  return { enriched, tokens };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -606,5 +830,98 @@ function runPass3(
     expectedDayLabels: opts.expectedDayLabels,
     readiness: ctx.readiness,
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pass-3 LLM-repair (Wave 4.1 OQ4.1.4 — FACOLTATIVO, opt-in via
+// OrchestratorOptions.enablePass3Repair=true).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Schema Zod minimo per l'output del repair: ci aspettiamo lo stesso TrainingPlan
+ * di input, ma con `weeks` aggiornate. Validazione lasciata leggera — l'LLM riceve
+ * il plan attuale come anchor e deve modificare SOLO i punti necessari.
+ *
+ * Nota: NON ri-validiamo deeply lo shape PlannedSession qui (il caller fa
+ * comunque trust ridotto sul repair). Se il parse fallisce, il caller cade in
+ * fallback warning come se enablePass3Repair=false.
+ */
+const repairResponseSchema = z.object({
+  weeks: z.array(z.object({
+    weekNumber: z.number().int().min(1),
+    focus: z.string(),
+    sessions: z.array(z.any()),
+  })).min(1),
+  rationale: z.string().optional(),
+});
+
+/** Risultato repair: plan corretto + tokens stimati. */
+interface RepairResult {
+  plan: TrainingPlan;
+  tokens: number;
+}
+
+/**
+ * Pass-3 repair: chiama UNA volta l'LLM con il piano corrente + lista issue
+ * `error` non-fixate. Output atteso: stesso shape TrainingPlan ma con le
+ * sessioni problematiche riparate.
+ *
+ * Token budget: ~1500-2500 token (prompt + response). Costo accettabile solo
+ * per generazioni "critiche" (initial). Attivare via opts.enablePass3Repair.
+ *
+ * Se il repair fallisce (LLM error / Zod parse / safety rejection), il caller
+ * deve fare fallback al comportamento di default (append warning al rationale).
+ */
+async function repairPlanLLM(
+  plan: TrainingPlan,
+  errorIssues: string[],
+): Promise<RepairResult> {
+  const issuesBlock = errorIssues.map((msg, i) => `${i + 1}. ${msg}`).join("\n");
+  const planJson = JSON.stringify({ weeks: plan.weeks, rationale: plan.rationale }, null, 2);
+
+  const userPrompt = [
+    "TASK: ripara il TrainingPlan seguente in modo che soddisfi i vincoli elencati.",
+    "Modifica SOLO i campi strettamente necessari per chiudere ogni issue.",
+    "NON cambiare giorni, durata, type/subtype delle sessioni — agisci su exercises/intervals/zone/rest_sec.",
+    "",
+    "ISSUE DA RISOLVERE (severity=error, non risolte dal validator deterministico):",
+    issuesBlock,
+    "",
+    "PLAN ATTUALE (JSON):",
+    planJson,
+    "",
+    "OUTPUT: un singolo JSON con shape { weeks, rationale } — niente markdown, niente commenti.",
+    "Aggiungi 1-2 frasi nel rationale per spiegare cosa hai modificato.",
+  ].join("\n");
+
+  const systemInstruction =
+    "Sei un Personal Trainer professionista che ripara piani di allenamento. " +
+    "Output: SOLO JSON conforme allo shape richiesto, niente altro testo.";
+
+  const raw = await generateJSON<unknown>({
+    systemInstruction,
+    userPrompt,
+    maxTokens: 2000,
+  });
+
+  const responseStr = JSON.stringify(raw);
+  const tokens = estimateTokens(systemInstruction + "\n" + userPrompt, responseStr);
+
+  const parsed = repairResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`Pass-3 repair Zod parse: ${parsed.error.message}`);
+  }
+
+  // Trust ridotto sul payload `sessions` (z.any): non rivalidiamo shape granulare
+  // qui — l'orchestrator si fida che l'LLM rispetti la shape. Eventuali shape
+  // residui verranno catturati alla successiva persistenza del plan (zod schema
+  // alto-livello già esistente nel plan validator).
+  const repairedPlan: TrainingPlan = {
+    ...plan,
+    weeks: parsed.data.weeks as PlanWeek[],
+    rationale: parsed.data.rationale ?? plan.rationale,
+  };
+
+  return { plan: repairedPlan, tokens };
 }
 

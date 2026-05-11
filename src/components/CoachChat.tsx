@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { streamChat, hasApiKey } from "../lib/gemini";
+import { useOnline } from "../lib/useOnline";
 import { PROMPTS } from "../lib/coach/systemPrompts";
 import { buildCoachContext, profileAsPrompt, goalsAsPrompt, planAsPrompt } from "../lib/diaryContext";
 import { getJSON, setJSON } from "../lib/storage";
@@ -9,6 +10,7 @@ import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, 
 import { computeZonesContext } from "../lib/coach/zones";
 import { events } from "../lib/events";
 import { sanitizePII } from "../lib/promptSanitizer";
+import { purgeChatHistoryPII } from "../lib/coach/chatHistoryPurge";
 import RichText from "./RichText";
 
 type Msg = { id: string; role: "user" | "model"; content: string };
@@ -56,6 +58,10 @@ export default function CoachChat() {
   const [error, setError] = useState("");
   const [waitingFirstToken, setWaitingFirstToken] = useState(false);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  // Reattivo a online/offline → disabilita send con tooltip. Il listener
+  // window addEventListener('offline') sotto setta anche un error testuale,
+  // ma il bottone disabled è un cue UX più immediato.
+  const online = useOnline();
   // Aree dolore monitorate dal profilo (per prompt dinamico "Come sta il X?").
   // Caricate al mount + reattivo a profile:updated (toggle in ProfileEditor).
   const [painAreas, setPainAreas] = useState<string[]>([]);
@@ -92,7 +98,29 @@ export default function CoachChat() {
   };
 
   useEffect(() => {
-    void loadHistory();
+    // Wave Privacy — purge una-tantum della history pre-Wave Privacy.
+    // Flag idempotente in localStorage: una sola esecuzione per device.
+    // Awaitiamo PRIMA di loadHistory così la UI mostra direttamente la
+    // versione redatta (no flash del testo originale per ~1 frame).
+    (async () => {
+      const PURGE_FLAG = "chat-history-pii-purged-v1";
+      try {
+        if (localStorage.getItem(PURGE_FLAG) === null) {
+          const report = await purgeChatHistoryPII();
+          localStorage.setItem(PURGE_FLAG, new Date().toISOString());
+          if (report.purged > 0) {
+            console.info(`[CoachChat] PII purge: ${report.purged}/${report.total} messaggi user redatti.`);
+          }
+        }
+      } catch (e) {
+        // Best-effort: anche se la purge fallisce, set il flag per evitare
+        // loop infiniti di tentativi al mount. La sanitizzazione runtime
+        // (sanitizePII su send) protegge comunque i nuovi messaggi.
+        console.warn("[CoachChat] PII purge fallita (continuo comunque):", e);
+        try { localStorage.setItem(PURGE_FLAG, new Date().toISOString()); } catch { /* ignore */ }
+      }
+      void loadHistory();
+    })();
     // Consumo pending-chat-prompt al mount (deep-link da TrainingPlanView).
     // CoachChat può essere smontato quando l'evento chat:openWith è emesso
     // (utente su sub-tab "plan" → click "Chiedi al coach" → CoachPage switcha
@@ -488,13 +516,22 @@ DOMANDA UTENTE: ${sanitizePII(text)}
             cursor: "pointer",
           }}>■</button>
         ) : (
-          <button onClick={() => send(input)} disabled={!input.trim()} aria-label="Invia messaggio" style={{
-            padding: "12px 18px", minWidth: "56px", minHeight: "44px",
-            background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
-            border: "none", borderRadius: "12px", color: "#FFF",
-            fontWeight: 700, fontSize: "18px",
-            cursor: "pointer", opacity: !input.trim() ? 0.5 : 1,
-          }}>→</button>
+          <button
+            onClick={() => send(input)}
+            disabled={!input.trim() || !online}
+            aria-label={!online ? "Offline — riconnetti per chiedere al coach" : "Invia messaggio"}
+            title={!online ? "Offline — riconnetti per chiedere al coach" : undefined}
+            style={{
+              padding: "12px 18px", minWidth: "56px", minHeight: "44px",
+              background: !online
+                ? "#475569"
+                : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+              border: "none", borderRadius: "12px", color: "#FFF",
+              fontWeight: 700, fontSize: "18px",
+              cursor: !online ? "not-allowed" : "pointer",
+              opacity: (!input.trim() || !online) ? 0.5 : 1,
+            }}
+          >→</button>
         )}
       </div>
 

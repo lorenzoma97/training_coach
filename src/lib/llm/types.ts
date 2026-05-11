@@ -1,4 +1,4 @@
-export type ProviderId = "gemini" | "openai" | "anthropic";
+export type ProviderId = "gemini" | "openai" | "anthropic" | "ollama";
 
 export interface LLMConfig {
   provider: ProviderId;

@@ -14,6 +14,7 @@ import {
   validateEquipmentMismatch,
   expectedRepRangeForPct1RM,
 } from "../strengthValidators";
+import { validatePlan } from "../../planValidator";
 import type {
   TrainingPlan,
   PlannedExercise,
@@ -519,7 +520,9 @@ describe("validateEquipmentMismatch (G8)", () => {
     // Post fix BLOCKER BFS: catalog reale deve degradare a bodyweight, mai mismatch.
     expect(subs.length).toBe(1);
     expect(miss.length).toBe(0);
-    expect(subs[0].severity).toBe("warn");
+    // Wave 3.5 polish: equipment_substituted è severity "info" (no problem, solo
+    // segnalazione neutra del swap — vedi Reviewer-deferred minor #1).
+    expect(subs[0].severity).toBe("info");
   });
 
   it("non-week-1 sessions ignored (solo settimana corrente)", () => {
@@ -539,5 +542,34 @@ describe("validateEquipmentMismatch (G8)", () => {
     const ctx = makeCtx([]);
     const issues = validateEquipmentMismatch(plan, ctx);
     expect(issues).toEqual([]);
+  });
+
+  it("issue 'info' (equipment_substituted) NON rompe validation.ok (resta true)", () => {
+    // Scenario polish Wave 3.5: l'utente bodyweight-only riceve una sessione con
+    // back-squat-barbell. Il substitutor degrada a bodyweight-squat e emette
+    // un'unica issue "equipment_substituted" severity=info. Siccome NON è error,
+    // validatePlan deve ritornare ok=true: le info sono segnalazioni neutre.
+    // Profile con budget ampio per evitare trigger di weekly_volume_exceeds_availability.
+    const profile: UserProfile = {
+      ...baseProfile,
+      equipment: [],
+      weekly_availability: { days: 7, hoursPerSession: 2 },
+    };
+    const session: PlannedSession = {
+      day: "lun",
+      type: "forza_gambe",
+      duration_min: 30,
+      details: "test",
+      rationale: "test",
+      exercises: [makeEx({ exerciseId: "back-squat-barbell" })],
+    };
+    const plan = makePlan([{ weekNumber: 1, sessions: [session] }]);
+    const result = validatePlan(plan, profile, [], { expectedDayLabels: ["lun"] });
+    const subs = result.issues.filter(i => i.type === "equipment_substituted");
+    expect(subs.length).toBeGreaterThan(0);
+    expect(subs.every(i => i.severity === "info")).toBe(true);
+    // Nessun "error" → ok=true. Anche se ci sono info, ok resta true.
+    expect(result.issues.filter(i => i.severity === "error")).toEqual([]);
+    expect(result.ok).toBe(true);
   });
 });
