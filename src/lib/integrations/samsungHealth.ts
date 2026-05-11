@@ -62,26 +62,71 @@ interface ImportLogEntry {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Mapping case-insensitive Samsung exercise type → mappedType app.
+ * Mapping Samsung exercise_type → mappedType app + human label.
  *
- * Samsung Health usa stringhe localizzate (Inglese di default; altri locali
- * possono produrre stringhe diverse). v2 supporta solo l'inglese; le varianti
- * sconosciute cadono nel default "sport" con warn UI.
+ * REALTÀ POST-2026-05 (export reale verificato su Lorenzo lolo7):
+ * Samsung Health esporta `exercise_type` come **CODICE NUMERICO** (es. 1002,
+ * 10007, 15005), NON come stringa "Running". Le release vecchie usavano
+ * stringhe localizzate; teniamo entrambi i formati per backward compat.
  *
- * Aggiornare quando emergono nuovi tipi dai log telemetry. Non hardcodare in
- * altri moduli: il contract Wave 3.2 dice che questo è l'unico mapping.
+ * Codici noti (community + fonti pubbliche Samsung Tizen SDK):
+ *  - 1001 = Walking, 1002 = Running, 1003 = Treadmill walking
+ *  - 4xxx = Swimming family
+ *  - 6002 = Cycling, 6003 = MTB, 6004 = Indoor cycling
+ *  - 10007 = Hiking (frequente: tipica seconda attività dopo running/walking)
+ *  - 13xxx = Various sports (climbing, etc.)
+ *  - 14xxx = Team sports (basketball, baseball, ...)
+ *  - 15xxx = Racquet sports (15001=Tennis, 15002=Badminton, 15004=Table Tennis,
+ *            15005=Squash/Padel, 15006=Volleyball)
+ *  - 0 = "Other" generico
+ *
+ * Aggiornare quando emergono nuovi codici. Non hardcodare in altri moduli.
  */
 const SAMSUNG_TYPE_MAP: Record<string, WearableSample["mappedType"]> = {
+  // ── CODICI NUMERICI (formato post-2026) ──
+  "1001": "mobilita",      // Walking
+  "1002": "corsa",         // Running
+  "1003": "mobilita",      // Treadmill walking
+  "1004": "corsa",         // Treadmill running
+  "4001": "sport",         // Swimming (laps)
+  "4002": "sport",         // Open water swim
+  "4003": "sport",         // Indoor swim
+  "4004": "sport",         // Swimming variant
+  "6002": "sport",         // Cycling
+  "6003": "sport",         // Mountain biking
+  "6004": "sport",         // Indoor cycling / spinning
+  "10001": "mobilita",     // Hiking
+  "10002": "sport",        // Cardio workout (machine)
+  "10003": "sport",        // Aerobics
+  "10004": "mobilita",     // Yoga
+  "10005": "mobilita",     // Stretching
+  "10006": "mobilita",     // Pilates
+  "10007": "mobilita",     // Hiking/Trekking outdoor
+  "11007": "sport",        // Soccer (Football)
+  "13001": "sport",        // Climbing
+  "14001": "sport",        // Basketball
+  "14002": "sport",        // Baseball
+  "14004": "sport",        // Volleyball
+  "14008": "sport",        // American football
+  "15001": "sport",        // Tennis
+  "15002": "sport",        // Badminton
+  "15003": "sport",        // Squash
+  "15004": "sport",        // Table tennis
+  "15005": "sport",        // Padel / Racquetball
+  "15006": "sport",        // Volleyball indoor
+  "16002": "sport",        // Skiing
+  "0": "sport",            // "Other" — fallback Samsung
+  // ── STRINGHE LOCALIZZATE (formato pre-2026, preservato per back-compat) ──
   // Corsa
   "running": "corsa",
   "trail running": "corsa",
   "treadmill running": "corsa",
   "track running": "corsa",
-  // Walking / hiking → mobilita (intensità bassa, recovery)
+  // Walking / hiking → mobilita
   "walking": "mobilita",
   "hiking": "mobilita",
   "treadmill walking": "mobilita",
-  // Forza (default forza_gambe; user può riclassificare upper in UI)
+  // Forza
   "strength training": "forza_gambe",
   "weight training": "forza_gambe",
   "weightlifting": "forza_gambe",
@@ -111,19 +156,46 @@ const SAMSUNG_TYPE_MAP: Record<string, WearableSample["mappedType"]> = {
   "foam rolling": "mobilita",
 };
 
+/** Map separato CODICE → label human-readable (per UI display). */
+const SAMSUNG_CODE_TO_LABEL: Record<string, string> = {
+  "0": "Altro", "1001": "Camminata", "1002": "Corsa", "1003": "Tapis roulant cammino",
+  "1004": "Tapis roulant corsa", "4001": "Nuoto", "4002": "Nuoto in acque libere",
+  "4003": "Nuoto indoor", "4004": "Nuoto", "6002": "Bicicletta",
+  "6003": "Mountain bike", "6004": "Spinning", "10001": "Trekking",
+  "10002": "Cardio macchina", "10003": "Aerobica", "10004": "Yoga",
+  "10005": "Stretching", "10006": "Pilates", "10007": "Trekking outdoor",
+  "11007": "Calcio", "13001": "Arrampicata", "14001": "Basket",
+  "14002": "Baseball", "14004": "Pallavolo", "14008": "Football americano",
+  "15001": "Tennis", "15002": "Badminton", "15003": "Squash",
+  "15004": "Tennis tavolo", "15005": "Padel", "15006": "Pallavolo indoor",
+  "16002": "Sci",
+};
+
+/** Converte codice Samsung in label leggibile. Non-codice → ritorna l'input. */
+export function samsungTypeToHumanLabel(rawType: string): string {
+  const t = rawType.trim();
+  if (/^\d+$/.test(t) && SAMSUNG_CODE_TO_LABEL[t]) return SAMSUNG_CODE_TO_LABEL[t];
+  return rawType;
+}
+
 /**
  * Mapping canonico Samsung exercise type → app mappedType.
+ * Accetta sia codice numerico ("1002") sia stringa ("Running").
  * Default → "sport" (catch-all). Caller può controllare unrecognizedTypes
  * nel preview per warn UI.
  */
 export function mapSamsungTypeToApp(rawType: string): WearableSample["mappedType"] {
-  const key = rawType.trim().toLowerCase();
-  return SAMSUNG_TYPE_MAP[key] ?? "sport";
+  const t = rawType.trim();
+  // Codici numerici Samsung NON vanno lowercase
+  if (/^\d+$/.test(t)) return SAMSUNG_TYPE_MAP[t] ?? "sport";
+  return SAMSUNG_TYPE_MAP[t.toLowerCase()] ?? "sport";
 }
 
 /** Predicato pubblico: il tipo è nel mapping table o cade nel default? */
 export function isRecognizedSamsungType(rawType: string): boolean {
-  return SAMSUNG_TYPE_MAP[rawType.trim().toLowerCase()] !== undefined;
+  const t = rawType.trim();
+  if (/^\d+$/.test(t)) return SAMSUNG_TYPE_MAP[t] !== undefined;
+  return SAMSUNG_TYPE_MAP[t.toLowerCase()] !== undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -627,11 +699,16 @@ function uid(): string {
  *  - rawType             → tipo nativo Samsung (debug/audit)
  */
 export function sampleToWorkout(sample: WearableSample): Workout {
+  // tipo: il subtype/label human va nel campo "tipo" (per UI) oltre che
+  // in rawTypeLabel per audit. Es. rawType "1002" → tipo "Corsa".
+  const humanLabel = samsungTypeToHumanLabel(sample.rawType);
   const fields: Record<string, unknown> = {
     source: "samsung_health",
     dedupKey: sample.dedupKey,
     startedAt: sample.startedAt,
     rawType: sample.rawType,
+    rawTypeLabel: humanLabel,
+    tipo: humanLabel, // per il form diario (subtype display)
     duration_min: sample.duration_min,
   };
   if (sample.hrAvg !== undefined) fields.fc_media = sample.hrAvg;

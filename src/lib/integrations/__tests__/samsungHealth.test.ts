@@ -11,6 +11,7 @@ import JSZip from "jszip";
 import {
   mapSamsungTypeToApp,
   isRecognizedSamsungType,
+  samsungTypeToHumanLabel,
   computeDedupKey,
   findMatchingWorkout,
   parseCsvText,
@@ -74,6 +75,54 @@ describe("mapSamsungTypeToApp", () => {
     expect(isRecognizedSamsungType("Underwater basket weaving")).toBe(false);
     // Sanity: i tipi noti SONO riconosciuti
     expect(isRecognizedSamsungType("Running")).toBe(true);
+  });
+
+  // ── Format post-2026: codici numerici (verificato su export reale Lorenzo) ──
+  it("codice 1002 (Running) → corsa", () => {
+    expect(mapSamsungTypeToApp("1002")).toBe("corsa");
+    expect(isRecognizedSamsungType("1002")).toBe(true);
+  });
+
+  it("codice 1001 (Walking) → mobilita", () => {
+    expect(mapSamsungTypeToApp("1001")).toBe("mobilita");
+  });
+
+  it("codice 10007 (Hiking outdoor) → mobilita", () => {
+    expect(mapSamsungTypeToApp("10007")).toBe("mobilita");
+  });
+
+  it("codici 15xxx (racquet sport) → sport", () => {
+    expect(mapSamsungTypeToApp("15001")).toBe("sport"); // Tennis
+    expect(mapSamsungTypeToApp("15005")).toBe("sport"); // Padel
+  });
+
+  it("codice 6002 (Cycling) → sport", () => {
+    expect(mapSamsungTypeToApp("6002")).toBe("sport");
+  });
+
+  it("codice 0 ('Other' fallback Samsung) → sport, riconosciuto", () => {
+    expect(mapSamsungTypeToApp("0")).toBe("sport");
+    expect(isRecognizedSamsungType("0")).toBe(true);
+  });
+
+  it("codice numerico sconosciuto (es. 99999) → sport (default, non riconosciuto)", () => {
+    expect(mapSamsungTypeToApp("99999")).toBe("sport");
+    expect(isRecognizedSamsungType("99999")).toBe(false);
+  });
+
+  it("samsungTypeToHumanLabel converte codici noti in label italiano", () => {
+    expect(samsungTypeToHumanLabel("1002")).toBe("Corsa");
+    expect(samsungTypeToHumanLabel("10007")).toBe("Trekking outdoor");
+    expect(samsungTypeToHumanLabel("15005")).toBe("Padel");
+  });
+
+  it("samsungTypeToHumanLabel passa stringa non-codice as-is", () => {
+    expect(samsungTypeToHumanLabel("Running")).toBe("Running");
+    expect(samsungTypeToHumanLabel("Custom Activity")).toBe("Custom Activity");
+  });
+
+  it("samsungTypeToHumanLabel su codice sconosciuto → ritorna codice raw", () => {
+    expect(samsungTypeToHumanLabel("99999")).toBe("99999");
   });
 });
 
@@ -382,6 +431,55 @@ describe("parseSamsungHealthZip (smoke)", () => {
     expect(samples.length).toBe(1);
     expect(samples[0].mappedType).toBe("corsa");
     expect(samples[0].duration_min).toBe(30);
+  });
+
+  // ── Format reale post-2026 (verificato su export Lorenzo lolo7) ──
+  it("real-2026 format: skip riga 1 metadata + codici numerici + UTF-8 BOM + duration ms + header com.samsung.health prefix", async () => {
+    // Fixture realistica: prima riga = metadato app Samsung; seconda = header
+    // con prefix lungo; dati con codice numerico exercise_type 1002 (Running).
+    // duration in MILLISECONDI come Samsung produce davvero.
+    const csv = [
+      "com.samsung.shealth.exercise,6320001,17",
+      "com.samsung.health.exercise.start_time,com.samsung.health.exercise.exercise_type,com.samsung.health.exercise.duration,com.samsung.health.exercise.mean_heart_rate,com.samsung.health.exercise.max_heart_rate,com.samsung.health.exercise.distance,com.samsung.health.exercise.calorie",
+      // 24 minuti = 1442877 ms (sample reale Lorenzo)
+      "2023-11-11 09:24:21.285,1002,1442877,160.0,184.0,3101.814,269.409",
+      // 45 min trekking outdoor
+      "2024-03-15 10:00:00.000,10007,2700000,128,145,5500.0,420.0",
+      // padel 1h
+      "2024-04-20 19:00:00.000,15005,3600000,142,178,,520.0",
+    ].join("\n");
+    const zipBlob = await buildExerciseZip(csv);
+    const samples = await parseSamsungHealthZip(zipBlob);
+    expect(samples.length).toBe(3);
+    // Codice 1002 → Running → corsa
+    expect(samples[0].mappedType).toBe("corsa");
+    expect(samples[0].rawType).toBe("1002");
+    expect(samples[0].duration_min).toBe(24); // 1442877ms / 60000 ≈ 24
+    expect(samples[0].hrAvg).toBe(160);
+    expect(samples[0].distance_km).toBeCloseTo(3.1, 1);
+    // Codice 10007 → Trekking outdoor → mobilita
+    expect(samples[1].mappedType).toBe("mobilita");
+    expect(samples[1].duration_min).toBe(45);
+    // Codice 15005 → Padel → sport
+    expect(samples[2].mappedType).toBe("sport");
+    expect(samples[2].rawType).toBe("15005");
+  });
+
+  it("real-2026 format: sampleToWorkout usa human label per codice numerico", () => {
+    const sample: WearableSample = {
+      source: "samsung_health",
+      startedAt: "2024-04-20T19:00:00.000Z",
+      duration_min: 60,
+      rawType: "15005", // Padel codice
+      mappedType: "sport",
+      dedupKey: "test",
+    };
+    const w = sampleToWorkout(sample);
+    expect(w.fields).toMatchObject({
+      tipo: "Padel",        // human label, non "15005"
+      rawType: "15005",     // preservato per audit
+      rawTypeLabel: "Padel",
+    });
   });
 
   it("sampleToWorkout produce shape Workout coerente", () => {
