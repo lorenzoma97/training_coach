@@ -1,6 +1,7 @@
 import { getJSON } from "./storage";
 import type { UserProfile, UserGoal, TrainingPlan, ExercisePerformance } from "./types";
 import { stripInlineHRRange } from "./coach/zones";
+import { sanitizePII, sanitizePIIList } from "./promptSanitizer";
 
 const WORKOUT_LABELS: Record<string, string> = {
   corsa: "Corsa",
@@ -198,7 +199,7 @@ export function formatDaysForLLM(
       if (d.fatigue) parts.push(`stanchezza ${d.fatigue}/10`);
       if (d.morningHR) parts.push(`FC riposo mattut. ${d.morningHR}bpm`);
       if (d.morningFreshness) parts.push(`freschezza ${d.morningFreshness}/10`);
-      if (d.meds) parts.push(`farmaci: ${d.meds}`);
+      if (d.meds) parts.push(`farmaci: ${sanitizePII(String(d.meds))}`);
       if (d.bodyFat) parts.push(`BF ${d.bodyFat}%`);
       if (d.muscleMass) parts.push(`massa musc ${d.muscleMass}`);
       if (d.bodyWater) parts.push(`TBW ${d.bodyWater}%`);
@@ -248,7 +249,7 @@ export function formatDaysForLLM(
         }
       }
       if (w.rpe) lines.push(`    RPE ${w.rpe}/10`);
-      if (w.notes) lines.push(`    note: ${w.notes}`);
+      if (w.notes) lines.push(`    note: ${sanitizePII(w.notes)}`);
     }
   }
   return lines.join("\n");
@@ -315,13 +316,13 @@ export function profileAsPrompt(p: UserProfile | null): string {
     `Disponibilità: ${p.weekly_availability.days} giorni/settimana, max ${minPerSession} min/sessione.`,
     intensityLine,
     availableDaysLine,
-    p.injuries.length ? `Infortuni attivi: ${p.injuries.join("; ")}.` : "Nessun infortunio attivo riportato.",
+    p.injuries.length ? `Infortuni attivi: ${sanitizePIIList(p.injuries).join("; ")}.` : "Nessun infortunio attivo riportato.",
     trackingLine,
-    p.meds ? `Farmaci: ${p.meds}.` : "",
+    p.meds ? `Farmaci: ${sanitizePII(p.meds)}.` : "",
     p.equipment.length
       ? `Attrezzatura disponibile: ${p.equipment.join(", ")}.`
       : "Nessuna attrezzatura dichiarata (solo corpo libero, corsa outdoor, mobilità).",
-    p.notes ? `Note: ${p.notes}.` : "",
+    p.notes ? `Note: ${sanitizePII(p.notes)}.` : "",
   ].filter(Boolean).join(" ");
 }
 
@@ -334,7 +335,7 @@ export function goalsAsPrompt(goals: UserGoal[]): string {
   return active
     .map((g, i) => {
       const prio = g.priority ? ` [priorità: ${g.priority}]` : "";
-      return `${i + 1}. ${g.smartDescription} — KPI: ${g.kpi.metric} ${g.kpi.target} entro ${g.kpi.deadline}.${prio}`;
+      return `${i + 1}. ${sanitizePII(g.smartDescription)} — KPI: ${g.kpi.metric} ${g.kpi.target} entro ${g.kpi.deadline}.${prio}`;
     })
     .join("\n");
 }

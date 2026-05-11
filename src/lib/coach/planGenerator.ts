@@ -9,6 +9,7 @@ import { computeZonesContext } from "./zones";
 import { workoutSubtypesForPrompt, isCanonicalSubtype } from "../workoutCatalog";
 import { loadActiveMacroContext } from "./macroLookup";
 import { getCurrentReadiness } from "./readinessScoring";
+import { sanitizePII } from "../promptSanitizer";
 
 // WHY: appiattisce i giorni del diario nella shape attesa dal validator per
 // lo spike check Johansen (14gg). Senza questo i call-site passavano [] e lo
@@ -606,7 +607,7 @@ ULTIMI 14 GIORNI REALI DAL DIARIO:
 ${recentDaysText}
 
 RICHIESTA SPECIFICA DELL'UTENTE:
-"${userRequest}"
+"${sanitizePII(userRequest)}"
 
 Il tuo compito: adattare il piano corrente in base ALLA RICHIESTA dell'utente, interpretandola sensatamente.
 Esempi di richieste possibili:

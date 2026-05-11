@@ -2,6 +2,7 @@ import { z } from "zod";
 import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt } from "../diaryContext";
+import { sanitizePII } from "../promptSanitizer";
 import type { UserProfile, FeasibilityCheck } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 
@@ -78,7 +79,7 @@ PROFILO UTENTE:
 ${profileAsPrompt(profile)}
 
 OBIETTIVO PROPOSTO DALL'UTENTE:
-"${goalDescription}"
+"${sanitizePII(goalDescription)}"
 
 Valuta se è realistico. Se non lo è, proponi una versione SMART ragionevole.
 Se è già realistico e SMART, "realistic" = true e "counterProposal" confermerà l'obiettivo originale in forma SMART.

@@ -8,6 +8,7 @@ import { retrieveRelevantChunks, chunksAsPromptBlock } from "../lib/knowledge";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "../lib/coach/promptBuilder";
 import { computeZonesContext } from "../lib/coach/zones";
 import { events } from "../lib/events";
+import { sanitizePII } from "../lib/promptSanitizer";
 import RichText from "./RichText";
 
 type Msg = { id: string; role: "user" | "model"; content: string };
@@ -263,11 +264,16 @@ ULTIMI GIORNI:
 ${ctx.recentDaysText}
 [FINE CONTESTO]
 
-DOMANDA UTENTE: ${text}
+DOMANDA UTENTE: ${sanitizePII(text)}
 `.trim();
 
       setMessages(m => [...m, { id: modelMsgId, role: "model", content: "" }]);
-      const history = newMessages.slice(0, -1).map(m => ({ role: m.role, parts: m.content }));
+      // Wave Privacy: sanitize PII anche nello storico user-side. I messaggi
+      // "model" sono LLM-generated → non contengono PII dell'utente.
+      const history = newMessages.slice(0, -1).map(m => ({
+        role: m.role,
+        parts: m.role === "user" ? sanitizePII(m.content) : m.content,
+      }));
       for await (const chunk of streamChat({
         systemInstruction,
         history,
