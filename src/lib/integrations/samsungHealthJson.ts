@@ -168,7 +168,13 @@ function parseNumber(v: string | undefined): number | undefined {
 // HRV: CSV → aggregato per giorno
 // ─────────────────────────────────────────────────────────────────────────────
 
-const HRV_CSV_PATTERN = /com\.samsung\.shealth\.hrv(?:\..+)?\.csv$/i;
+// CRITICO — bug fix dopo verifica export reale 2026-05-09:
+// Samsung esporta HRV come `com.samsung.HEALTH.hrv.<timestamp>.csv` (NOT
+// `shealth`). Il regex precedente con `shealth\.hrv` non trovava MAI il
+// file HRV reale → readiness score sempre senza HRV component → sleep+subj
+// only. Accettiamo entrambi i namespace per backward compat con eventuali
+// versioni vecchie/diverse.
+const HRV_CSV_PATTERN = /com\.samsung\.(?:shealth|health)\.hrv\.\d+\.csv$/i;
 
 /**
  * Parsa il contenuto testuale del CSV HRV in sample-level entries.
@@ -307,7 +313,13 @@ export async function parseSamsungHrvFromZip(
 // Sleep: CSV → aggregato per giorno
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SLEEP_CSV_PATTERN = /com\.samsung\.shealth\.sleep(?:\..+)?\.csv$/i;
+// Pattern stretto: SOLO sleep summary `com.samsung.shealth.sleep.<timestamp>.csv`.
+// Esclude variant satellite presenti nell'export reale:
+//   sleep_goal.* / sleep_combined.* / sleep_raw_data.*
+// Il sleep_stage è in namespace diverso (`com.samsung.health.sleep_stage.*`)
+// e non viene parsato qui (gestito separatamente o ignorato).
+// Verificato su export reale Samsung Health 2026-05-09 di Lorenzo.
+const SLEEP_CSV_PATTERN = /com\.samsung\.shealth\.sleep\.\d+\.csv$/i;
 
 /**
  * Parsa il contenuto testuale del CSV sleep in sample-level entries.

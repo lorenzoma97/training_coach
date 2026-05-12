@@ -499,3 +499,41 @@ describe("loadSamsungZipOnce + single-load refactor (Reviewer 3.4)", () => {
     loadAsyncSpy.mockRestore();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Real-format regex validation (verificato su export Samsung 2026-05-09)
+//
+// Il parser usa regex stretti per:
+//   - HRV: accetta `com.samsung.{shealth|health}.hrv.<digit>.csv` (export reale
+//     usa `health` SENZA `s`, bug fix post-test reale)
+//   - SLEEP: SOLO `com.samsung.shealth.sleep.<digit>.csv` (esclude
+//     sleep_goal/sleep_combined/sleep_raw_data che sono satellite)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Real Samsung export format compatibility", () => {
+  it("HRV regex matcha sia 'shealth.hrv' che 'health.hrv' (export reale usa 'health')", async () => {
+    const csv = "start_time,rmssd\n2026-05-08 07:00:00,40";
+    const zip = new JSZip();
+    // File con namespace `com.samsung.HEALTH.hrv` (senza 's' — formato reale 2026)
+    zip.file("Samsung Health/samsunghealth_xxx/com.samsung.health.hrv.20260509111782.csv", csv);
+    const blob = await zip.generateAsync({ type: "blob" });
+    const result = await parseSamsungHrvFromZip(blob);
+    expect(result.length).toBe(1);
+    expect(result[0].rmssd_ms).toBe(40);
+  });
+
+  it("SLEEP regex IGNORA sleep_goal/sleep_combined/sleep_raw_data (file satellite)", async () => {
+    const sleepCsv = "start_time,end_time,efficiency\n2026-05-07 23:00:00,2026-05-08 07:00:00,88";
+    const garbageCsv = "irrelevant,schema\nfoo,bar";
+    const zip = new JSZip();
+    // SOLO il summary deve essere parsato.
+    zip.file("Samsung Health/samsunghealth_xxx/com.samsung.shealth.sleep.20260509111782.csv", sleepCsv);
+    zip.file("Samsung Health/samsunghealth_xxx/com.samsung.shealth.sleep_goal.20260509111782.csv", garbageCsv);
+    zip.file("Samsung Health/samsunghealth_xxx/com.samsung.shealth.sleep_combined.20260509111782.csv", garbageCsv);
+    zip.file("Samsung Health/samsunghealth_xxx/com.samsung.shealth.sleep_raw_data.20260509111782.csv", garbageCsv);
+    const blob = await zip.generateAsync({ type: "blob" });
+    const result = await parseSamsungSleepFromZip(blob);
+    expect(result.length).toBe(1);
+    expect(result[0].date).toBe("2026-05-08");
+  });
+});

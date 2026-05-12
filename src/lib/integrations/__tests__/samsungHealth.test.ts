@@ -526,3 +526,39 @@ describe("parseSamsungHealthZip (smoke)", () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Real Samsung export 2026: exercise regex stretto (esclude file satellite).
+// Verificato sul ZIP reale di Lorenzo (Samsung Health-20260511T060626Z-3-001):
+// l'export contiene 7 file `com.samsung.shealth.exercise.<sub>.<ts>.csv` che
+// sono satellite (extension/weather/recovery_heart_rate/max_heart_rate/
+// hr_zone/periodization_*) e DEVONO essere ignorati per evitare parse errors.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Real Samsung export — exercise regex stretto", () => {
+  it("EXERCISE regex matcha SOLO il summary, ignora 7 file satellite", async () => {
+    const mainCsv = [
+      "exercise_type,start_time,end_time,mean_heart_rate,distance,calorie",
+      "Running,2026-05-08 07:00:00,2026-05-08 07:45:00,145,8500,480",
+    ].join("\n");
+    const garbage = "different,schema\nfoo,bar";
+    const zip = new JSZip();
+    const prefix = "Samsung Health/samsunghealth_xxx";
+    // Solo il summary deve essere parsato
+    zip.file(`${prefix}/com.samsung.shealth.exercise.20260509111782.csv`, mainCsv);
+    // Satellite file da IGNORARE (presenti nell'export reale)
+    zip.file(`${prefix}/com.samsung.shealth.exercise.extension.20260509111782.csv`, garbage);
+    zip.file(`${prefix}/com.samsung.shealth.exercise.weather.20260509111782.csv`, garbage);
+    zip.file(`${prefix}/com.samsung.shealth.exercise.recovery_heart_rate.20260509111782.csv`, garbage);
+    zip.file(`${prefix}/com.samsung.shealth.exercise.max_heart_rate.20260509111782.csv`, garbage);
+    zip.file(`${prefix}/com.samsung.shealth.exercise.hr_zone.20260509111782.csv`, garbage);
+    zip.file(`${prefix}/com.samsung.shealth.exercise.periodization_training_program.20260509111782.csv`, garbage);
+    zip.file(`${prefix}/com.samsung.shealth.exercise.periodization_training_schedule.20260509111782.csv`, garbage);
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    const result = await parseSamsungHealthZip(blob);
+    // 1 sola sample dal summary, NESSUN parse error dai satellite (skippati)
+    expect(result.length).toBe(1);
+    expect(result[0].rawType).toBe("Running");
+  });
+});

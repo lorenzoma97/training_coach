@@ -568,7 +568,14 @@ export async function parseExerciseCsv(text: string): Promise<{
  * `com.samsung.shealth.exercise.[date].csv` o varianti senza data; si
  * matchano tutti per robustezza.
  */
-const EXERCISE_CSV_PATTERN = /com\.samsung\.shealth\.exercise(?:\..+)?\.csv$/i;
+// Pattern stretto: SOLO file principale `com.samsung.shealth.exercise.<timestamp>.csv`
+// (timestamp = solo digit). Esclude variant satellite presenti nell'export reale:
+//   exercise.extension.* / exercise.weather.* / exercise.max_heart_rate.* /
+//   exercise.recovery_heart_rate.* / exercise.hr_zone.* / exercise.periodization_*
+// Quei file hanno schema CSV diverso (no exercise_type column) e parsarli
+// produrrebbe solo parse errors aggregati nella UI senza valore aggiunto.
+// Verificato su export reale Samsung Health 2026-05-09 di Lorenzo.
+const EXERCISE_CSV_PATTERN = /com\.samsung\.shealth\.exercise\.\d+\.csv$/i;
 
 /**
  * Parsa un blob ZIP esportato da Samsung Health.
