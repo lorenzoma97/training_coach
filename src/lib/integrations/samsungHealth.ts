@@ -1591,14 +1591,35 @@ export async function fileListToZipBlob(files: FileList | File[]): Promise<Blob>
   // FileList non è iterabile su tutti i browser → Array.from.
   const arr: File[] = Array.from(files);
   for (const f of arr) {
-    const buf = await f.arrayBuffer();
+    // Strategia text-content (Samsung Health export = solo CSV/JSON, no binari).
+    // 2 motivi vs arrayBuffer():
+    //   1. jsdom test mock File può non implementare .arrayBuffer() ma supporta
+    //      .text() o FileReader.readAsText() — più portabile.
+    //   2. zip.file(name, STRING) bypassa il bug JSZip 3.10.x noto (cycle
+    //      zip.file→generateAsync→loadAsync→file.async() fallisce con content
+    //      Uint8Array). Stesso fix del fixture test round 6 (commit 18d6ed8).
+    const text = await readFileAsText(f);
     // webkitRelativePath è il path relativo dalla root della cartella
     // selezionata (es. "Samsung Health/samsunghealth_xxx/com.samsung...csv").
     // Su input file singolo (no webkitdirectory) il valore è "" → fallback name.
     const relPath = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
-    zip.file(relPath, buf);
+    zip.file(relPath, text);
   }
   return await zip.generateAsync({ type: "blob" });
+}
+
+/** Legge un File come stringa con fallback FileReader (jsdom-friendly). */
+async function readFileAsText(f: File): Promise<string> {
+  if (typeof (f as File & { text?: () => Promise<string> }).text === "function") {
+    return await (f as File & { text: () => Promise<string> }).text();
+  }
+  // Fallback per jsdom < 16 o ambienti che non implementano Blob.text():
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string) ?? "");
+    reader.onerror = () => reject(reader.error ?? new Error("FileReader error"));
+    reader.readAsText(f);
+  });
 }
 
 // Re-export per consumer che vogliono accesso a storage helper interni
