@@ -305,49 +305,83 @@ export default function GoalsEditor() {
 
             {!isEditing && (
               <>
-                <div style={{ fontSize: "15px", fontWeight: 800, marginBottom: "4px", color: "#E2E8F0", fontFamily: "'JetBrains Mono', monospace" }}>
-                  {g.kpi.metric}: {g.kpi.target}
-                </div>
-                {g.kpi.deadline && g.kpi.deadline !== "-" && (
-                  <div style={{ fontSize: "12px", color: "#E8553A", fontWeight: 600, marginBottom: "6px" }}>
-                    Entro {g.kpi.deadline}
+                {/* Header sintetico: KPI + deadline + priorità chip inline. */}
+                <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "6px", flexWrap: "wrap" }}>
+                  <div style={{ fontSize: "15px", fontWeight: 800, color: "#E2E8F0", fontFamily: "'JetBrains Mono', monospace" }}>
+                    {g.kpi.metric}: {g.kpi.target}
                   </div>
-                )}
-                {/* Priorità + ordine */}
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 600 }}>Priorità:</span>
-                  {(["alta", "media", "bassa"] as GoalPriority[]).map(p => {
-                    const active = (g.priority || "media") === p;
+                  {g.kpi.deadline && g.kpi.deadline !== "-" && (
+                    <span style={{ fontSize: "12px", color: "#E8553A", fontWeight: 600 }}>
+                      · entro {g.kpi.deadline}
+                    </span>
+                  )}
+                  {(() => {
+                    const p = g.priority || "media";
                     const color = p === "alta" ? "#EF4444" : p === "media" ? "#F59E0B" : "#94A3B8";
                     return (
-                      <button key={p} onClick={() => setPriority(g.id, p)} style={{
-                        padding: "4px 10px", fontSize: "11px", fontWeight: 700,
-                        borderRadius: "6px", cursor: "pointer",
-                        background: active ? color + "25" : "transparent",
-                        border: active ? `1px solid ${color}` : "1px solid rgba(255,255,255,0.08)",
-                        color: active ? color : "#94A3B8",
-                        textTransform: "capitalize",
-                      }}>{p}</button>
+                      <span style={{
+                        fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em",
+                        textTransform: "uppercase", color,
+                        padding: "2px 7px", borderRadius: "999px",
+                        border: `1px solid ${color}66`, background: color + "15",
+                        marginLeft: "auto", whiteSpace: "nowrap",
+                      }}>{p}</span>
                     );
-                  })}
-                  <div style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
-                    <button onClick={() => moveGoal(g.id, "up")} disabled={goals.indexOf(g) === 0} title="Sposta su" style={{ ...ghostBtn, padding: "4px 8px", fontSize: "12px", opacity: goals.indexOf(g) === 0 ? 0.3 : 1 }}>▲</button>
-                    <button onClick={() => moveGoal(g.id, "down")} disabled={goals.indexOf(g) === goals.length - 1} title="Sposta giù" style={{ ...ghostBtn, padding: "4px 8px", fontSize: "12px", opacity: goals.indexOf(g) === goals.length - 1 ? 0.3 : 1 }}>▼</button>
+                  })()}
+                </div>
+                {/* Quick action sempre visibili: Modifica (touch ≥44px). */}
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "4px" }}>
+                  <button onClick={() => startEdit(g)} style={{ ...ghostBtn, padding: "10px 14px", minHeight: "40px", fontSize: "12px" }}>Modifica</button>
+                  <button onClick={() => removeGoal(g.id)} style={{ ...ghostBtn, padding: "10px 14px", minHeight: "40px", fontSize: "12px", borderColor: "#EF444444", color: "#EF4444" }}>Rimuovi</button>
+                </div>
+                {/* Avanzato: cambio priorità, riordino, stato. Collapsed di default. */}
+                <details style={{ marginTop: "6px" }}>
+                  <summary
+                    style={{
+                      cursor: "pointer", listStyle: "none",
+                      fontSize: "11px", color: "#94A3B8", fontWeight: 600,
+                      padding: "4px 0", minHeight: "28px",
+                      display: "flex", alignItems: "center", gap: "5px",
+                      userSelect: "none",
+                    }}
+                  >
+                    <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
+                    Priorità, ordine, stato
+                  </summary>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 600 }}>Priorità:</span>
+                    {(["alta", "media", "bassa"] as GoalPriority[]).map(p => {
+                      const active = (g.priority || "media") === p;
+                      const color = p === "alta" ? "#EF4444" : p === "media" ? "#F59E0B" : "#94A3B8";
+                      return (
+                        <button key={p} onClick={() => setPriority(g.id, p)} style={{
+                          padding: "6px 10px", minHeight: "32px",
+                          fontSize: "11px", fontWeight: 700,
+                          borderRadius: "6px", cursor: "pointer",
+                          background: active ? color + "25" : "transparent",
+                          border: active ? `1px solid ${color}` : "1px solid rgba(255,255,255,0.08)",
+                          color: active ? color : "#94A3B8",
+                          textTransform: "capitalize",
+                        }}>{p}</button>
+                      );
+                    })}
+                    <div style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
+                      <button onClick={() => moveGoal(g.id, "up")} disabled={goals.indexOf(g) === 0} title="Sposta su" style={{ ...ghostBtn, padding: "6px 10px", minHeight: "32px", fontSize: "12px", opacity: goals.indexOf(g) === 0 ? 0.3 : 1 }}>▲</button>
+                      <button onClick={() => moveGoal(g.id, "down")} disabled={goals.indexOf(g) === goals.length - 1} title="Sposta giù" style={{ ...ghostBtn, padding: "6px 10px", minHeight: "32px", fontSize: "12px", opacity: goals.indexOf(g) === goals.length - 1 ? 0.3 : 1 }}>▼</button>
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                  <button onClick={() => startEdit(g)} style={{ ...ghostBtn, padding: "6px 12px", fontSize: "12px" }}>Modifica</button>
-                  {g.status === "active" && (
-                    <button onClick={() => toggleStatus(g.id, "achieved")} style={{ ...ghostBtn, padding: "6px 12px", fontSize: "12px", borderColor: "#22C55E66", color: "#22C55E" }}>✓ Raggiunto</button>
-                  )}
-                  {g.status === "active" && (
-                    <button onClick={() => toggleStatus(g.id, "archived")} style={{ ...ghostBtn, padding: "6px 12px", fontSize: "12px" }}>Archivia</button>
-                  )}
-                  {g.status === "archived" && (
-                    <button onClick={() => toggleStatus(g.id, "active")} style={{ ...ghostBtn, padding: "6px 12px", fontSize: "12px", borderColor: "#E8553A66", color: "#E8553A" }}>Riattiva</button>
-                  )}
-                  <button onClick={() => removeGoal(g.id)} style={{ ...ghostBtn, padding: "6px 12px", fontSize: "12px", borderColor: "#EF444444", color: "#EF4444" }}>Rimuovi</button>
-                </div>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
+                    {g.status === "active" && (
+                      <button onClick={() => toggleStatus(g.id, "achieved")} style={{ ...ghostBtn, padding: "8px 12px", minHeight: "36px", fontSize: "12px", borderColor: "#22C55E66", color: "#22C55E" }}>✓ Raggiunto</button>
+                    )}
+                    {g.status === "active" && (
+                      <button onClick={() => toggleStatus(g.id, "archived")} style={{ ...ghostBtn, padding: "8px 12px", minHeight: "36px", fontSize: "12px" }}>Archivia</button>
+                    )}
+                    {g.status === "archived" && (
+                      <button onClick={() => toggleStatus(g.id, "active")} style={{ ...ghostBtn, padding: "8px 12px", minHeight: "36px", fontSize: "12px", borderColor: "#E8553A66", color: "#E8553A" }}>Riattiva</button>
+                    )}
+                  </div>
+                </details>
               </>
             )}
 

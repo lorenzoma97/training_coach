@@ -47,11 +47,33 @@ function ExercisesList({
   exercises: PlannedExercise[];
   availableEquipment: ReturnType<typeof normalizeEquipmentTags>;
 }) {
+  // Collapsed di default: la lista esercizi pesa 30-100px per sessione forza.
+  // L'utente la apre quando deve guardarla in palestra. Touch target 44px sul
+  // summary garantito dal padding.
   return (
-    <ul style={{
-      margin: "8px 0 0", padding: 0, listStyle: "none",
-      display: "flex", flexDirection: "column", gap: "4px",
-    }}>
+    <details style={{ marginTop: "8px" }}>
+      <summary
+        style={{
+          cursor: "pointer",
+          fontSize: "12px",
+          fontWeight: 700,
+          color: "#94A3B8",
+          padding: "6px 0",
+          minHeight: "32px",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          listStyle: "none",
+          userSelect: "none",
+        }}
+      >
+        <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
+        Vedi esercizi ({exercises.length})
+      </summary>
+      <ul style={{
+        margin: "6px 0 0", padding: 0, listStyle: "none",
+        display: "flex", flexDirection: "column", gap: "4px",
+      }}>
       {exercises.map((ex, exIdx) => {
         const result = resolveSubstitution(ex.exerciseId, availableEquipment, EXERCISES);
         const repsLabel = ex.repsTarget.min === ex.repsTarget.max
@@ -102,7 +124,8 @@ function ExercisesList({
           </li>
         );
       })}
-    </ul>
+      </ul>
+    </details>
   );
 }
 
@@ -787,34 +810,46 @@ export default function TrainingPlanView() {
       {/* Z2 in cima per avere il range bpm sempre visibile */}
       <ZonesCard compact highlightZone={2} />
 
-      {/* Razionale piano: graphic distinta (icon + bullet list) vs prima (blob testo).
-          Ogni frase diventa un bullet con check-dot — più scannable in 2s. */}
-      <div style={{ background: "linear-gradient(135deg, #16213E 0%, #1A2B4E 100%)", borderRadius: "14px", padding: "18px 20px", border: "1px solid rgba(232, 85, 58, 0.25)", boxShadow: "0 4px 14px rgba(0,0,0,0.15)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-          <div aria-hidden="true" style={{
-            width: "28px", height: "28px", borderRadius: "8px",
-            background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "15px", flexShrink: 0, boxShadow: "0 2px 6px rgba(232, 85, 58, 0.3)",
-          }}>🎯</div>
-          <div style={{ fontSize: "11px", color: "#E8553A", letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 800 }}>Razionale del piano</div>
+      {/* Razionale piano — collapsable per chi vuole vedere il dettaglio. */}
+      <details
+        open
+        style={{
+          background: "#16213E", borderRadius: "12px",
+          border: "1px solid rgba(232, 85, 58, 0.2)",
+          padding: "12px 16px",
+        }}
+      >
+        <summary
+          style={{
+            cursor: "pointer", listStyle: "none",
+            fontSize: "11px", color: "#E8553A",
+            letterSpacing: "0.12em", textTransform: "uppercase",
+            fontWeight: 800, minHeight: "24px",
+            display: "flex", alignItems: "center", gap: "6px",
+            userSelect: "none",
+          }}
+        >
+          <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▾</span>
+          Razionale del piano
+        </summary>
+        <div style={{ marginTop: "10px" }}>
+          {isMultiBullet ? (
+            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "6px" }}>
+              {rationaleBullets.map((b, i) => (
+                <li key={i} style={{ display: "flex", gap: "8px", alignItems: "flex-start", fontSize: "13px", lineHeight: 1.5, color: "#E2E8F0" }}>
+                  <span aria-hidden="true" style={{
+                    width: "5px", height: "5px", borderRadius: "999px",
+                    background: "#E8553A", marginTop: "8px", flexShrink: 0,
+                  }} />
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div style={{ fontSize: "13px", lineHeight: 1.5, color: "#E2E8F0" }}>{plan.rationale}</div>
+          )}
         </div>
-        {isMultiBullet ? (
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "8px" }}>
-            {rationaleBullets.map((b, i) => (
-              <li key={i} style={{ display: "flex", gap: "10px", alignItems: "flex-start", fontSize: "14px", lineHeight: 1.5, color: "#E2E8F0" }}>
-                <span aria-hidden="true" style={{
-                  width: "6px", height: "6px", borderRadius: "999px",
-                  background: "#E8553A", marginTop: "8px", flexShrink: 0,
-                }} />
-                <span>{b}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div style={{ fontSize: "14px", lineHeight: 1.55, color: "#E2E8F0" }}>{plan.rationale}</div>
-        )}
-      </div>
+      </details>
 
       {(isExpiringSoon || isExpired) && (
         <div style={{
@@ -957,51 +992,62 @@ export default function TrainingPlanView() {
         </div>
       )}
 
-      {/* Sezione modifica piano — in alto, prima delle sessioni.
-          Contiene: Adatta con richiesta, Rigenera piano, e (se ci sono deviazioni)
-          CTA "Adatta alle deviazioni" integrato nella stessa card (prima era
-          una card separata → audit UI: duplicazione concetto "modifica piano"). */}
-      <div style={{ background: "#16213E", borderRadius: "14px", padding: "16px 18px", border: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", gap: "10px" }}>
-        <div style={{ fontSize: "11px", color: "#94A3B8", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600 }}>
-          Modifica piano
-        </div>
-
-        {/* CTA deviazioni: solo se ce ne sono. Integrato qui (prima era card esterna). */}
-        {!isExpired && hasDeviations && (
-          <div style={{
-            background: "#78350F20", border: "1px solid #F59E0B66",
-            borderRadius: "10px", padding: "10px 12px",
-            display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
-          }}>
-            <div style={{ flex: 1, minWidth: "160px" }}>
-              <div style={{ fontSize: "12px", fontWeight: 700, color: "#F59E0B", marginBottom: "3px" }}>
-                Il piano si è discostato dalla realtà
-              </div>
-              <div style={{ fontSize: "11px", color: "#CBD5E1", lineHeight: 1.4 }}>
-                {[
-                  deviationCount.skipped > 0 ? `${deviationCount.skipped} sessioni saltate` : "",
-                  deviationCount.partial > 0 ? `${deviationCount.partial} con variazione` : "",
-                  deviationCount.extras > 0 ? `${deviationCount.extras} allenamenti autonomi` : "",
-                ].filter(Boolean).join(" · ")}. Riallinea il resto del piano a ciò che hai fatto.
-              </div>
+      {/* CTA deviazioni — fuori dall'accordion: azione urgente actionable.
+          Se hasDeviations è false, niente render. */}
+      {!isExpired && hasDeviations && (
+        <div style={{
+          background: "#78350F20", border: "1px solid #F59E0B66",
+          borderRadius: "10px", padding: "10px 12px",
+          display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+        }}>
+          <div style={{ flex: 1, minWidth: "160px" }}>
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#F59E0B", marginBottom: "3px" }}>
+              Piano discostato dalla realtà
             </div>
-            <button
-              onClick={() => handleAdapt(buildDeviationRequest())}
-              disabled={adapting || regenerating}
-              style={{
-                padding: "9px 13px",
-                background: adapting ? "#1E293B" : "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)",
-                border: "none", borderRadius: "9px", color: "#FFF",
-                fontSize: "12px", fontWeight: 700,
-                cursor: adapting ? "wait" : "pointer",
-                opacity: (adapting || regenerating) ? 0.5 : 1,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {adapting ? `⏳ Adatto… ${llmElapsedSec}s` : "🔁 Adatta alle deviazioni"}
-            </button>
+            <div style={{ fontSize: "11px", color: "#CBD5E1", lineHeight: 1.4 }}>
+              {[
+                deviationCount.skipped > 0 ? `${deviationCount.skipped} saltate` : "",
+                deviationCount.partial > 0 ? `${deviationCount.partial} variate` : "",
+                deviationCount.extras > 0 ? `${deviationCount.extras} autonomi` : "",
+              ].filter(Boolean).join(" · ")}. Riallinea al fatto.
+            </div>
           </div>
-        )}
+          <button
+            onClick={() => handleAdapt(buildDeviationRequest())}
+            disabled={adapting || regenerating}
+            style={{
+              padding: "10px 14px", minHeight: "44px",
+              background: adapting ? "#1E293B" : "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)",
+              border: "none", borderRadius: "9px", color: "#FFF",
+              fontSize: "12px", fontWeight: 700,
+              cursor: adapting ? "wait" : "pointer",
+              opacity: (adapting || regenerating) ? 0.5 : 1,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {adapting ? `⏳ Adatto… ${llmElapsedSec}s` : "🔁 Adatta alle deviazioni"}
+          </button>
+        </div>
+      )}
+
+      {/* Sezione modifica piano — collapsable. Default closed: utente apre
+          quando vuole "Adatta con richiesta" o "Rigenera piano". */}
+      <details style={{ background: "#16213E", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+        <summary
+          style={{
+            cursor: "pointer", listStyle: "none",
+            padding: "14px 18px", minHeight: "44px",
+            fontSize: "12px", color: "#CBD5E1",
+            letterSpacing: "0.1em", textTransform: "uppercase",
+            fontWeight: 700,
+            display: "flex", alignItems: "center", gap: "8px",
+            userSelect: "none",
+          }}
+        >
+          <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "14px" }}>▸</span>
+          Modifica piano (adatta / rigenera)
+        </summary>
+        <div style={{ padding: "0 18px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
 
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); setRegenPickerOpen(false); }} disabled={adapting || regenerating} style={{ flex: "1 1 140px", padding: "10px 14px", background: adaptOpen ? "#E8553A22" : "#1A1A2E", border: adaptOpen ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#E8553A" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
@@ -1155,7 +1201,8 @@ export default function TrainingPlanView() {
           </div>
         )}
         {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
-      </div>
+        </div>
+      </details>
 
       {/* Fix 1 — Wrapper "grigio" delle sessioni della settimana quando il
           piano è stale (>7gg dal startDate). Visivamente chiaro che la
@@ -1354,7 +1401,23 @@ export default function TrainingPlanView() {
                       availableEquipment={availableEquipmentForRender}
                     />
                   )}
-                  <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", marginTop: "6px", lineHeight: 1.5 }}>{s.rationale}</div>
+                  {s.rationale && (
+                    <details style={{ marginTop: "6px" }}>
+                      <summary
+                        style={{
+                          cursor: "pointer", listStyle: "none",
+                          fontSize: "11px", color: "#94A3B8",
+                          fontWeight: 600, padding: "4px 0", minHeight: "24px",
+                          display: "flex", alignItems: "center", gap: "5px",
+                          userSelect: "none",
+                        }}
+                      >
+                        <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
+                        Razionale coach
+                      </summary>
+                      <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", marginTop: "4px", lineHeight: 1.5 }}>{s.rationale}</div>
+                    </details>
+                  )}
                   {/* Action row: Registra (se non completata) + Chiedi al coach (sempre).
                       SALTATA actionable: anche se isPast && !isCompleted, l'utente può
                       ancora registrare retroattivamente o chiedere al coach come recuperarla. */}
