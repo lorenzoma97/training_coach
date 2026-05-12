@@ -40,25 +40,51 @@ import { decodeSamsungBytes, parseCsvText, normalizeSamsungDatetime } from "./sa
  * ZIP risalgono al caller (non swallowati qui).
  */
 export async function loadSamsungZipOnce(blob: Blob): Promise<JSZip> {
-  // Eager materialize: leggi tutto in ArrayBuffer prima di passarlo a JSZip,
-  // dove possibile. Necessario perché JSZip + Blob fa lazy read del content
-  // interno al primo `file.async()` — se il Blob viene "consumato" (stream
-  // single-use in alcuni browser e SettingsPage.test.ts via real Blob), le
-  // riletture successive falliscono con "Can't read the data of '<file>'".
-  // Fallback: se il "blob" non ha .arrayBuffer (test fixture mock o JSZip
-  // generateAsync({type:"blob"}) in Node senza Blob.prototype completo),
-  // passa direttamente — JSZip accetta Blob/Buffer/Uint8Array/ArrayBuffer.
-  const hasArrayBuffer =
-    blob && typeof (blob as Blob).arrayBuffer === "function";
+  // Strategia 2-step per eliminare il bug JSZip "Can't read the data of '<file>'":
+  //
+  // Bug noto: cycle `zip.file(name, Uint8Array)` → `generateAsync({type:"blob"})`
+  // → `loadAsync(blob)` → `file.async("uint8array")` lascia il `_data` interno
+  // del file come riferimento lazy al Blob originale. In environment jsdom +
+  // vitest, Blob.stream/Blob.arrayBuffer ritornano oggetti che JSZip 3.10.x
+  // non sa decodificare, e file.async fallisce. File con content STRING
+  // originale vengono eager-decodificati e non triggerano il bug, da qui la
+  // discrepanza HRV/sleep (string) vs exercise (Uint8Array) nei test.
+  //
+  // Step 1 — input materializzato: usa Uint8Array invece di Blob/ArrayBuffer.
+  // Uint8Array forza JSZip a copiare il content nella cache interna proprietaria
+  // anziché tenere reference lazy al Blob.
+  //
+  // Step 2 — eager read dei content: dopo loadAsync, leggi `async("uint8array")`
+  // su ogni file per pre-popolare la cache _data. Le successive chiamate
+  // `file.async()` dei parser useranno la cache e bypasseranno completamente
+  // il path lazy bug-prone.
+  //
+  // Costo memoria: O(N * filesize). Per Samsung ZIP 50-100MB → ~50-100MB RAM
+  // temporanei. Accettabile su PWA (alternativa: bug runtime intermittente).
+  let zip: JSZip;
+  const hasArrayBuffer = blob && typeof (blob as Blob).arrayBuffer === "function";
   if (hasArrayBuffer) {
     try {
       const buf = await blob.arrayBuffer();
-      return JSZip.loadAsync(buf);
+      zip = await JSZip.loadAsync(new Uint8Array(buf));
     } catch {
-      // Fall-through al passaggio diretto (graceful).
+      zip = await JSZip.loadAsync(blob);
     }
+  } else {
+    zip = await JSZip.loadAsync(blob);
   }
-  return JSZip.loadAsync(blob);
+
+  // Eager read: pre-popola cache _data per ogni file.
+  // catch silenzia errori per-file (file potenzialmente corrotti — il vero
+  // parser caller gestirà la propria fallback).
+  const eagerReads: Promise<unknown>[] = [];
+  zip.forEach((_path, file) => {
+    if (file.dir) return;
+    eagerReads.push(file.async("uint8array").catch(() => undefined));
+  });
+  await Promise.all(eagerReads);
+
+  return zip;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
