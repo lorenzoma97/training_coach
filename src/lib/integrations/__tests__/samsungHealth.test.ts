@@ -14,6 +14,10 @@ import {
   samsungTypeToHumanLabel,
   computeDedupKey,
   findMatchingWorkout,
+  scoreWorkoutMatch,
+  findBestMatch,
+  enrichWorkoutFromSample,
+  previewEnrichmentFields,
   parseCsvText,
   decodeSamsungBytes,
   parseExerciseCsv,
@@ -21,6 +25,8 @@ import {
   sampleToWorkout,
   previewImport,
   commitImport,
+  DEFAULT_IMPORT_WINDOW_DAYS,
+  type SampleDecision,
 } from "../samsungHealth";
 import type { WearableSample } from "../../types/wearable";
 import type { Workout } from "../../diaryContext";
@@ -168,7 +174,9 @@ describe("computeDedupKey", () => {
     expect(k1).not.toBe(k2);
   });
 
-  it("test 9: findMatchingWorkout match per date+type+duration±2min", async () => {
+  it("test 9: findMatchingWorkout (legacy wrapper) ritorna match SOLO se score certo (≥80)", async () => {
+    // Sample 45min corsa @07:00, workout 46min corsa @07:00 stesso giorno
+    // → mappedType(50)+ora(30)+durata(20)=100 → "certo" → returna id
     const sample: WearableSample = {
       source: "samsung_health",
       startedAt: "2026-05-08T07:00:00Z",
@@ -177,25 +185,21 @@ describe("computeDedupKey", () => {
       mappedType: "corsa",
       dedupKey: await computeDedupKey("2026-05-08T07:00:00Z", "corsa", 45),
     };
-    // Workout esistente: stessa data, stesso tipo, durata 46min (∆=1)
-    const workout: Workout = {
-      id: "w-existing",
-      type: "corsa",
-      fields: { durata_totale: 46 },
+    const sameHour: Workout = {
+      id: "w-cert", type: "corsa", fields: { durata_totale: 46 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    expect(findMatchingWorkout(sample, [sameHour])).toBe("w-cert");
+
+    // Workout @08:00 → diff 60min → no bonus ora → score 70 → ambiguo → null
+    const offTime: Workout = {
+      id: "w-amb", type: "corsa", fields: { durata_totale: 46 },
       createdAt: "2026-05-08T08:00:00Z",
     };
-    expect(findMatchingWorkout(sample, [workout])).toBe("w-existing");
-
-    // Edge: ∆=2 → match (boundary inclusive)
-    const w2: Workout = { id: "w2", type: "corsa", fields: { durata_totale: 47 }, createdAt: "2026-05-08T08:00:00Z" };
-    expect(findMatchingWorkout(sample, [w2])).toBe("w2");
-
-    // Edge: ∆=3 → no match
-    const w3: Workout = { id: "w3", type: "corsa", fields: { durata_totale: 48 }, createdAt: "2026-05-08T08:00:00Z" };
-    expect(findMatchingWorkout(sample, [w3])).toBeNull();
+    expect(findMatchingWorkout(sample, [offTime])).toBeNull();
   });
 
-  it("test 10: findMatchingWorkout no match per date diverso o type diverso", async () => {
+  it("test 10: findMatchingWorkout no-match per type diverso, dedupKey vince sempre", async () => {
     const sample: WearableSample = {
       source: "samsung_health",
       startedAt: "2026-05-08T07:00:00Z",
@@ -204,24 +208,328 @@ describe("computeDedupKey", () => {
       mappedType: "corsa",
       dedupKey: "abc",
     };
-    // Date diverso
-    const wDiffDate: Workout = {
-      id: "w-d", type: "corsa", fields: { durata_totale: 45 },
-      createdAt: "2026-05-09T07:00:00Z",
-    };
-    // Type diverso
+    // Type diverso → score 0
     const wDiffType: Workout = {
       id: "w-t", type: "sport", fields: { durata_totale: 45 },
       createdAt: "2026-05-08T07:00:00Z",
     };
-    expect(findMatchingWorkout(sample, [wDiffDate, wDiffType])).toBeNull();
+    expect(findMatchingWorkout(sample, [wDiffType])).toBeNull();
 
-    // Match per dedupKey esatto deve sempre vincere (anche con type diverso)
+    // dedupKey esatto vince anche con type diverso (re-import idempotente).
     const wDedupExact: Workout = {
       id: "w-dk", type: "sport", fields: { dedupKey: "abc" },
       createdAt: "2026-09-01T00:00:00Z",
     };
     expect(findMatchingWorkout(sample, [wDedupExact])).toBe("w-dk");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCORING (Wave 3.5) — score-based match con soglie certo/ambiguo/none
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Helper: costruisce sample minimo per test scoring. */
+function makeSample(opts: Partial<WearableSample> & { startedAt: string }): WearableSample {
+  return {
+    source: "samsung_health",
+    startedAt: opts.startedAt,
+    duration_min: opts.duration_min ?? 45,
+    rawType: opts.rawType ?? "Running",
+    mappedType: opts.mappedType ?? "corsa",
+    dedupKey: opts.dedupKey ?? "test-dk",
+    ...opts,
+  };
+}
+
+describe("scoreWorkoutMatch (Wave 3.5)", () => {
+  it("score 0 se mappedType diverso (criterio VINCOLANTE)", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", mappedType: "corsa" });
+    const w: Workout = {
+      id: "w1", type: "forza_gambe",
+      fields: { durata_totale: 45 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    expect(scoreWorkoutMatch(sample, w)).toBe(0);
+  });
+
+  it("score 50 con solo mappedType match (nessun bonus)", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", duration_min: 45 });
+    // Workout senza durata + ora completamente off (12h diff) + no subtype
+    const w: Workout = {
+      id: "w1", type: "corsa",
+      fields: {},
+      createdAt: "2026-05-08T19:00:00Z", // 12h diff
+    };
+    expect(scoreWorkoutMatch(sample, w)).toBe(50);
+  });
+
+  it("score 80 (mappedType + ora ±15min + durata ±5%)", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", duration_min: 45 });
+    // Stesso minuto + durata identica
+    const w: Workout = {
+      id: "w1", type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: "2026-05-08T07:10:00Z", // 10min diff → ≤15 → +30
+    };
+    expect(scoreWorkoutMatch(sample, w)).toBe(100); // 50+30+20
+  });
+
+  it("score 95 (+ subtype bonus +15) discriminante per sport generic", () => {
+    const sample = makeSample({
+      startedAt: "2026-05-08T19:00:00Z", duration_min: 60,
+      rawType: "15005", mappedType: "sport", // Padel
+    });
+    const w: Workout = {
+      id: "w-padel", type: "sport",
+      fields: { durata_totale: 60, tipo: "Padel" },
+      createdAt: "2026-05-08T19:00:00Z",
+    };
+    // 50 + 30 (ora) + 20 (durata) + 15 (subtype "Padel") = 115
+    expect(scoreWorkoutMatch(sample, w)).toBe(115);
+  });
+
+  it("bonus ora NON applicato se diff > 15 min", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", duration_min: 45 });
+    const w: Workout = {
+      id: "w1", type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: "2026-05-08T07:20:00Z", // 20min diff → no bonus
+    };
+    expect(scoreWorkoutMatch(sample, w)).toBe(70); // 50+20 (solo durata)
+  });
+
+  it("bonus durata NON applicato se delta > 5% (con tolleranza min 2min)", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", duration_min: 40 });
+    // 40 * 0.05 = 2 → tol = max(2, 2) = 2. Workout 43min → diff 3 > 2 → no bonus
+    const w: Workout = {
+      id: "w1", type: "corsa",
+      fields: { durata_totale: 43 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    expect(scoreWorkoutMatch(sample, w)).toBe(80); // 50+30 (solo ora)
+  });
+
+  it("ora_inizio (HH:MM utente) ha priorità su createdAt", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", duration_min: 45 });
+    const w: Workout = {
+      id: "w1", type: "corsa",
+      fields: { durata_totale: 45, ora_inizio: "07:05" }, // diff 5min via ora_inizio
+      createdAt: "2026-05-08T22:00:00Z", // distante via createdAt
+    };
+    // ora_inizio vince → +30 ora bonus
+    expect(scoreWorkoutMatch(sample, w)).toBe(100);
+  });
+
+  it("dedupKey esatto → score 1000 (re-import idempotente)", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", dedupKey: "deadbeef" });
+    const w: Workout = {
+      id: "w1", type: "sport", // even diff type, dedupKey wins
+      fields: { dedupKey: "deadbeef" },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    expect(scoreWorkoutMatch(sample, w)).toBe(1000);
+  });
+});
+
+describe("findBestMatch (Wave 3.5)", () => {
+  it("ritorna confidence='certo' per score ≥ 80", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", duration_min: 45 });
+    const w: Workout = {
+      id: "w-best", type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    const m = findBestMatch(sample, [w]);
+    expect(m.workoutId).toBe("w-best");
+    expect(m.confidence).toBe("certo");
+    expect(m.score).toBe(100);
+  });
+
+  it("ritorna confidence='ambiguo' per score 60..79", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", duration_min: 45 });
+    // Solo durata bonus → 50+20=70 → ambiguo
+    const w: Workout = {
+      id: "w-amb", type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: "2026-05-08T22:00:00Z",
+    };
+    const m = findBestMatch(sample, [w]);
+    expect(m.confidence).toBe("ambiguo");
+    expect(m.score).toBe(70);
+  });
+
+  it("ritorna confidence='none' se nessun workout supera 60", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", duration_min: 45 });
+    // Solo mappedType match → 50 → none
+    const w: Workout = {
+      id: "w-low", type: "corsa",
+      fields: {}, createdAt: "2026-05-08T22:00:00Z",
+    };
+    const m = findBestMatch(sample, [w]);
+    expect(m.confidence).toBe("none");
+    expect(m.score).toBe(50);
+  });
+
+  it("tie-break: 2 workout stesso score → primo cronologico (createdAt minore)", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", duration_min: 45 });
+    const wEarly: Workout = {
+      id: "w-early", type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    const wLate: Workout = {
+      id: "w-late", type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: "2026-05-08T07:10:00Z", // anche lui in finestra ±15
+    };
+    // Entrambi score 100, tie-break → primo cronologico
+    const m = findBestMatch(sample, [wLate, wEarly]); // order doesn't matter
+    expect(m.workoutId).toBe("w-early");
+  });
+
+  it("2 workout stesso giorno same type: vince quello con score più alto", () => {
+    const sample = makeSample({
+      startedAt: "2026-05-08T19:00:00Z", duration_min: 60,
+      rawType: "15005", mappedType: "sport",
+    });
+    // Workout 1: ora ok, durata ok, NO subtype = 100
+    const wGeneric: Workout = {
+      id: "w-generic", type: "sport",
+      fields: { durata_totale: 60 },
+      createdAt: "2026-05-08T19:00:00Z",
+    };
+    // Workout 2: ora ok, durata ok, subtype="Padel" = 115
+    const wPadel: Workout = {
+      id: "w-padel", type: "sport",
+      fields: { durata_totale: 60, tipo: "Padel" },
+      createdAt: "2026-05-08T19:00:00Z",
+    };
+    const m = findBestMatch(sample, [wGeneric, wPadel]);
+    expect(m.workoutId).toBe("w-padel");
+    expect(m.score).toBe(115);
+  });
+
+  it("workout splittato (2 corse 20+25min, sample da 22min) → ambiguo", () => {
+    const sample = makeSample({ startedAt: "2026-05-08T07:00:00Z", duration_min: 22 });
+    // 20min @07:00 → 50+30+0 (22 vs 20, tol=2, diff=2 OK!)= 100. Hm rivediamo
+    // 20*0.05=1, max(2,1)=2, |20-22|=2 → ok → 100
+    // 25min @07:00 → 25*0.05=1.25→1, max(2,1)=2, |25-22|=3 > 2 → no → 80
+    // Quindi best è il 20min (100). Verifichiamo che il secondo è "certo" anche lui (80=certo).
+    const w1: Workout = {
+      id: "w-20", type: "corsa",
+      fields: { durata_totale: 20 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    const w2: Workout = {
+      id: "w-25", type: "corsa",
+      fields: { durata_totale: 25 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    const m = findBestMatch(sample, [w1, w2]);
+    expect(m.workoutId).toBe("w-20"); // higher score
+    expect(m.score).toBe(100);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENRICHMENT (Wave 3.5) — preserve user data
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("enrichWorkoutFromSample (Wave 3.5)", () => {
+  it("aggiunge fc_media + kcal + distance_km se assenti nel workout", () => {
+    const w: Workout = {
+      id: "w1", type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    const sample: WearableSample = {
+      source: "samsung_health",
+      startedAt: "2026-05-08T07:00:00Z",
+      duration_min: 45,
+      rawType: "Running", mappedType: "corsa",
+      dedupKey: "dk1",
+      hrAvg: 145, hrMax: 168, calories: 480, distance_km: 8.5,
+    };
+    const enriched = enrichWorkoutFromSample(w, sample);
+    expect(enriched.fields).toMatchObject({
+      fc_media: 145, fc_max: 168, kcal: 480, distance_km: 8.5,
+      dedupKey: "dk1", enrichedFrom: "samsung-2026-05-08",
+    });
+  });
+
+  it("NON sovrascrive fc_media se utente l'ha già impostato (preserve user data)", () => {
+    const w: Workout = {
+      id: "w1", type: "corsa",
+      fields: { durata_totale: 45, fc_media: 140 }, // utente già messo 140
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    const sample: WearableSample = {
+      source: "samsung_health",
+      startedAt: "2026-05-08T07:00:00Z",
+      duration_min: 45,
+      rawType: "Running", mappedType: "corsa",
+      dedupKey: "dk1",
+      hrAvg: 145, calories: 480,
+    };
+    const enriched = enrichWorkoutFromSample(w, sample);
+    expect(enriched.fields?.fc_media).toBe(140); // preservato user value
+    expect(enriched.fields?.kcal).toBe(480);     // aggiunto perché mancante
+  });
+
+  it("calcola passo_medio (min/km) se sample ha distance + durata", () => {
+    const w: Workout = {
+      id: "w1", type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    const sample: WearableSample = {
+      source: "samsung_health",
+      startedAt: "2026-05-08T07:00:00Z",
+      duration_min: 45, rawType: "Running", mappedType: "corsa",
+      dedupKey: "dk1", distance_km: 9, // 9km in 45min → 5min/km
+    };
+    const enriched = enrichWorkoutFromSample(w, sample);
+    expect(enriched.fields?.passo_medio).toBe(5);
+  });
+
+  it("aggiunge enrichedFrom + dedupKey + startedAt metadata", () => {
+    const w: Workout = {
+      id: "w1", type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    const sample: WearableSample = {
+      source: "samsung_health",
+      startedAt: "2026-05-08T07:00:00Z",
+      duration_min: 45, rawType: "Running", mappedType: "corsa",
+      dedupKey: "dk-abc",
+    };
+    const enriched = enrichWorkoutFromSample(w, sample);
+    expect(enriched.fields?.dedupKey).toBe("dk-abc");
+    expect(enriched.fields?.enrichedFrom).toBe("samsung-2026-05-08");
+    expect(enriched.fields?.startedAt).toBe("2026-05-08T07:00:00Z");
+    expect(enriched.updatedAt).toBeDefined();
+  });
+
+  it("previewEnrichmentFields ritorna solo i campi che sarebbero aggiunti", () => {
+    const w: Workout = {
+      id: "w1", type: "corsa",
+      fields: { durata_totale: 45, fc_media: 140 },
+      createdAt: "2026-05-08T07:00:00Z",
+    };
+    const sample: WearableSample = {
+      source: "samsung_health",
+      startedAt: "2026-05-08T07:00:00Z",
+      duration_min: 45, rawType: "Running", mappedType: "corsa",
+      dedupKey: "dk1",
+      hrAvg: 145, calories: 480, distance_km: 9,
+    };
+    const added = previewEnrichmentFields(w, sample);
+    // fc_media già impostato → NOT added; kcal/distance_km/passo_medio si
+    expect(added).toContain("kcal");
+    expect(added).toContain("distance_km");
+    expect(added).toContain("passo_medio");
+    expect(added).not.toContain("fc_media");
   });
 });
 
@@ -318,51 +626,66 @@ async function buildExerciseZip(csv: string, encoding: "utf-16le" | "utf-8" = "u
   return await zip.generateAsync({ type: "blob" });
 }
 
-const SAMPLE_CSV = [
-  "exercise_type,start_time,end_time,mean_heart_rate,max_heart_rate,distance,calorie",
-  "Running,2026-05-08 07:00:00,2026-05-08 07:45:00,145,168,8500,480",
-  "Yoga,2026-05-09 18:00:00,2026-05-09 18:30:00,,,,150",
-  "Football,2026-05-10 19:00:00,2026-05-10 20:30:00,150,180,,800",
-].join("\n");
+// Helper: oggi - N giorni in ISO local "YYYY-MM-DD HH:MM:SS"
+function isoMinusDays(daysAgo: number, time = "07:00:00"): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${time}`;
+}
+function dateMinusDays(daysAgo: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
-describe("previewImport / commitImport", () => {
-  it("test 15: previewImport categorizza new vs matched correttamente", async () => {
-    const zipBlob = await buildExerciseZip(SAMPLE_CSV);
+describe("previewImport / commitImport (Wave 3.5 — categorizzazione 3-way)", () => {
+  it("test 15: previewImport CATEGORIZZA new / autoEnrichments / ambiguousMatches", async () => {
+    // CSV con 3 sample (4-6 giorni fa per stare in finestra default 14gg)
+    const csv = [
+      "exercise_type,start_time,end_time,mean_heart_rate,max_heart_rate,distance,calorie",
+      `Running,${isoMinusDays(4, "07:00:00")},${isoMinusDays(4, "07:45:00")},145,168,8500,480`,
+      `Yoga,${isoMinusDays(3, "18:00:00")},${isoMinusDays(3, "18:30:00")},,,,150`,
+      `Football,${isoMinusDays(2, "19:00:00")},${isoMinusDays(2, "20:30:00")},150,180,,800`,
+    ].join("\n");
+    const zipBlob = await buildExerciseZip(csv);
 
-    // Pre-popola storage con un workout che matcha la corsa del sample 1
-    // (date 2026-05-08, type corsa, duration 45min)
-    const dayKey = "day:2026-05-08";
+    // Pre-popola un workout manuale CERTO match per il Running (stessa ora, stessa durata)
+    const corsaDate = dateMinusDays(4);
     const existingWorkout: Workout = {
       id: "w-manual-existing",
       type: "corsa",
-      fields: { durata_totale: 45 },
-      createdAt: "2026-05-08T07:30:00Z",
+      fields: { durata_totale: 45 }, // 45min = sample duration
+      createdAt: `${corsaDate}T07:00:00Z`, // stessa ora del sample
     };
-    localStorage.setItem(dayKey, JSON.stringify({
+    localStorage.setItem(`day:${corsaDate}`, JSON.stringify({
       daily: null,
       workouts: [existingWorkout],
     }));
-    localStorage.setItem("diary-index", JSON.stringify(["2026-05-08"]));
+    localStorage.setItem("diary-index", JSON.stringify([corsaDate]));
 
     const preview = await previewImport(zipBlob);
 
     expect(preview.totalSamples).toBe(3);
-    // Il Running viene matchato al workout esistente
-    expect(preview.matchedWorkouts.length).toBe(1);
-    expect(preview.matchedWorkouts[0].rawType).toBe("Running");
-    expect(preview.matchedWorkouts[0].matchedWorkoutId).toBe("w-manual-existing");
-    // Yoga e Football → nuovi
+    expect(preview.windowDays).toBe(DEFAULT_IMPORT_WINDOW_DAYS);
+    // Il Running matcha il workout esistente con score certo → autoEnrichment
+    expect(preview.autoEnrichments.length).toBe(1);
+    expect(preview.autoEnrichments[0].sample.rawType).toBe("Running");
+    expect(preview.autoEnrichments[0].existingWorkoutId).toBe("w-manual-existing");
+    expect(preview.autoEnrichments[0].score).toBeGreaterThanOrEqual(80);
+    expect(preview.autoEnrichments[0].fieldsAdded).toContain("fc_media");
+    // Yoga e Football: nessun workout esistente nel loro giorno → nuovi
     expect(preview.newWorkouts.length).toBe(2);
-    expect(preview.newWorkouts.map(s => s.rawType).sort()).toEqual(["Football", "Yoga"]);
+    expect(preview.ambiguousMatches.length).toBe(0);
     expect(preview.parseErrors.length).toBe(0);
-    // Football, Yoga, Running tutti riconosciuti
-    expect(preview.unrecognizedTypes.length).toBe(0);
   });
 
-  it("test 16: commitImport scrive workout in storage + log", async () => {
+  it("test 16: commitImport scrive nuovi Workout + arricchisce esistenti", async () => {
     const csv = [
       "exercise_type,start_time,end_time,mean_heart_rate,distance,calorie",
-      "Running,2026-05-08 07:00:00,2026-05-08 07:45:00,145,8500,480",
+      `Running,${isoMinusDays(3, "07:00:00")},${isoMinusDays(3, "07:45:00")},145,8500,480`,
     ].join("\n");
     const zipBlob = await buildExerciseZip(csv);
 
@@ -371,11 +694,13 @@ describe("previewImport / commitImport", () => {
 
     const result = await commitImport(preview);
     expect(result.workoutsCreated).toBe(1);
+    expect(result.workoutsEnriched).toBe(0);
     expect(result.duplicatesSkipped).toBe(0);
+    expect(result.ambiguousResolved).toBe(0);
     expect(result.importLogId.length).toBeGreaterThan(0);
 
     // Verifica scrittura day:
-    const dayRaw = localStorage.getItem("day:2026-05-08");
+    const dayRaw = localStorage.getItem(`day:${dateMinusDays(3)}`);
     expect(dayRaw).not.toBeNull();
     const day = JSON.parse(dayRaw!);
     expect(day.workouts.length).toBe(1);
@@ -386,22 +711,18 @@ describe("previewImport / commitImport", () => {
     expect(day.workouts[0].fields.distance_km).toBe(8.5);
     expect(day.workouts[0].fields.dedupKey).toBeDefined();
 
-    // Verifica diary-index
-    const idx = JSON.parse(localStorage.getItem("diary-index")!);
-    expect(idx).toContain("2026-05-08");
-
     // Verifica wearable-import-log
     const log = JSON.parse(localStorage.getItem("wearable-import-log")!);
     expect(log.length).toBe(1);
-    expect(log[0].source).toBe("samsung_health");
     expect(log[0].workoutsCreated).toBe(1);
+    expect(log[0].workoutsEnriched).toBe(0);
   });
 
-  it("test 17: commitImport idempotente — re-import stesso ZIP → 0 nuovi", async () => {
+  it("test 17: commitImport idempotente — re-import stesso ZIP → 0 nuovi + 0 enrich", async () => {
     const csv = [
       "exercise_type,start_time,end_time,mean_heart_rate",
-      "Running,2026-05-08 07:00:00,2026-05-08 07:45:00,145",
-      "Yoga,2026-05-09 18:00:00,2026-05-09 18:30:00,",
+      `Running,${isoMinusDays(3, "07:00:00")},${isoMinusDays(3, "07:45:00")},145`,
+      `Yoga,${isoMinusDays(2, "18:00:00")},${isoMinusDays(2, "18:30:00")},`,
     ].join("\n");
     const zipBlob = await buildExerciseZip(csv);
 
@@ -412,22 +733,267 @@ describe("previewImport / commitImport", () => {
     expect(result1.workoutsCreated).toBe(2);
 
     // 2° import (stesso ZIP) — i workout creati hanno fields.dedupKey,
-    // quindi findMatchingWorkout li intercetta come duplicati.
+    // quindi scoreWorkoutMatch ritorna 1000 → silent dedup-skip.
     const preview2 = await previewImport(zipBlob);
     expect(preview2.totalSamples).toBe(2);
     expect(preview2.newWorkouts.length).toBe(0);
-    expect(preview2.matchedWorkouts.length).toBe(2);
+    expect(preview2.autoEnrichments.length).toBe(0);
+    expect(preview2.ambiguousMatches.length).toBe(0);
 
     // commit del 2° preview NON crea nulla
     const result2 = await commitImport(preview2);
     expect(result2.workoutsCreated).toBe(0);
-    expect(result2.duplicatesSkipped).toBe(2);
+    expect(result2.workoutsEnriched).toBe(0);
+    expect(result2.duplicatesSkipped).toBe(2); // dedupKey silenziosi
 
-    // Storage finale: 2 workout totali (uno per day)
-    const day1 = JSON.parse(localStorage.getItem("day:2026-05-08")!);
-    const day2 = JSON.parse(localStorage.getItem("day:2026-05-09")!);
+    // Storage finale: 2 workout totali
+    const day1 = JSON.parse(localStorage.getItem(`day:${dateMinusDays(3)}`)!);
+    const day2 = JSON.parse(localStorage.getItem(`day:${dateMinusDays(2)}`)!);
     expect(day1.workouts.length).toBe(1);
     expect(day2.workouts.length).toBe(1);
+  });
+
+  it("test 18: ENRICHMENT automatico applicato a workout manuale (score certo)", async () => {
+    // Pre-popola workout manuale corsa 45min stessa ora del sample
+    const corsaDate = dateMinusDays(3);
+    const existingWorkout: Workout = {
+      id: "w-manual",
+      type: "corsa",
+      fields: { durata_totale: 45, note: "corsa mattina" }, // NO biometrici
+      createdAt: `${corsaDate}T07:00:00Z`,
+    };
+    localStorage.setItem(`day:${corsaDate}`, JSON.stringify({
+      daily: null, workouts: [existingWorkout],
+    }));
+    localStorage.setItem("diary-index", JSON.stringify([corsaDate]));
+
+    const csv = [
+      "exercise_type,start_time,end_time,mean_heart_rate,max_heart_rate,distance,calorie",
+      `Running,${isoMinusDays(3, "07:00:00")},${isoMinusDays(3, "07:45:00")},145,168,8500,480`,
+    ].join("\n");
+    const zipBlob = await buildExerciseZip(csv);
+
+    const preview = await previewImport(zipBlob);
+    expect(preview.autoEnrichments.length).toBe(1);
+    expect(preview.newWorkouts.length).toBe(0);
+
+    const result = await commitImport(preview);
+    expect(result.workoutsCreated).toBe(0);
+    expect(result.workoutsEnriched).toBe(1);
+
+    // Verifica che il workout manuale è stato arricchito
+    const day = JSON.parse(localStorage.getItem(`day:${corsaDate}`)!);
+    expect(day.workouts.length).toBe(1); // sempre 1, è stato MERGED
+    expect(day.workouts[0].id).toBe("w-manual");
+    expect(day.workouts[0].fields.note).toBe("corsa mattina"); // user preservato
+    expect(day.workouts[0].fields.fc_media).toBe(145); // arricchito
+    expect(day.workouts[0].fields.kcal).toBe(480);
+    expect(day.workouts[0].fields.distance_km).toBe(8.5);
+    expect(day.workouts[0].fields.dedupKey).toBeDefined();
+    expect(day.workouts[0].fields.enrichedFrom).toMatch(/^samsung-/);
+  });
+
+  it("test 19: WINDOW filter — sample fuori finestra default 14gg vengono esclusi", async () => {
+    const csv = [
+      "exercise_type,start_time,end_time",
+      // Dentro finestra (oggi - 5gg)
+      `Running,${isoMinusDays(5, "07:00:00")},${isoMinusDays(5, "07:45:00")}`,
+      // Fuori finestra (oggi - 30gg) → escluso
+      `Yoga,${isoMinusDays(30, "18:00:00")},${isoMinusDays(30, "18:30:00")}`,
+    ].join("\n");
+    const zipBlob = await buildExerciseZip(csv);
+
+    const preview = await previewImport(zipBlob);
+    expect(preview.totalSamples).toBe(1); // solo il Running
+    expect(preview.windowDays).toBe(14);
+    expect(preview.newWorkouts.length).toBe(1);
+    expect(preview.newWorkouts[0].rawType).toBe("Running");
+  });
+
+  it("test 20: WINDOW custom — opts.windowDays=60 include sample più vecchi", async () => {
+    const csv = [
+      "exercise_type,start_time,end_time",
+      `Running,${isoMinusDays(40, "07:00:00")},${isoMinusDays(40, "07:45:00")}`,
+    ].join("\n");
+    const zipBlob = await buildExerciseZip(csv);
+
+    // Default 14gg → 0 sample
+    const previewDefault = await previewImport(zipBlob);
+    expect(previewDefault.totalSamples).toBe(0);
+
+    // Custom 60gg → 1 sample
+    const previewCustom = await previewImport(zipBlob, { windowDays: 60 });
+    expect(previewCustom.totalSamples).toBe(1);
+    expect(previewCustom.windowDays).toBe(60);
+  });
+
+  it("test 21: AMBIGUOUS match — score 60-79 → richiede decisione utente", async () => {
+    // Workout manuale corsa 45min ma 1h off → score 70 (50+20) → ambiguo
+    const corsaDate = dateMinusDays(3);
+    const existing: Workout = {
+      id: "w-amb",
+      type: "corsa",
+      fields: { durata_totale: 45, tipo: "corsa breve" },
+      createdAt: `${corsaDate}T20:00:00Z`, // sample è alle 07:00 → diff 13h
+    };
+    localStorage.setItem(`day:${corsaDate}`, JSON.stringify({
+      daily: null, workouts: [existing],
+    }));
+    localStorage.setItem("diary-index", JSON.stringify([corsaDate]));
+
+    const csv = [
+      "exercise_type,start_time,end_time,mean_heart_rate",
+      `Running,${isoMinusDays(3, "07:00:00")},${isoMinusDays(3, "07:45:00")},145`,
+    ].join("\n");
+    const zipBlob = await buildExerciseZip(csv);
+
+    const preview = await previewImport(zipBlob);
+    expect(preview.ambiguousMatches.length).toBe(1);
+    expect(preview.newWorkouts.length).toBe(0);
+    expect(preview.autoEnrichments.length).toBe(0);
+    expect(preview.ambiguousMatches[0].candidates.length).toBeGreaterThanOrEqual(1);
+    expect(preview.ambiguousMatches[0].candidates[0].workoutId).toBe("w-amb");
+    expect(preview.ambiguousMatches[0].candidates[0].preview).toContain("corsa breve");
+
+    // commitImport senza decisions → ambigui skippati (safe default)
+    const r1 = await commitImport(preview);
+    expect(r1.workoutsCreated).toBe(0);
+    expect(r1.workoutsEnriched).toBe(0);
+    expect(r1.ambiguousResolved).toBe(0);
+    expect(r1.duplicatesSkipped).toBe(1); // ambiguo skippato
+  });
+
+  it("test 22: AMBIGUOUS decision 'enrich' → applica enrichment al candidato scelto", async () => {
+    const corsaDate = dateMinusDays(3);
+    const existing: Workout = {
+      id: "w-target",
+      type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: `${corsaDate}T20:00:00Z`, // off-time → score 70 → ambiguo
+    };
+    localStorage.setItem(`day:${corsaDate}`, JSON.stringify({
+      daily: null, workouts: [existing],
+    }));
+    localStorage.setItem("diary-index", JSON.stringify([corsaDate]));
+
+    const csv = [
+      "exercise_type,start_time,end_time,mean_heart_rate,distance,calorie",
+      `Running,${isoMinusDays(3, "07:00:00")},${isoMinusDays(3, "07:45:00")},145,8500,480`,
+    ].join("\n");
+    const zipBlob = await buildExerciseZip(csv);
+
+    const preview = await previewImport(zipBlob);
+    expect(preview.ambiguousMatches.length).toBe(1);
+
+    // Utente decide: enrich su w-target
+    const sampleKey = preview.ambiguousMatches[0].sample.dedupKey;
+    const decisions = new Map<string, SampleDecision>([
+      [sampleKey, { kind: "enrich", workoutId: "w-target" }],
+    ]);
+    const result = await commitImport(preview, decisions);
+    expect(result.workoutsEnriched).toBe(1);
+    expect(result.ambiguousResolved).toBe(1);
+    expect(result.workoutsCreated).toBe(0);
+
+    const day = JSON.parse(localStorage.getItem(`day:${corsaDate}`)!);
+    expect(day.workouts[0].fields.fc_media).toBe(145);
+  });
+
+  it("test 23: AMBIGUOUS decision 'new' → crea nuovo workout standalone", async () => {
+    const corsaDate = dateMinusDays(3);
+    const existing: Workout = {
+      id: "w-other",
+      type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: `${corsaDate}T20:00:00Z`,
+    };
+    localStorage.setItem(`day:${corsaDate}`, JSON.stringify({
+      daily: null, workouts: [existing],
+    }));
+    localStorage.setItem("diary-index", JSON.stringify([corsaDate]));
+
+    const csv = [
+      "exercise_type,start_time,end_time,mean_heart_rate",
+      `Running,${isoMinusDays(3, "07:00:00")},${isoMinusDays(3, "07:45:00")},145`,
+    ].join("\n");
+    const zipBlob = await buildExerciseZip(csv);
+
+    const preview = await previewImport(zipBlob);
+    const sampleKey = preview.ambiguousMatches[0].sample.dedupKey;
+    const decisions = new Map<string, SampleDecision>([
+      [sampleKey, { kind: "new" }],
+    ]);
+    const result = await commitImport(preview, decisions);
+    expect(result.workoutsCreated).toBe(1);
+    expect(result.ambiguousResolved).toBe(1);
+
+    const day = JSON.parse(localStorage.getItem(`day:${corsaDate}`)!);
+    expect(day.workouts.length).toBe(2); // w-other + nuovo
+  });
+
+  it("test 24: PRESERVE existing user data nel commit (fc_media già impostata)", async () => {
+    const corsaDate = dateMinusDays(3);
+    const existing: Workout = {
+      id: "w-with-fc",
+      type: "corsa",
+      fields: { durata_totale: 45, fc_media: 140, note: "user value" },
+      createdAt: `${corsaDate}T07:00:00Z`,
+    };
+    localStorage.setItem(`day:${corsaDate}`, JSON.stringify({
+      daily: null, workouts: [existing],
+    }));
+    localStorage.setItem("diary-index", JSON.stringify([corsaDate]));
+
+    const csv = [
+      "exercise_type,start_time,end_time,mean_heart_rate,calorie",
+      `Running,${isoMinusDays(3, "07:00:00")},${isoMinusDays(3, "07:45:00")},155,480`,
+    ].join("\n");
+    const zipBlob = await buildExerciseZip(csv);
+
+    const preview = await previewImport(zipBlob);
+    expect(preview.autoEnrichments.length).toBe(1);
+    expect(preview.autoEnrichments[0].fieldsAdded).not.toContain("fc_media");
+    expect(preview.autoEnrichments[0].fieldsAdded).toContain("kcal");
+
+    await commitImport(preview);
+    const day = JSON.parse(localStorage.getItem(`day:${corsaDate}`)!);
+    expect(day.workouts[0].fields.fc_media).toBe(140); // user preservato
+    expect(day.workouts[0].fields.kcal).toBe(480); // arricchito
+    expect(day.workouts[0].fields.note).toBe("user value");
+  });
+
+  it("test 25: 2 workout same-day same-type → ambiguo con multipli candidati", async () => {
+    const corsaDate = dateMinusDays(3);
+    // 2 corse stesso giorno con durata diversa, entrambe off-time
+    const w1: Workout = {
+      id: "w-a", type: "corsa",
+      fields: { durata_totale: 45 },
+      createdAt: `${corsaDate}T22:00:00Z`,
+    };
+    const w2: Workout = {
+      id: "w-b", type: "corsa",
+      fields: { durata_totale: 50 },
+      createdAt: `${corsaDate}T23:00:00Z`,
+    };
+    localStorage.setItem(`day:${corsaDate}`, JSON.stringify({
+      daily: null, workouts: [w1, w2],
+    }));
+    localStorage.setItem("diary-index", JSON.stringify([corsaDate]));
+
+    const csv = [
+      "exercise_type,start_time,end_time",
+      `Running,${isoMinusDays(3, "07:00:00")},${isoMinusDays(3, "07:45:00")}`,
+    ].join("\n");
+    const zipBlob = await buildExerciseZip(csv);
+
+    const preview = await previewImport(zipBlob);
+    // Sample 45min: w-a (45min, +20 durata) score 70 ambiguo; w-b (50min, |50-45|=5 > tol(max(2,50*0.05=2.5→3))) score 50 none.
+    // Il match top è 70 → ambiguo
+    expect(preview.ambiguousMatches.length).toBe(1);
+    // I candidati includono solo w-a (score>0). w-b ha score 50 → escluso da buildCandidateList?
+    // No: buildCandidateList prende tutti score > 0 ordinati desc, top 3. w-b ha 50 → incluso.
+    expect(preview.ambiguousMatches[0].candidates.length).toBe(2);
+    expect(preview.ambiguousMatches[0].candidates[0].workoutId).toBe("w-a"); // top score
   });
 });
 

@@ -92,24 +92,28 @@ describe("SettingsPage ↔ samsungHealth integration", () => {
     const preview: ImportPreview = await previewImport(zip);
     expect(preview.totalSamples).toBe(0);
     expect(preview.newWorkouts).toEqual([]);
-    expect(preview.matchedWorkouts).toEqual([]);
+    expect(preview.autoEnrichments).toEqual([]);
+    expect(preview.ambiguousMatches).toEqual([]);
+    expect(preview.windowDays).toBe(14);
     // L'assenza di exercise CSV è segnalata in parseErrors, NON come crash.
     expect(preview.parseErrors.length).toBeGreaterThanOrEqual(1);
   });
 
   it("previewImport con dati → mostra stats + bottone Conferma abilitabile", async () => {
+    // Date relative ad oggi per stare in finestra default 14gg
     const csv = [
       "exercise_type,start_time,end_time,mean_heart_rate,distance,calorie",
-      "Running,2026-05-08 07:00:00,2026-05-08 07:45:00,145,8500,480",
-      "Yoga,2026-05-09 18:00:00,2026-05-09 18:30:00,,,150",
+      `Running,${isoMinusDaysLocal(3, "07:00:00")},${isoMinusDaysLocal(3, "07:45:00")},145,8500,480`,
+      `Yoga,${isoMinusDaysLocal(2, "18:00:00")},${isoMinusDaysLocal(2, "18:30:00")},,,150`,
     ].join("\n");
     const zip = await buildExerciseZip(csv);
 
     const preview = await previewImport(zip);
     expect(preview.totalSamples).toBe(2);
     expect(preview.newWorkouts.length).toBe(2);
-    expect(preview.matchedWorkouts.length).toBe(0);
-    // Stats che la UI mostra: totale, nuovi, matched, unrecognized, parseErrors
+    expect(preview.autoEnrichments.length).toBe(0);
+    expect(preview.ambiguousMatches.length).toBe(0);
+    // Stats che la UI mostra
     expect(preview.unrecognizedTypes).toEqual([]);
     expect(preview.parseErrors).toEqual([]);
     // Sample shape minimo per il rendering della lista preview UI:
@@ -118,59 +122,74 @@ describe("SettingsPage ↔ samsungHealth integration", () => {
       expect(typeof s.duration_min).toBe("number");
       expect(typeof s.mappedType).toBe("string");
     }
-    // Bottone Conferma è abilitabile sse newWorkouts.length > 0
-    expect(preview.newWorkouts.length > 0).toBe(true);
+    // Bottone Conferma abilitabile sse newWorkouts > 0 OR autoEnrichments > 0
+    const totalActionable = preview.newWorkouts.length + preview.autoEnrichments.length;
+    expect(totalActionable > 0).toBe(true);
   });
 
   it("Click Conferma → commitImport chiamato e ritorna CommitResult", async () => {
+    const date3 = dateMinusDaysLocal(3);
     const csv = [
       "exercise_type,start_time,end_time,mean_heart_rate",
-      "Running,2026-05-08 07:00:00,2026-05-08 07:45:00,145",
+      `Running,${isoMinusDaysLocal(3, "07:00:00")},${isoMinusDaysLocal(3, "07:45:00")},145`,
     ].join("\n");
     const zip = await buildExerciseZip(csv);
     const preview = await previewImport(zip);
 
-    // Simuliamo il click "Conferma": handler chiama commitImport(preview)
     const result = await commitImport(preview);
     expect(result.workoutsCreated).toBe(1);
+    expect(result.workoutsEnriched).toBe(0);
     expect(result.duplicatesSkipped).toBe(0);
+    expect(result.ambiguousResolved).toBe(0);
     expect(typeof result.importLogId).toBe("string");
     expect(result.importLogId.length).toBeGreaterThan(0);
 
-    // Verifica side-effect: workout scritto in storage (letto dal Diario via
-    // events emit "workout:saved" → reload day:YYYY-MM-DD)
-    const dayRaw = localStorage.getItem("day:2026-05-08");
+    // Verifica side-effect
+    const dayRaw = localStorage.getItem(`day:${date3}`);
     expect(dayRaw).not.toBeNull();
     const day = JSON.parse(dayRaw!);
     expect(day.workouts.length).toBe(1);
     expect(day.workouts[0].fields.source).toBe("samsung_health");
   });
 
-  it("Bottone Conferma disabled se preview.newWorkouts.length === 0", async () => {
-    // Caso: tutti i sample sono già registrati → matchedWorkouts > 0, newWorkouts = 0.
+  it("Bottone Conferma comunque attivo se solo autoEnrichments > 0", async () => {
+    // Caso: workout manuale già registrato → sample arricchisce, no nuovi
+    const date3 = dateMinusDaysLocal(3);
     const csv = [
       "exercise_type,start_time,end_time,mean_heart_rate",
-      "Running,2026-05-08 07:00:00,2026-05-08 07:45:00,145",
+      `Running,${isoMinusDaysLocal(3, "07:00:00")},${isoMinusDaysLocal(3, "07:45:00")},145`,
     ].join("\n");
     const zip = await buildExerciseZip(csv);
 
-    // Pre-popola storage con un workout che matcha
-    localStorage.setItem("day:2026-05-08", JSON.stringify({
+    // Workout manuale stesso giorno + stessa ora + stessa durata → certo
+    localStorage.setItem(`day:${date3}`, JSON.stringify({
       daily: null,
       workouts: [{
         id: "w-existing",
         type: "corsa",
         fields: { durata_totale: 45 },
-        createdAt: "2026-05-08T07:30:00Z",
+        createdAt: `${date3}T07:00:00Z`,
       }],
     }));
-    localStorage.setItem("diary-index", JSON.stringify(["2026-05-08"]));
+    localStorage.setItem("diary-index", JSON.stringify([date3]));
 
     const preview = await previewImport(zip);
     expect(preview.newWorkouts.length).toBe(0);
-    expect(preview.matchedWorkouts.length).toBe(1);
-    // Logica UI: il bottone Conferma è disabled se newWorkouts === 0
-    const confirmDisabled = preview.newWorkouts.length === 0;
-    expect(confirmDisabled).toBe(true);
+    expect(preview.autoEnrichments.length).toBe(1);
+    // Bottone Conferma abilitato perché c'è qualcosa da fare (enrichment)
+    const totalActionable = preview.newWorkouts.length + preview.autoEnrichments.length;
+    expect(totalActionable).toBe(1);
   });
 });
+
+// Helper locali per generare date relative a oggi (in finestra default 14gg)
+function isoMinusDaysLocal(daysAgo: number, time = "07:00:00"): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${time}`;
+}
+function dateMinusDaysLocal(daysAgo: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}

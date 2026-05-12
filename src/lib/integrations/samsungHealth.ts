@@ -40,13 +40,69 @@ import {
 // Tipi pubblici
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Default window: importa solo ultimi 14 giorni. */
+export const DEFAULT_IMPORT_WINDOW_DAYS = 14;
+
+/** Soglia score: ≥ AUTO → enrichment automatico. */
+export const SCORE_AUTO_ENRICH = 80;
+/** Soglia score: AMBIGUOUS_MIN ≤ score < AUTO → match ambiguo (richiede UI). */
+export const SCORE_AMBIGUOUS_MIN = 60;
+
+/** Confidence outcome del match score-based. */
+export type MatchConfidence = "certo" | "ambiguo" | "none";
+
+/** Risultato singolo match scoring. */
+export interface MatchResult {
+  workoutId: string;
+  /** Score 0..115 (mappedType=50 + ora=30 + durata=20 + subtype=15). */
+  score: number;
+  /** Categoria: certo (≥80), ambiguo (60..79), none (<60). */
+  confidence: MatchConfidence;
+}
+
+/** Candidato per UI ambiguous decision (label + score). */
+export interface MatchCandidate {
+  workoutId: string;
+  score: number;
+  /** Stringa human-readable per la UI: "corsa breve 20min" tipo. */
+  preview: string;
+}
+
+/** Decisione utente per un sample ambiguo o senza match. */
+export type SampleDecision =
+  | { kind: "enrich"; workoutId: string }
+  | { kind: "new" }
+  | { kind: "skip" };
+
 export interface ImportPreview {
-  /** Totale sample parsati dal CSV (newWorkouts + matchedWorkouts). */
+  /** Totale sample parsati dal CSV (post-window-filter). */
   totalSamples: number;
-  /** Sample che diventeranno nuovi Workout. */
+  /**
+   * Sample CERTI da creare ex-novo (no match score>=60 con workout esistenti).
+   * Note: rinominato per chiarezza vs sample che richiedono conferma.
+   */
   newWorkouts: WearableSample[];
-  /** Sample skippati per dedup match. */
-  matchedWorkouts: WearableSample[];
+  /**
+   * NEW: arricchimenti automatici (score ≥ 80). Ogni sample è già stato
+   * matchato con certezza a un workout manuale; commit unirà i campi
+   * biometrici Samsung mantenendo i campi user (coalesce con `??`).
+   */
+  autoEnrichments: Array<{
+    sample: WearableSample;
+    existingWorkoutId: string;
+    score: number;
+    /** Campi che verranno aggiunti dal sample (es. ["fc_media", "kcal"]). */
+    fieldsAdded: string[];
+  }>;
+  /**
+   * NEW: match ambigui (score 60..79) + sample senza match che richiedono
+   * conferma utente. Per ognuno, lista ordinata di candidati top (max 3).
+   * Se `candidates` vuoto → no-match: la UI offrirà solo "crea nuovo" / "skip".
+   */
+  ambiguousMatches: Array<{
+    sample: WearableSample;
+    candidates: MatchCandidate[];
+  }>;
   /** rawType Samsung non riconosciuti dal mapping (defaultati a "sport"). */
   unrecognizedTypes: string[];
   /** Errori di parsing per file (CSV mancante, malformato, ecc). */
@@ -63,11 +119,27 @@ export interface ImportPreview {
    * Storage separato (samsung-sleep-history) — NON sostituisce daily check.
    */
   sleepDaily: DailySleepAggregate[];
+  /** NEW: finestra temporale applicata in giorni (default 14). */
+  windowDays: number;
+}
+
+/** Opzioni per `previewImport`. */
+export interface PreviewImportOptions {
+  /**
+   * Filtra sample con `startedAt < now - windowDays` PRIMA del matching.
+   * Default: 14 (ultime 2 settimane). Passa numero alto (es. 3650) per
+   * importare tutto lo storico.
+   */
+  windowDays?: number;
 }
 
 export interface CommitResult {
   workoutsCreated: number;
+  /** NEW: workout esistenti arricchiti con biometrici Samsung. */
+  workoutsEnriched: number;
   duplicatesSkipped: number;
+  /** NEW: ambigui risolti dall'utente (somma di enrich+new+skip dalle decisions). */
+  ambiguousResolved: number;
   importLogId: string;
   /** Numero di giorni HRV importati (samsung-hrv-history). */
   hrvDaysImported: number;
@@ -86,6 +158,9 @@ interface ImportLogEntry {
   /** Wave 3.4: tracking aggiuntivo HRV/sleep importati. Optional per back-compat log v1. */
   hrvDaysImported?: number;
   sleepDaysImported?: number;
+  /** Wave 3.5: tracking arricchimenti + ambigui risolti. */
+  workoutsEnriched?: number;
+  ambiguousResolved?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -668,50 +743,168 @@ export async function parseSamsungHealthZipDetailed(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dedup vs workout esistenti
+// Matching score-based (Wave 3.5) vs workout esistenti
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// Score breakdown (max 115 con tutti i bonus):
+//   +50  mappedType uguale   (VINCOLANTE: se diverso, score = 0)
+//   +30  ora inizio entro ±15 min (Samsung startedAt vs workout createdAt o
+//                                  fields.ora_inizio se presente)
+//   +20  durata entro ±5%      (vs fields.durata_totale / durata / duration_min)
+//   +15  subtype/rawType matcha sub label workout (es. "Padel" su sport generic)
+//
+// Soglie:
+//   ≥ 80  → certo  → enrichment automatico
+//   60..79 → ambiguo → richiesta UI utente
+//   < 60   → none   → richiesta UI ("crea nuovo o skip")
+//
+// NB: dedupKey match (re-import idempotente) gestito separatamente PRE-scoring:
+// se dedupKey esatto, score = 1000 → categoria "certo" (skip puro, no enrich).
+
+/** Score returnato per match dedupKey esatto (pseudo-infinito, sempre vince). */
+const DEDUP_KEY_EXACT_SCORE = 1000;
 
 /**
- * Trova workout corrispondente in lista esistente per un sample.
+ * Calcola score di matching tra un sample Samsung e un workout candidato.
+ * Pure function: no storage access, no async. Non distingue se stesso giorno
+ * o no — il chiamante deve filtrare PRIMA per data (we score solo workout
+ * dello stesso giorno).
  *
- * Strategia (in ordine di priorità):
- *   1. Match per `fields.dedupKey` esatto → re-import idempotente.
- *   2. Match per (date YYYY-MM-DD + type + duration±2min) → manual entry.
+ * Ritorna 0 se mappedType non combacia (criterio VINCOLANTE).
+ */
+export function scoreWorkoutMatch(sample: WearableSample, workout: Workout): number {
+  // Dedup-key esatto: re-import idempotente, vince su tutto.
+  const wf = workout.fields as Record<string, unknown> | undefined;
+  if (wf && typeof wf.dedupKey === "string" && wf.dedupKey === sample.dedupKey) {
+    return DEDUP_KEY_EXACT_SCORE;
+  }
+
+  // mappedType VINCOLANTE: tipo diverso → no match.
+  if (workout.type !== sample.mappedType) return 0;
+  let score = 50;
+
+  // Bonus ora inizio (±15 min). workout.fields.ora_inizio (HH:MM) ha priorità,
+  // altrimenti createdAt o fields.startedAt (ISO datetime).
+  const sampleMinutes = isoToMinutesSinceMidnight(sample.startedAt);
+  const workoutMinutes = readWorkoutStartMinutes(wf, workout.createdAt);
+  if (sampleMinutes !== null && workoutMinutes !== null) {
+    const diff = Math.abs(sampleMinutes - workoutMinutes);
+    // Tolleranza wraparound mezzanotte (raro ma possibile).
+    const wrapDiff = Math.min(diff, 1440 - diff);
+    if (wrapDiff <= 15) score += 30;
+  }
+
+  // Bonus durata (±5%). 5% di tolleranza con minimo 2min (per workout brevi).
+  const wDur = readWorkoutDurationMin(wf);
+  if (wDur !== undefined && wDur > 0) {
+    const tol = Math.max(2, Math.round(wDur * 0.05));
+    if (Math.abs(wDur - sample.duration_min) <= tol) score += 20;
+  }
+
+  // Bonus subtype: rawType Samsung (label human) matcha fields.tipo del workout.
+  // Discrimina "sport" generic (Padel vs Calcio vs Tennis nello stesso slot).
+  const sampleLabel = samsungTypeToHumanLabel(sample.rawType).toLowerCase().trim();
+  const workoutSub = readWorkoutSubtype(wf);
+  if (sampleLabel && workoutSub) {
+    const sub = workoutSub.toLowerCase().trim();
+    if (sub === sampleLabel || sub.includes(sampleLabel) || sampleLabel.includes(sub)) {
+      score += 15;
+    }
+  }
+
+  return score;
+}
+
+/**
+ * Trova il miglior match per un sample tra una lista di workout dello stesso
+ * giorno. Tie-breaking: top score; in caso di parità, primo cronologico
+ * (createdAt più antico).
  *
- * Ritorna workout id se match, null altrimenti.
- *
- * NB: questa funzione opera su workout già caricati in memory (caller
- * responsabile di passare un range ragionevole, es. ±90 giorni).
+ * Ritorna workoutId + score + confidence (certo/ambiguo/none).
+ */
+export function findBestMatch(sample: WearableSample, workouts: Workout[]): MatchResult {
+  let best: { workout: Workout; score: number } | null = null;
+  for (const w of workouts) {
+    const s = scoreWorkoutMatch(sample, w);
+    if (s <= 0) continue;
+    if (!best || s > best.score) {
+      best = { workout: w, score: s };
+    } else if (s === best.score) {
+      // Tie-break: primo cronologico (createdAt minore)
+      const aCreated = best.workout.createdAt ?? "";
+      const bCreated = w.createdAt ?? "";
+      if (bCreated && (!aCreated || bCreated < aCreated)) {
+        best = { workout: w, score: s };
+      }
+    }
+  }
+
+  if (!best) return { workoutId: "", score: 0, confidence: "none" };
+
+  const confidence: MatchConfidence =
+    best.score >= SCORE_AUTO_ENRICH ? "certo" :
+    best.score >= SCORE_AMBIGUOUS_MIN ? "ambiguo" :
+    "none";
+
+  return { workoutId: best.workout.id, score: best.score, confidence };
+}
+
+/**
+ * Backward-compat: `findMatchingWorkout` ritorna workoutId della top match
+ * SOLO se score ≥ AUTO (certo). Mantenuto come thin wrapper su findBestMatch
+ * per non rompere consumer esterni eventuali. Nuovo codice usa findBestMatch.
  */
 export function findMatchingWorkout(sample: WearableSample, workouts: Workout[]): string | null {
-  // 1. Match dedupKey
-  for (const w of workouts) {
-    const wf = w.fields as Record<string, unknown> | undefined;
-    if (wf && typeof wf.dedupKey === "string" && wf.dedupKey === sample.dedupKey) {
-      return w.id;
+  const m = findBestMatch(sample, workouts);
+  return m.confidence === "certo" ? m.workoutId : null;
+}
+
+/** Estrae minuti dalla mezzanotte da una stringa ISO datetime. */
+function isoToMinutesSinceMidnight(iso: string): number | null {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  // UTC per coerenza con Samsung normalization (UTC-treated)
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+
+/** Estrae l'ora di inizio del workout in minuti dalla mezzanotte. */
+function readWorkoutStartMinutes(
+  fields: Record<string, unknown> | undefined,
+  createdAt: string | undefined,
+): number | null {
+  // Priorità 1: fields.ora_inizio (formato "HH:MM" utente, locale)
+  if (fields) {
+    const oi = fields.ora_inizio;
+    if (typeof oi === "string") {
+      const m = oi.match(/^(\d{1,2}):(\d{2})/);
+      if (m) {
+        const hh = parseInt(m[1], 10);
+        const mm = parseInt(m[2], 10);
+        if (hh >= 0 && hh < 24 && mm >= 0 && mm < 60) return hh * 60 + mm;
+      }
+    }
+    // Priorità 2: fields.startedAt ISO (workout già importati da Samsung)
+    if (typeof fields.startedAt === "string") {
+      const v = isoToMinutesSinceMidnight(fields.startedAt);
+      if (v !== null) return v;
     }
   }
-
-  // 2. Match (date+type+duration±2min)
-  const sampleDate = sample.startedAt.slice(0, 10); // YYYY-MM-DD
-  for (const w of workouts) {
-    if (w.type !== sample.mappedType) continue;
-    const wf = w.fields as Record<string, unknown> | undefined;
-    // Workout creati dall'import hanno fields.startedAt (ISO). Workout legacy
-    // potrebbero non averlo: in tal caso fall-back su createdAt (ISO).
-    const candidateIso = (wf && typeof wf.startedAt === "string" ? wf.startedAt : undefined)
-      ?? w.createdAt;
-    if (!candidateIso) continue;
-    const candDate = candidateIso.slice(0, 10);
-    if (candDate !== sampleDate) continue;
-    // duration: cerca in fields.durata_totale | fields.durata | fields.duration_min
-    const wDur = readWorkoutDurationMin(wf);
-    if (wDur === undefined) continue;
-    if (Math.abs(wDur - sample.duration_min) <= 2) {
-      return w.id;
-    }
+  // Priorità 3: createdAt ISO (proxy)
+  if (createdAt) {
+    const v = isoToMinutesSinceMidnight(createdAt);
+    if (v !== null) return v;
   }
+  return null;
+}
 
+/** Estrae subtype/label del workout (es. "Padel", "corsa intervalli"). */
+function readWorkoutSubtype(fields: Record<string, unknown> | undefined): string | null {
+  if (!fields) return null;
+  const candidates = ["tipo", "subtype", "rawTypeLabel", "label"];
+  for (const k of candidates) {
+    const v = fields[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
   return null;
 }
 
@@ -727,6 +920,99 @@ function readWorkoutDurationMin(fields: Record<string, unknown> | undefined): nu
     }
   }
   return undefined;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enrichment (Wave 3.5): preserve user data
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Lista campi biometrici candidati a enrichment dal sample Samsung.
+ * "Preserve user data": sovrascriviamo SOLO se il workout esistente non ha
+ * già un valore in quel campo (coalesce con `??`).
+ */
+const ENRICHABLE_FIELDS: Array<{
+  key: string;
+  /** Estrattore valore dal sample. Ritorna undefined se sample non ha il dato. */
+  pick: (s: WearableSample) => unknown;
+}> = [
+  { key: "fc_media",   pick: (s) => s.hrAvg },
+  { key: "fc_max",     pick: (s) => s.hrMax },
+  { key: "kcal",       pick: (s) => s.calories },
+  { key: "distance_km", pick: (s) => s.distance_km },
+];
+
+/**
+ * Pure function: ritorna un nuovo Workout arricchito con i biometrici Samsung.
+ * Mai sovrascrive campi user esistenti (coalesce). Aggiunge metadata
+ * `enrichedFrom` + `dedupKey` per re-import idempotente.
+ *
+ * Calcola anche `passo_medio` (min/km) se sample ha distance_km e durata.
+ */
+export function enrichWorkoutFromSample(workout: Workout, sample: WearableSample): Workout {
+  const oldFields = (workout.fields ?? {}) as Record<string, unknown>;
+  const fields: Record<string, unknown> = { ...oldFields };
+  const added: string[] = [];
+
+  for (const { key, pick } of ENRICHABLE_FIELDS) {
+    const newVal = pick(sample);
+    if (newVal === undefined || newVal === null) continue;
+    if (oldFields[key] === undefined || oldFields[key] === null || oldFields[key] === "") {
+      fields[key] = newVal;
+      added.push(key);
+    }
+  }
+
+  // Passo medio (min/km) se sample ha distance + durata e workout non ce l'ha già.
+  const distKm = (fields.distance_km as number | undefined) ?? sample.distance_km;
+  if (
+    distKm !== undefined && distKm > 0 &&
+    sample.duration_min > 0 &&
+    (oldFields.passo_medio === undefined || oldFields.passo_medio === null || oldFields.passo_medio === "")
+  ) {
+    const paceMinPerKm = sample.duration_min / distKm;
+    fields.passo_medio = Math.round(paceMinPerKm * 100) / 100;
+    added.push("passo_medio");
+  }
+
+  // Metadata per re-import idempotente: dedupKey + enrichedFrom (data ISO sample).
+  fields.dedupKey = sample.dedupKey;
+  const enrichedDate = sample.startedAt.slice(0, 10);
+  fields.enrichedFrom = `samsung-${enrichedDate}`;
+  if (sample.startedAt && oldFields.startedAt === undefined) {
+    fields.startedAt = sample.startedAt;
+  }
+
+  return {
+    ...workout,
+    fields,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Identifica quali campi `enrichWorkoutFromSample` aggiungerebbe (dry-run).
+ * Usato dalla preview UI per mostrare "+FC +kcal +distance" all'utente.
+ */
+export function previewEnrichmentFields(workout: Workout, sample: WearableSample): string[] {
+  const oldFields = (workout.fields ?? {}) as Record<string, unknown>;
+  const added: string[] = [];
+  for (const { key, pick } of ENRICHABLE_FIELDS) {
+    const newVal = pick(sample);
+    if (newVal === undefined || newVal === null) continue;
+    if (oldFields[key] === undefined || oldFields[key] === null || oldFields[key] === "") {
+      added.push(key);
+    }
+  }
+  const distKm = (oldFields.distance_km as number | undefined) ?? sample.distance_km;
+  if (
+    distKm !== undefined && distKm > 0 &&
+    sample.duration_min > 0 &&
+    (oldFields.passo_medio === undefined || oldFields.passo_medio === null || oldFields.passo_medio === "")
+  ) {
+    added.push("passo_medio");
+  }
+  return added;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -816,17 +1102,46 @@ async function appendWorkoutToDay(date: string, workout: Workout): Promise<void>
   }
 }
 
+/**
+ * Aggiorna in-place un workout esistente in `day:YYYY-MM-DD`. Usato per
+ * applicare enrichment (campi biometrici Samsung su workout manuale).
+ *
+ * Ritorna true se update applicato; false se il workout non è stato trovato
+ * (es. è stato cancellato tra preview e commit, edge case race).
+ */
+async function updateWorkoutInDay(date: string, updated: Workout): Promise<boolean> {
+  const key = `day:${date}`;
+  const existing = await getJSON<DiaryDay | null>(key, null);
+  if (!existing || !Array.isArray(existing.workouts)) return false;
+  const idx = existing.workouts.findIndex(w => w.id === updated.id);
+  if (idx < 0) return false;
+  existing.workouts[idx] = updated;
+  await setJSON(key, existing);
+  return true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Orchestrators (side effects)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Side-effect orchestrator: parsa ZIP, dedup contro storage esistente,
- * ritorna ImportPreview per UI conferma.
+ * Side-effect orchestrator: parsa ZIP, applica filtro finestra temporale,
+ * categorizza in 3 gruppi (nuovi / auto-enrich / da-confermare), ritorna
+ * ImportPreview per UI conferma.
  *
- * NON scrive nulla. La conferma avviene via `commitImport`.
+ * NON scrive nulla. La conferma avviene via `commitImport` con le `decisions`
+ * raccolte dalla UI per gli ambigui.
+ *
+ * @param zipBlob ZIP esportato da Samsung Health.
+ * @param opts.windowDays Filtra sample con `startedAt < now - windowDays`
+ *   PRIMA del matching (default 14 = ultime 2 settimane).
  */
-export async function previewImport(zipBlob: Blob): Promise<ImportPreview> {
+export async function previewImport(
+  zipBlob: Blob,
+  opts?: PreviewImportOptions,
+): Promise<ImportPreview> {
+  const windowDays = opts?.windowDays ?? DEFAULT_IMPORT_WINDOW_DAYS;
+
   // Reviewer 3.4: apri lo ZIP UNA volta sola e ripassa l'istanza ai parser.
   // Export annuali Samsung sono 50-100MB: prima si decomprimeva 3x (exercise,
   // HRV, Sleep), ora 1x. Se loadAsync fallisce, fall-back a comportamento
@@ -838,34 +1153,80 @@ export async function previewImport(zipBlob: Blob): Promise<ImportPreview> {
     preloadedZip = undefined;
   }
 
-  const { samples, parseErrors, unrecognizedTypes } = await parseSamsungHealthZipDetailed(
+  const { samples: allSamples, parseErrors, unrecognizedTypes } = await parseSamsungHealthZipDetailed(
     zipBlob,
     preloadedZip,
   );
 
-  // Carica workout esistenti ±90 giorni per dedup
+  // Filtro finestra temporale: scarta sample troppo vecchi PRIMA del matching.
+  // Riduce noise (utenti tipicamente non vogliono re-importare 2 anni di storia).
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - windowDays);
+  const cutoffIso = cutoff.toISOString();
+  const samples = allSamples.filter(s => s.startedAt >= cutoffIso);
+
+  // Carica workout esistenti ±90 giorni per match (per-day buckets per scoring).
   const recentDays = await loadRecentWorkouts();
-  const allWorkouts = recentDays.flatMap(d => d.workouts);
+  const workoutsByDate = new Map<string, Workout[]>();
+  for (const d of recentDays) {
+    if (d.workouts.length > 0) workoutsByDate.set(d.date, d.workouts);
+  }
 
   const newWorkouts: WearableSample[] = [];
-  const matchedWorkouts: WearableSample[] = [];
+  const autoEnrichments: ImportPreview["autoEnrichments"] = [];
+  const ambiguousMatches: ImportPreview["ambiguousMatches"] = [];
 
   // Dedup intra-import: se due sample dello stesso ZIP hanno stesso dedupKey
   // (rarissimo ma possibile se Samsung ha duplicati interni), tieni il primo.
+  // Skippiamo i duplicati silenziosamente (non li categorizziamo come ambigui).
   const seenDedupKeys = new Set<string>();
 
   for (const sample of samples) {
-    if (seenDedupKeys.has(sample.dedupKey)) {
-      matchedWorkouts.push({ ...sample, matchedWorkoutId: null });
-      continue;
-    }
+    if (seenDedupKeys.has(sample.dedupKey)) continue;
     seenDedupKeys.add(sample.dedupKey);
 
-    const matchedId = findMatchingWorkout(sample, allWorkouts);
-    if (matchedId) {
-      matchedWorkouts.push({ ...sample, matchedWorkoutId: matchedId });
+    const sampleDate = sample.startedAt.slice(0, 10);
+    const dayWorkouts = workoutsByDate.get(sampleDate) ?? [];
+
+    const best = findBestMatch(sample, dayWorkouts);
+
+    // Dedup-key esatto = re-import idempotente. Score 1000 → "certo" ma
+    // NON va in autoEnrichments (il workout già contiene quei dati Samsung):
+    // diventa duplicate silenzioso. Lo intercettiamo prima della categorizzazione.
+    if (best.score === DEDUP_KEY_EXACT_SCORE) {
+      continue;
+    }
+
+    if (best.confidence === "certo") {
+      // Score ≥ 80 → enrichment automatico
+      const targetWorkout = dayWorkouts.find(w => w.id === best.workoutId)!;
+      const fieldsAdded = previewEnrichmentFields(targetWorkout, sample);
+      autoEnrichments.push({
+        sample,
+        existingWorkoutId: best.workoutId,
+        score: best.score,
+        fieldsAdded,
+      });
+    } else if (best.confidence === "ambiguo") {
+      // Score 60..79 → ambiguo. Includi TUTTI i candidati con score ≥ AMBIGUOUS_MIN
+      // (max 3, ordinati per score desc) per la UI di scelta.
+      const candidates = buildCandidateList(sample, dayWorkouts);
+      ambiguousMatches.push({ sample, candidates });
     } else {
-      newWorkouts.push(sample);
+      // No match (score < 60).
+      // Se esistono workout dello stesso giorno (anche se non matchano bene),
+      // l'utente potrebbe voler associarli → categorizziamo come ambiguo
+      // con `candidates: []` (UI mostra solo "crea nuovo" / "skip").
+      // Se NON ci sono workout del giorno → newWorkouts (path certo).
+      if (dayWorkouts.length === 0) {
+        newWorkouts.push(sample);
+      } else {
+        // NEW (design approvato): chiediamo conferma anche per i no-match
+        // quando esistono workout dello stesso giorno (l'utente potrebbe
+        // averne registrato uno con tipo/orario molto diversi).
+        const candidates = buildCandidateList(sample, dayWorkouts);
+        ambiguousMatches.push({ sample, candidates });
+      }
     }
   }
 
@@ -889,32 +1250,87 @@ export async function previewImport(zipBlob: Blob): Promise<ImportPreview> {
   return {
     totalSamples: samples.length,
     newWorkouts,
-    matchedWorkouts,
+    autoEnrichments,
+    ambiguousMatches,
     unrecognizedTypes: Array.from(unrecognizedTypes).sort(),
     parseErrors,
     hrvDaily,
     sleepDaily,
+    windowDays,
   };
 }
 
 /**
- * Side-effect orchestrator: applica l'import dopo conferma utente.
- * Scrive nuovi Workout via storage, aggiorna `wearable-import-log`.
- *
- * Idempotente: se `commitImport` viene chiamato due volte sullo stesso
- * preview, il secondo run vedrà i workout creati dal primo via dedupKey
- * → 0 nuovi (test #17).
- *
- * NB: la preview passata può essere "stale" (workout creati nel frattempo
- * da altre tab); ri-eseguiamo dedup live contro lo storage attuale per
- * sicurezza.
+ * Costruisce lista candidati ordinati per score desc (max 3).
+ * Include solo workout con stesso mappedType (score > 0).
  */
-export async function commitImport(preview: ImportPreview): Promise<CommitResult> {
+function buildCandidateList(sample: WearableSample, workouts: Workout[]): MatchCandidate[] {
+  const scored: Array<{ w: Workout; s: number }> = [];
+  for (const w of workouts) {
+    const s = scoreWorkoutMatch(sample, w);
+    if (s > 0 && s < DEDUP_KEY_EXACT_SCORE) scored.push({ w, s });
+  }
+  scored.sort((a, b) => b.s - a.s);
+  return scored.slice(0, 3).map(({ w, s }) => ({
+    workoutId: w.id,
+    score: s,
+    preview: buildWorkoutPreviewLabel(w),
+  }));
+}
+
+/** Stringa human-readable per UI candidato: "corsa breve 20min" tipo. */
+function buildWorkoutPreviewLabel(w: Workout): string {
+  const wf = (w.fields ?? {}) as Record<string, unknown>;
+  const sub = readWorkoutSubtype(wf);
+  const dur = readWorkoutDurationMin(wf);
+  const parts: string[] = [];
+  if (sub) parts.push(sub);
+  else parts.push(w.type);
+  if (dur) parts.push(`${dur}min`);
+  return parts.join(" ");
+}
+
+/**
+ * Side-effect orchestrator: applica l'import dopo conferma utente.
+ *
+ * Strategy:
+ *  1. `preview.newWorkouts` → CREATE nuovi Workout (sample senza candidati).
+ *  2. `preview.autoEnrichments` → UPDATE workout esistenti con biometrici
+ *     Samsung (preserve user data: coalesce `??`).
+ *  3. `preview.ambiguousMatches` → per ognuno guarda `decisions.get(sampleId)`:
+ *     - `{kind:"enrich",workoutId}` → enrich workout target
+ *     - `{kind:"new"}` → CREATE nuovo Workout
+ *     - `{kind:"skip"}` o decision mancante → skip (default safe)
+ *
+ * Idempotente: dedupKey check live contro storage attuale + score=1000 dedup
+ * filtra ri-import dello stesso sample. UI può chiamare `commitImport(preview)`
+ * senza `decisions` → ambigui vengono tutti skippati (safe default).
+ *
+ * NB: la preview può essere "stale" (workout creati nel frattempo da altre
+ * tab); ri-eseguiamo dedup live contro lo storage attuale per sicurezza.
+ *
+ * @param preview Output di `previewImport`.
+ * @param decisions Map sampleDedupKey → decisione utente (opzionale).
+ */
+export async function commitImport(
+  preview: ImportPreview,
+  decisions?: Map<string, SampleDecision>,
+): Promise<CommitResult> {
   const importLogId = uid();
   let workoutsCreated = 0;
-  let duplicatesSkipped = preview.matchedWorkouts.length;
+  let workoutsEnriched = 0;
+  // Conta come "duplicati silenziosi" i sample che la preview ha già filtrato
+  // via dedupKey-match (re-import idempotente). totalSamples include i sample
+  // post-window-filter; le 3 categorie li dovrebbero coprire tutti — il
+  // residuo è quanto è stato matchato per dedupKey esatto.
+  const categorizedCount =
+    preview.newWorkouts.length +
+    preview.autoEnrichments.length +
+    preview.ambiguousMatches.length;
+  let duplicatesSkipped = Math.max(0, preview.totalSamples - categorizedCount);
+  let ambiguousResolved = 0;
 
-  // Re-load workout per dedup live (preview può essere stale)
+  // Re-load workout live per dedup + targeting enrichment (preview può essere stale)
   const recentDays = await loadRecentWorkouts();
   const allWorkouts = recentDays.flatMap(d => d.workouts);
   const liveDedupKeys = new Set<string>();
@@ -922,7 +1338,13 @@ export async function commitImport(preview: ImportPreview): Promise<CommitResult
     const wf = w.fields as Record<string, unknown> | undefined;
     if (wf && typeof wf.dedupKey === "string") liveDedupKeys.add(wf.dedupKey);
   }
+  // Index per ricerca workout by id (per enrichment).
+  const workoutIndex = new Map<string, { date: string; workout: Workout }>();
+  for (const d of recentDays) {
+    for (const w of d.workouts) workoutIndex.set(w.id, { date: d.date, workout: w });
+  }
 
+  // ─── 1. newWorkouts → CREATE ─────────────────────────────────────────────
   for (const sample of preview.newWorkouts) {
     if (liveDedupKeys.has(sample.dedupKey)) {
       duplicatesSkipped++;
@@ -935,9 +1357,94 @@ export async function commitImport(preview: ImportPreview): Promise<CommitResult
       liveDedupKeys.add(sample.dedupKey);
       workoutsCreated++;
     } catch (e) {
-      // Workout singolo fallisce → log + continua. UI vedrà discrepanza
-      // tra preview.newWorkouts.length e workoutsCreated.
       console.warn(`[commitImport] saveDay fallito per ${date}:`, e);
+    }
+  }
+
+  // ─── 2. autoEnrichments → UPDATE ─────────────────────────────────────────
+  for (const enrich of preview.autoEnrichments) {
+    if (liveDedupKeys.has(enrich.sample.dedupKey)) {
+      // Già importato in passato (enrich applicato prima): skip.
+      duplicatesSkipped++;
+      continue;
+    }
+    const target = workoutIndex.get(enrich.existingWorkoutId);
+    if (!target) {
+      // Workout sparito tra preview e commit (race con altra tab). Fall-back:
+      // creiamo nuovo workout per non perdere il dato Samsung.
+      console.warn(`[commitImport] target ${enrich.existingWorkoutId} non trovato, fall-back create`);
+      const w = sampleToWorkout(enrich.sample);
+      const date = enrich.sample.startedAt.slice(0, 10);
+      try {
+        await appendWorkoutToDay(date, w);
+        liveDedupKeys.add(enrich.sample.dedupKey);
+        workoutsCreated++;
+      } catch (e) {
+        console.warn(`[commitImport] fallback create fallito:`, e);
+      }
+      continue;
+    }
+    const updated = enrichWorkoutFromSample(target.workout, enrich.sample);
+    try {
+      const ok = await updateWorkoutInDay(target.date, updated);
+      if (ok) {
+        liveDedupKeys.add(enrich.sample.dedupKey);
+        workoutsEnriched++;
+        // Aggiorna index in memoria per coerenza intra-loop (utile se enrich
+        // multipli puntano allo stesso workoutId — edge case).
+        workoutIndex.set(target.workout.id, { date: target.date, workout: updated });
+      } else {
+        console.warn(`[commitImport] update fallito per ${target.workout.id} (workout sparito)`);
+      }
+    } catch (e) {
+      console.warn(`[commitImport] enrich fallito per ${target.workout.id}:`, e);
+    }
+  }
+
+  // ─── 3. ambiguousMatches → decisions o skip ──────────────────────────────
+  for (const amb of preview.ambiguousMatches) {
+    const decision = decisions?.get(amb.sample.dedupKey);
+    if (!decision || decision.kind === "skip") {
+      // Default: skip (no decision = utente non ha confermato).
+      duplicatesSkipped++;
+      if (decision) ambiguousResolved++;
+      continue;
+    }
+    if (liveDedupKeys.has(amb.sample.dedupKey)) {
+      duplicatesSkipped++;
+      ambiguousResolved++;
+      continue;
+    }
+    if (decision.kind === "new") {
+      const w = sampleToWorkout(amb.sample);
+      const date = amb.sample.startedAt.slice(0, 10);
+      try {
+        await appendWorkoutToDay(date, w);
+        liveDedupKeys.add(amb.sample.dedupKey);
+        workoutsCreated++;
+        ambiguousResolved++;
+      } catch (e) {
+        console.warn(`[commitImport] ambiguous-new fallito:`, e);
+      }
+    } else if (decision.kind === "enrich") {
+      const target = workoutIndex.get(decision.workoutId);
+      if (!target) {
+        console.warn(`[commitImport] ambiguous-enrich target ${decision.workoutId} non trovato`);
+        duplicatesSkipped++;
+        continue;
+      }
+      const updated = enrichWorkoutFromSample(target.workout, amb.sample);
+      try {
+        const ok = await updateWorkoutInDay(target.date, updated);
+        if (ok) {
+          liveDedupKeys.add(amb.sample.dedupKey);
+          workoutsEnriched++;
+          ambiguousResolved++;
+          workoutIndex.set(target.workout.id, { date: target.date, workout: updated });
+        }
+      } catch (e) {
+        console.warn(`[commitImport] ambiguous-enrich fallito:`, e);
+      }
     }
   }
 
@@ -967,6 +1474,8 @@ export async function commitImport(preview: ImportPreview): Promise<CommitResult
     unrecognizedTypes: preview.unrecognizedTypes,
     hrvDaysImported,
     sleepDaysImported,
+    workoutsEnriched,
+    ambiguousResolved,
   };
   const log = await getJSON<ImportLogEntry[]>("wearable-import-log", []);
   log.push(logEntry);
@@ -978,7 +1487,15 @@ export async function commitImport(preview: ImportPreview): Promise<CommitResult
     console.warn("[commitImport] failed to write wearable-import-log:", e);
   }
 
-  return { workoutsCreated, duplicatesSkipped, importLogId, hrvDaysImported, sleepDaysImported };
+  return {
+    workoutsCreated,
+    workoutsEnriched,
+    duplicatesSkipped,
+    ambiguousResolved,
+    importLogId,
+    hrvDaysImported,
+    sleepDaysImported,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1054,6 +1571,7 @@ async function mergeSleepHistory(incoming: DailySleepAggregate[]): Promise<numbe
 // (es. test integrazione che mockano)
 export const __internal__ = {
   appendWorkoutToDay,
+  updateWorkoutInDay,
   loadRecentWorkouts,
   storage,
 };
