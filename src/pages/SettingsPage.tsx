@@ -479,6 +479,42 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
 
   return (
     <div style={{ maxWidth: "560px", margin: "0 auto", padding: "20px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+      {/* Overlay full-screen visibile durante import Samsung Health.
+          Senza, l'utente in scroll non vede il bottone "In corso..." dentro
+          la sezione collapsable e pensa che l'app sia bloccata. */}
+      {importBusy && (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-label="Importazione Samsung Health in corso"
+          style={{
+            position: "fixed",
+            top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(15, 23, 42, 0.85)",
+            backdropFilter: "blur(4px)",
+            zIndex: 1000,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexDirection: "column", gap: "16px",
+          }}
+        >
+          <div style={{
+            width: "56px", height: "56px",
+            border: "5px solid rgba(165, 180, 252, 0.25)",
+            borderTopColor: "#A5B4FC",
+            borderRadius: "50%",
+            animation: "spin 0.9s linear infinite",
+          }} />
+          <div style={{ color: "#E2E8F0", fontWeight: 700, fontSize: "16px", textAlign: "center" }}>
+            {importPhase === "committing" ? "Conferma import in corso..." : "Lettura dati Samsung Health..."}
+          </div>
+          <div style={{ color: "#94A3B8", fontSize: "13px", textAlign: "center", maxWidth: "320px", padding: "0 16px" }}>
+            {importPhase === "parsing"
+              ? "Sto leggendo i file dell'export. Può richiedere qualche secondo per cartelle grandi."
+              : "Sto salvando i workout nel diario."}
+          </div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
       <div>
         <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Impostazioni</div>
         <h1 style={{ fontSize: "24px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.03em" }}>Configurazione</h1>
@@ -843,10 +879,14 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
               <div
                 id="samsung-folder-help"
                 style={{
-                  fontSize: "11px", color: "#64748B", lineHeight: 1.4,
+                  fontSize: "11px", color: "#64748B", lineHeight: 1.5,
                 }}
               >
-                Cartella estratta funziona su Android Chrome. Su iOS comprimi prima in zip e usa il primo bottone.
+                <b>Cartella Android</b>: Chrome chiederà conferma "carica tutti i file" — è normale,
+                conferma. L'app filtra automaticamente i 3 file rilevanti (exercise + HRV + sleep)
+                ignorando le migliaia di file satellite. La finestra "ultime 2 settimane" filtra i
+                workout per data DOPO la lettura (Samsung mette tutti gli allenamenti in un unico
+                CSV). Su iOS comprimi prima in zip e usa il primo bottone.
               </div>
             </>
           )}
