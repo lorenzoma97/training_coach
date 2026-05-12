@@ -39,18 +39,53 @@ const GOAL_CONFLICT_HINT = `
 NOTA SU OBIETTIVI MULTIPLI: hai ≥2 goal attivi. Gli obiettivi possono essere conflittuali (es. dimagrimento+ipertrofia, endurance+potenza, volume+recupero). Nel campo "rationale" spiega esplicitamente come bilanci il conflitto, quale obiettivo ha PRIORITÀ questa settimana, o come alterni l'enfasi settimana-a-settimana. Non cercare di massimizzare tutti contemporaneamente.
 `.trim();
 
+// Schema tollerante a output Gemini variabile (post-feedback live):
+// - subtype: accetta null (Gemini ritorna null invece di omettere il campo)
+// - duration_min: coerce string → number (es. "45" invece di 45)
+// - zone: coerce string → number
+// - day/type: enum strict ma con normalizzazione lowercase via softenRawPlan
 const sessionSchema = z.object({
   day: z.enum(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]),
   type: z.enum(["corsa", "forza_gambe", "forza_upper", "sport", "mobilita"]),
-  subtype: z.string().optional(),
-  duration_min: z.number().int().min(5).max(240),
+  subtype: z.string().nullable().optional().transform(s => s ?? undefined),
+  duration_min: z.coerce.number().int().min(5).max(240),
   details: z.string(),
   rationale: z.string(),
   // Zona FC target 1-5 (obbligatoria per tipi cardio, omessa per forza/mobilita).
   // Il frontend renderizza il range bpm calcolato dinamicamente dalle zone
   // personalizzate dell'utente — qui serve solo la prescrizione logica.
-  zone: z.number().int().min(1).max(5).optional(),
+  zone: z.coerce.number().int().min(1).max(5).nullable().optional().transform(z => z ?? undefined),
 });
+
+/**
+ * Pre-processing del raw JSON Gemini per tollerare variazioni comuni del modello.
+ * Lowercase enum (day/type) → matcha schema enum lowercase.
+ */
+function softenRawPlan(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const r = raw as Record<string, unknown>;
+  if (!Array.isArray(r.weeks)) return raw;
+  return {
+    ...r,
+    weeks: r.weeks.map((w: unknown) => {
+      if (!w || typeof w !== "object") return w;
+      const week = w as Record<string, unknown>;
+      if (!Array.isArray(week.sessions)) return w;
+      return {
+        ...week,
+        sessions: week.sessions.map((s: unknown) => {
+          if (!s || typeof s !== "object") return s;
+          const sess = s as Record<string, unknown>;
+          return {
+            ...sess,
+            day: typeof sess.day === "string" ? sess.day.toLowerCase().trim() : sess.day,
+            type: typeof sess.type === "string" ? sess.type.toLowerCase().trim() : sess.type,
+          };
+        }),
+      };
+    }),
+  };
+}
 
 const weekSchema = z.object({
   weekNumber: z.number().int().min(1),
@@ -602,9 +637,13 @@ ${modeInstruction}
     schemaHint,
     maxTokens: 1800,
   });
-  const parseResult = planSchema.safeParse(raw);
+  // Soft-parse: prima prova con softening (lowercase enum, null→undefined,
+  // coerce numeric). Se ancora fail, log dettagliato per debug live.
+  const softened = softenRawPlan(raw);
+  const parseResult = planSchema.safeParse(softened);
   if (!parseResult.success) {
-    console.error("[planGenerator] Zod parse failed:", parseResult.error.message);
+    console.error("[planGenerator] Zod parse failed dopo softening:", parseResult.error.message);
+    console.error("[planGenerator] Raw response from LLM:", JSON.stringify(raw, null, 2).slice(0, 2000));
     throw new Error("Il coach non è riuscito a generare un piano strutturato. Riprova tra qualche secondo.");
   }
   const parsed = parseResult.data;

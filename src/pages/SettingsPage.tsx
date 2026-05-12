@@ -310,8 +310,17 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       // Applica la finestra scelta dall'utente PRIMA del matching.
       const preview = await samsungPreviewImport(file, { windowDays: importWindowDays });
       setImportPreview(preview);
+      const totalActionable = preview.newWorkouts.length + preview.autoEnrichments.length + preview.ambiguousMatches.length;
+      showImportToast({
+        type: "success",
+        text: totalActionable > 0
+          ? `Preview pronta: ${preview.newWorkouts.length} nuovi, ${preview.autoEnrichments.length} da arricchire, ${preview.ambiguousMatches.length} da confermare`
+          : "ZIP caricato: nessun nuovo workout nella finestra selezionata",
+      });
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setImportError(msg);
+      showImportToast({ type: "error", text: `Lettura ZIP fallita: ${msg}` });
     } finally {
       setImportBusy(false);
       setImportPhase("idle");
@@ -336,8 +345,19 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       const blob = await samsungFileListToZipBlob(files);
       const preview = await samsungPreviewImport(blob, { windowDays: importWindowDays });
       setImportPreview(preview);
+      // Toast feedback immediato post-preview (importante: pre-fix utente non
+      // vedeva nulla durante import di cartella con migliaia di file).
+      const totalActionable = preview.newWorkouts.length + preview.autoEnrichments.length + preview.ambiguousMatches.length;
+      showImportToast({
+        type: "success",
+        text: totalActionable > 0
+          ? `Preview pronta: ${preview.newWorkouts.length} nuovi, ${preview.autoEnrichments.length} da arricchire, ${preview.ambiguousMatches.length} da confermare`
+          : "Cartella caricata: nessun nuovo workout da importare nella finestra selezionata",
+      });
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setImportError(msg);
+      showImportToast({ type: "error", text: `Lettura cartella fallita: ${msg}` });
     } finally {
       setImportBusy(false);
       setImportPhase("idle");

@@ -1586,22 +1586,32 @@ async function mergeSleepHistory(incoming: DailySleepAggregate[]): Promise<numbe
  * @param files FileList da `event.target.files` dell'input directory.
  * @returns Blob compresso ZIP, consumabile da `previewImport(blob, opts)`.
  */
+/**
+ * Pattern dei file SOLI utili dal Samsung Health export. Esclude migliaia di
+ * satellite (jsons/recovery_heart_rate/<shard>/<uuid>.json, live_data, etc.)
+ * che non vengono parsati e fanno solo OOM/freeze del browser su mobile.
+ * Verificato su export reale: ~3000 file totali → ~3 utili.
+ */
+const RELEVANT_FILE_PATTERNS: RegExp[] = [
+  /com\.samsung\.shealth\.exercise\.\d+\.csv$/i,
+  /com\.samsung\.(?:shealth|health)\.hrv\.\d+\.csv$/i,
+  /com\.samsung\.shealth\.sleep\.\d+\.csv$/i,
+];
+
 export async function fileListToZipBlob(files: FileList | File[]): Promise<Blob> {
   const zip = new JSZip();
   // FileList non è iterabile su tutti i browser → Array.from.
   const arr: File[] = Array.from(files);
-  for (const f of arr) {
-    // Strategia text-content (Samsung Health export = solo CSV/JSON, no binari).
-    // 2 motivi vs arrayBuffer():
-    //   1. jsdom test mock File può non implementare .arrayBuffer() ma supporta
-    //      .text() o FileReader.readAsText() — più portabile.
-    //   2. zip.file(name, STRING) bypassa il bug JSZip 3.10.x noto (cycle
-    //      zip.file→generateAsync→loadAsync→file.async() fallisce con content
-    //      Uint8Array). Stesso fix del fixture test round 6 (commit 18d6ed8).
+  // FILTER PRIMA della lettura: leggiamo SOLO i ~3 file che servono ai parser
+  // (post fix regex stretti commit 6061416). Senza filter, su export Samsung
+  // reali (3000+ file) leggeremmo ogni JSON satellite di workout/HRV/HR live
+  // → main thread freeze 30-60s + OOM su mobile. Con filter → 3 file in <1s.
+  const relevant = arr.filter(f => {
+    const relPath = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+    return RELEVANT_FILE_PATTERNS.some(re => re.test(relPath));
+  });
+  for (const f of relevant) {
     const text = await readFileAsText(f);
-    // webkitRelativePath è il path relativo dalla root della cartella
-    // selezionata (es. "Samsung Health/samsunghealth_xxx/com.samsung...csv").
-    // Su input file singolo (no webkitdirectory) il valore è "" → fallback name.
     const relPath = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
     zip.file(relPath, text);
   }
