@@ -1150,7 +1150,11 @@ function fileWithRelPath(content: string, relPath: string): File {
 }
 
 describe("fileListToZipBlob (Fix 2 — Android folder upload)", () => {
-  it("FileList multi-file → Blob ZIP valido apribile da JSZip.loadAsync", async () => {
+  it("FileList multi-file → Blob ZIP valido con SOLO file rilevanti (filter pre-lettura)", async () => {
+    // Post hot-fix performance: fileListToZipBlob FILTRA via regex stretti i
+    // file rilevanti (exercise/hrv/sleep summary). Satellite (.weather.,
+    // .recovery_heart_rate, etc.) vengono SCARTATI per evitare main-thread
+    // freeze su cartelle reali con migliaia di file.
     const csvA = "exercise_type,start_time,end_time,mean_heart_rate,distance,calorie\n" +
       "Running,2026-05-08 07:00:00,2026-05-08 07:45:00,145,8500,480";
     const csvB = "weather_data,placeholder\nfoo,bar";
@@ -1163,13 +1167,12 @@ describe("fileListToZipBlob (Fix 2 — Android folder upload)", () => {
     expect(blob).toBeInstanceOf(Blob);
     expect(blob.size).toBeGreaterThan(0);
 
-    // Roundtrip: lo ZIP costruito deve essere apribile e preservare i path
-    // relativi (essenziale per le regex del parser che matchano
-    // `Samsung Health/.../com.samsung.shealth.exercise.<ts>.csv`).
     const zip = await JSZip.loadAsync(blob);
     const entries = Object.keys(zip.files);
+    // Il file principale exercise viene mantenuto
     expect(entries).toContain("Samsung Health/sh_xx/com.samsung.shealth.exercise.20260509.csv");
-    expect(entries).toContain("Samsung Health/sh_xx/com.samsung.shealth.exercise.weather.20260509.csv");
+    // Il satellite .weather. viene scartato dal filter (perf optimization)
+    expect(entries).not.toContain("Samsung Health/sh_xx/com.samsung.shealth.exercise.weather.20260509.csv");
   });
 
   it("Roundtrip: FileList → blob → previewImport produce gli stessi sample del ZIP nativo", async () => {
