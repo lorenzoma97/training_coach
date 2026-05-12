@@ -840,10 +840,10 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
                   ref={samsungFolderRef}
                   type="file"
                   multiple
-                  // @ts-expect-error attributi non standard in React types
-                  webkitdirectory=""
-                  // @ts-expect-error attributo non standard in React types
-                  directory=""
+                  // Attributi non standard: spread cast as any per evitare
+                  // sia errori TS quando i types React non li conoscono, sia
+                  // "unused @ts-expect-error" se i types vengono aggiornati.
+                  {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
                   aria-describedby="samsung-folder-help"
                   aria-label="Carica cartella estratta Samsung Health (Android)"
                   onChange={(e) => onSamsungFolderSelected(e.target.files)}
