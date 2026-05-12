@@ -67,11 +67,13 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Toggle multi-pass. Lasciato come const per Wave 4.1 (no UI flag in profile).
- * Se serve disabilitare a runtime → settare a false e il caller cadra'
- * sul comportamento legacy (single-pass) via planGenerator.
+ * Toggle multi-pass. DISATTIVATO temporaneamente dopo regressione live
+ * (commit 752c9d0+): Pass-1 skeleton schema Zod stretto vs Gemini Flash output
+ * variabile → "JSON malformato" su rigenerazione piano. Single-pass legacy
+ * funziona bene da Wave 2.x. Riabilitare quando lo schema Pass-1 è più
+ * tollerante a campi extra/case (es. passthrough .partial() o .passthrough()).
  */
-export const MULTI_PASS_ENABLED = true;
+export const MULTI_PASS_ENABLED = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schemi Zod Pass-1 e Pass-2.
