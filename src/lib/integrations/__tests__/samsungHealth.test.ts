@@ -25,6 +25,7 @@ import {
   sampleToWorkout,
   previewImport,
   commitImport,
+  fileListToZipBlob,
   DEFAULT_IMPORT_WINDOW_DAYS,
   type SampleDecision,
 } from "../samsungHealth";
@@ -1128,5 +1129,75 @@ describe("Real Samsung export — exercise regex stretto", () => {
     // 1 sola sample dal summary, NESSUN parse error dai satellite (skippati)
     expect(result.length).toBe(1);
     expect(result[0].rawType).toBe("Running");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fix 2 — fileListToZipBlob: upload cartella estratta Samsung Health (Android).
+// Test setup: FileList non è costruibile direttamente in jsdom → la funzione
+// accetta `FileList | File[]` e qui passiamo File[] (con `webkitRelativePath`
+// stub via Object.defineProperty perché il costruttore File non lo accetta).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Helper: crea un File con webkitRelativePath stubbato (jsdom non lo popola). */
+function fileWithRelPath(content: string, relPath: string): File {
+  // Estrae basename per il File constructor.
+  const name = relPath.split("/").pop() || relPath;
+  const f = new File([content], name, { type: "text/csv" });
+  // webkitRelativePath è readonly in lib.dom.d.ts ma jsdom non lo enforce.
+  Object.defineProperty(f, "webkitRelativePath", { value: relPath, writable: false });
+  return f;
+}
+
+describe("fileListToZipBlob (Fix 2 — Android folder upload)", () => {
+  it("FileList multi-file → Blob ZIP valido apribile da JSZip.loadAsync", async () => {
+    const csvA = "exercise_type,start_time,end_time,mean_heart_rate,distance,calorie\n" +
+      "Running,2026-05-08 07:00:00,2026-05-08 07:45:00,145,8500,480";
+    const csvB = "weather_data,placeholder\nfoo,bar";
+    const files = [
+      fileWithRelPath(csvA, "Samsung Health/sh_xx/com.samsung.shealth.exercise.20260509.csv"),
+      fileWithRelPath(csvB, "Samsung Health/sh_xx/com.samsung.shealth.exercise.weather.20260509.csv"),
+    ];
+
+    const blob = await fileListToZipBlob(files);
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.size).toBeGreaterThan(0);
+
+    // Roundtrip: lo ZIP costruito deve essere apribile e preservare i path
+    // relativi (essenziale per le regex del parser che matchano
+    // `Samsung Health/.../com.samsung.shealth.exercise.<ts>.csv`).
+    const zip = await JSZip.loadAsync(blob);
+    const entries = Object.keys(zip.files);
+    expect(entries).toContain("Samsung Health/sh_xx/com.samsung.shealth.exercise.20260509.csv");
+    expect(entries).toContain("Samsung Health/sh_xx/com.samsung.shealth.exercise.weather.20260509.csv");
+  });
+
+  it("Roundtrip: FileList → blob → previewImport produce gli stessi sample del ZIP nativo", async () => {
+    const csv = [
+      "exercise_type,start_time,end_time,mean_heart_rate,distance,calorie",
+      "Running,2026-05-08 07:00:00,2026-05-08 07:45:00,145,8500,480",
+    ].join("\n");
+    const relPath = "Samsung Health/sh_xx/com.samsung.shealth.exercise.20260509.csv";
+
+    // (a) Pipeline ZIP nativo: costruisco un blob con JSZip direttamente.
+    const nativeZip = new JSZip();
+    nativeZip.file(relPath, csv);
+    const nativeBlob = await nativeZip.generateAsync({ type: "blob" });
+    const nativePreview = await previewImport(nativeBlob, { windowDays: 3650 });
+
+    // (b) Pipeline FileList: fileListToZipBlob ricostruisce uno ZIP equivalente.
+    const fileListBlob = await fileListToZipBlob([fileWithRelPath(csv, relPath)]);
+    const fileListPreview = await previewImport(fileListBlob, { windowDays: 3650 });
+
+    // Stesso numero di sample classificati (newWorkouts dominante con DB vuoto)
+    // → il pipeline FileList è equivalente al pipeline ZIP nativo dal punto di
+    // vista del parser. Verifichiamo i count nelle categorie principali.
+    expect(fileListPreview.newWorkouts.length).toBe(nativePreview.newWorkouts.length);
+    expect(fileListPreview.autoEnrichments.length).toBe(nativePreview.autoEnrichments.length);
+    expect(fileListPreview.ambiguousMatches.length).toBe(nativePreview.ambiguousMatches.length);
+    // Sample dedup keys identici → mapping/parsing 1:1.
+    const nativeKeys = nativePreview.newWorkouts.map(s => s.dedupKey).sort();
+    const fileListKeys = fileListPreview.newWorkouts.map(s => s.dedupKey).sort();
+    expect(fileListKeys).toEqual(nativeKeys);
   });
 });

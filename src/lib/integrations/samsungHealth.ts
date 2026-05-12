@@ -1567,6 +1567,40 @@ async function mergeSleepHistory(incoming: DailySleepAggregate[]): Promise<numbe
   return imported;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fix 2 — Upload cartella estratta Samsung Health (mobile Android).
+// Samsung Health Android esporta in /Documents/Samsung Health/<timestamp>/
+// come cartella NON zippata. UI `<input webkitdirectory>` ritorna una
+// FileList con tutti i file della cartella selezionata. Costruiamo uno ZIP
+// in-memory così la pipeline `previewImport(blob)` esistente non cambia.
+// NB iOS Safari ignora `webkitdirectory` → degrade a picker file singolo.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Costruisce un Blob ZIP in-memory partendo da una FileList ottenuta da
+ * `<input webkitdirectory>`. Preserva i path relativi via
+ * `File.webkitRelativePath` così le regex del parser (es. `Samsung Health/...`)
+ * continuano a matchare. Fallback su `file.name` se l'attributo è vuoto
+ * (browser legacy che non popola webkitRelativePath).
+ *
+ * @param files FileList da `event.target.files` dell'input directory.
+ * @returns Blob compresso ZIP, consumabile da `previewImport(blob, opts)`.
+ */
+export async function fileListToZipBlob(files: FileList | File[]): Promise<Blob> {
+  const zip = new JSZip();
+  // FileList non è iterabile su tutti i browser → Array.from.
+  const arr: File[] = Array.from(files);
+  for (const f of arr) {
+    const buf = await f.arrayBuffer();
+    // webkitRelativePath è il path relativo dalla root della cartella
+    // selezionata (es. "Samsung Health/samsunghealth_xxx/com.samsung...csv").
+    // Su input file singolo (no webkitdirectory) il valore è "" → fallback name.
+    const relPath = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+    zip.file(relPath, buf);
+  }
+  return await zip.generateAsync({ type: "blob" });
+}
+
 // Re-export per consumer che vogliono accesso a storage helper interni
 // (es. test integrazione che mockano)
 export const __internal__ = {

@@ -14,7 +14,9 @@ import type { PlannedSession, PlannedExercise } from "../lib/types";
 import { useNotify } from "./Notification";
 import ReadinessBanner from "./coach/ReadinessBanner";
 import MacroUpdatedBanner from "./coach/MacroUpdatedBanner";
+import StalePlanBanner from "./coach/StalePlanBanner";
 import SubstitutionBadge from "./coach/SubstitutionBadge";
+import { parseISODateLocal } from "../lib/dateFormatters";
 import { resolveSubstitution } from "../lib/coach/equipmentSubstitutor";
 import { normalizeEquipmentTags } from "../lib/equipment/equipmentNormalizer";
 import { EXERCISES } from "../lib/catalog/exercises";
@@ -740,6 +742,24 @@ export default function TrainingPlanView() {
   const isExpiringSoon = daysLeft <= 3;
   const isExpired = daysLeft === 0;
 
+  // Fix 1 — Banner "piano scaduto" + render grigio.
+  // Se l'utente non apre l'app da >7gg, plan.startDate è la settimana già
+  // passata: parsing locale (no UTC off-by-one), confronto a mezzanotte
+  // locale per evitare flicker durante il giorno.
+  const isPlanStale = (() => {
+    if (!plan?.startDate) return false;
+    const start = parseISODateLocal(plan.startDate);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const SEVEN_DAYS_MS = 7 * 24 * 3600 * 1000;
+    return now.getTime() > start.getTime() + SEVEN_DAYS_MS;
+  })();
+  // Stile "grigio" applicato al wrapper delle settimane quando stale:
+  // opacity 0.55 + grayscale 0.4 → visivamente chiaro che è "vecchio".
+  const staleWeeksStyle = isPlanStale
+    ? { opacity: 0.55, filter: "grayscale(0.4)" }
+    : undefined;
+
   const rationaleBullets = rationaleToBullets(plan.rationale);
   const isMultiBullet = rationaleBullets.length > 1;
 
@@ -753,6 +773,16 @@ export default function TrainingPlanView() {
           snapshot. MacroUpdatedBanner è dismissibile per macroId. */}
       <ReadinessBanner />
       <MacroUpdatedBanner onRegenerate={() => handleRegenerate("next-week")} />
+      {/* Fix 1 — Banner amber "piano scaduto" se startDate > 7gg fa. Non
+          dismissibile: l'utente deve rigenerare per ripristinare uno stato
+          allineato alla settimana corrente. */}
+      {isPlanStale && plan.startDate && !isExpired && (
+        <StalePlanBanner
+          startDate={plan.startDate}
+          onRegenerate={() => handleRegenerate("next-week")}
+          disabled={regenerating}
+        />
+      )}
 
       {/* Z2 in cima per avere il range bpm sempre visibile */}
       <ZonesCard compact highlightZone={2} />
@@ -1127,6 +1157,10 @@ export default function TrainingPlanView() {
         {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
       </div>
 
+      {/* Fix 1 — Wrapper "grigio" delle sessioni della settimana quando il
+          piano è stale (>7gg dal startDate). Visivamente chiaro che la
+          settimana mostrata non è più quella corrente. */}
+      <div style={staleWeeksStyle}>
       {!isExpired && plan.weeks.map((w: TrainingPlan["weeks"][number]) => {
         // Calcola la data di inizio della settimana (Mon) per il range header
         // e per le date assolute delle sessioni. plan.startDate è il lun della
@@ -1377,6 +1411,8 @@ export default function TrainingPlanView() {
         </div>
         );
       })}
+      </div>
+      {/* /Fix 1 wrapper grigio */}
 
 
       {!isExpired && (

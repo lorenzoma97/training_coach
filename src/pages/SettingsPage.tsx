@@ -16,6 +16,7 @@ import RaceCalendarSection from "../components/races/RaceCalendarSection";
 import {
   previewImport as samsungPreviewImport,
   commitImport as samsungCommitImport,
+  fileListToZipBlob as samsungFileListToZipBlob,
   type ImportPreview as SamsungImportPreview,
   type SampleDecision as SamsungSampleDecision,
   DEFAULT_IMPORT_WINDOW_DAYS as SAMSUNG_DEFAULT_WINDOW,
@@ -76,6 +77,9 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   // Wave 3.5: decisioni utente per match ambigui (sampleDedupKey → decision)
   const [pendingDecisions, setPendingDecisions] = useState<Map<string, SamsungSampleDecision>>(new Map());
   const samsungFileRef = useRef<HTMLInputElement>(null);
+  // Fix 2 — ref separato per il picker cartella estratta (Android Samsung Health
+  // esporta in /Documents/Samsung Health/<ts>/ come cartella non zippata).
+  const samsungFolderRef = useRef<HTMLInputElement>(null);
   const importToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -292,6 +296,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
     setImportPhase("idle");
     setPendingDecisions(new Map());
     if (samsungFileRef.current) samsungFileRef.current.value = "";
+    if (samsungFolderRef.current) samsungFolderRef.current.value = "";
   };
 
   const onSamsungFileSelected = async (file: File | null) => {
@@ -311,6 +316,32 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       setImportBusy(false);
       setImportPhase("idle");
       if (samsungFileRef.current) samsungFileRef.current.value = "";
+    }
+  };
+
+  // Fix 2 — Handler upload cartella estratta (Android). Samsung Health Android
+  // esporta in /Documents/Samsung Health/<timestamp>/ come cartella, non zip.
+  // Costruiamo uno ZIP in-memory e lo passiamo al pipeline esistente
+  // `previewImport(blob)` senza modificare il parser.
+  // NB iOS Safari ignora `webkitdirectory` → il picker mostra file singoli; in
+  // quel caso l'utente vedrà la nota sotto il bottone con istruzioni alternative.
+  const onSamsungFolderSelected = async (files: FileList | null) => {
+    if (!files || files.length === 0 || importBusy) return;
+    setImportBusy(true);
+    setImportPhase("parsing");
+    setImportError(null);
+    setImportPreview(null);
+    setPendingDecisions(new Map());
+    try {
+      const blob = await samsungFileListToZipBlob(files);
+      const preview = await samsungPreviewImport(blob, { windowDays: importWindowDays });
+      setImportPreview(preview);
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportBusy(false);
+      setImportPhase("idle");
+      if (samsungFolderRef.current) samsungFolderRef.current.value = "";
     }
   };
 
@@ -800,6 +831,61 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
                 >
                   {importBusy ? "In corso..." : "Carica file ZIP Samsung Health"}
                 </button>
+
+                {/* Fix 2 — Secondo input/button per cartella estratta (Android).
+                    `webkitdirectory directory` (multi-attribute per compat
+                    Chrome/Firefox vs Safari legacy). multiple per garantire che
+                    tutti i file della cartella selezionata arrivino in FileList. */}
+                <input
+                  ref={samsungFolderRef}
+                  type="file"
+                  multiple
+                  // @ts-expect-error attributi non standard in React types
+                  webkitdirectory=""
+                  // @ts-expect-error attributo non standard in React types
+                  directory=""
+                  aria-describedby="samsung-folder-help"
+                  aria-label="Carica cartella estratta Samsung Health (Android)"
+                  onChange={(e) => onSamsungFolderSelected(e.target.files)}
+                  disabled={importBusy}
+                  style={{
+                    position: "absolute",
+                    width: 1, height: 1,
+                    padding: 0, margin: -1,
+                    overflow: "hidden", clip: "rect(0,0,0,0)",
+                    whiteSpace: "nowrap", border: 0,
+                  }}
+                />
+                <button
+                  onClick={() => samsungFolderRef.current?.click()}
+                  disabled={importBusy}
+                  aria-busy={importBusy}
+                  style={{
+                    display: "block", width: "100%",
+                    minHeight: "44px", padding: "12px 16px",
+                    marginTop: "10px",
+                    background: importBusy
+                      ? "#1E293B"
+                      : "transparent",
+                    border: "1px solid rgba(99, 102, 241, 0.5)",
+                    borderRadius: "10px",
+                    color: "#A5B4FC", fontWeight: 700, fontSize: "14px",
+                    cursor: importBusy ? "wait" : "pointer",
+                    opacity: importBusy ? 0.7 : 1,
+                  }}
+                >
+                  {importBusy ? "In corso..." : "Carica cartella estratta (Android)"}
+                </button>
+                <div
+                  id="samsung-folder-help"
+                  style={{
+                    fontSize: "11px", color: "#64748B",
+                    marginTop: "6px", lineHeight: 1.4,
+                  }}
+                >
+                  Funziona su Android Chrome. Su iOS comprimi la cartella in zip
+                  prima e usa il bottone sopra.
+                </div>
               </>
             )}
 
