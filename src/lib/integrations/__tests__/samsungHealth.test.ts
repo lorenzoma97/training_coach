@@ -228,15 +228,17 @@ describe("computeDedupKey", () => {
 // SCORING (Wave 3.5) — score-based match con soglie certo/ambiguo/none
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Helper: costruisce sample minimo per test scoring. */
+/** Helper: costruisce sample minimo per test scoring.
+ * NB: defaults vengono PRIMA dello spread di opts, così le chiavi presenti in
+ * opts sovrascrivono il default. startedAt è required nel tipo del param e
+ * arriva via `...opts` senza duplicazione (TS2783 fix). */
 function makeSample(opts: Partial<WearableSample> & { startedAt: string }): WearableSample {
   return {
     source: "samsung_health",
-    startedAt: opts.startedAt,
-    duration_min: opts.duration_min ?? 45,
-    rawType: opts.rawType ?? "Running",
-    mappedType: opts.mappedType ?? "corsa",
-    dedupKey: opts.dedupKey ?? "test-dk",
+    duration_min: 45,
+    rawType: "Running",
+    mappedType: "corsa",
+    dedupKey: "test-dk",
     ...opts,
   };
 }
