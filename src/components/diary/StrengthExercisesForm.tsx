@@ -228,18 +228,13 @@ const labelStyle: React.CSSProperties = {
 };
 const cardStyle: React.CSSProperties = {
   background: "#16213E", border: "1px solid rgba(255,255,255,0.06)",
-  borderRadius: "14px", padding: "14px",
+  borderRadius: "12px", padding: "10px 12px",
 };
 const ghostBtnStyle: React.CSSProperties = {
   padding: "10px 14px", minHeight: "44px", background: "transparent",
   border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px",
   color: "#CBD5E1", fontSize: "14px", fontWeight: 600, cursor: "pointer",
   fontFamily: "inherit",
-};
-const dangerBtnStyle: React.CSSProperties = {
-  ...ghostBtnStyle,
-  borderColor: "rgba(239,68,68,0.3)",
-  color: "#EF4444",
 };
 const primaryBtnStyle: React.CSSProperties = {
   padding: "12px 16px", minHeight: "44px",
@@ -319,16 +314,15 @@ export default function StrengthExercisesForm({
   const onNotesChange = (exIdx: number, notes: string) => onChange(updateExerciseNotes(exercises, exIdx, notes));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
       {exercises.length === 0 && (
         <div style={{
-          fontSize: "13px", color: "#64748B", padding: "12px 14px",
+          fontSize: "12px", color: "#64748B", padding: "10px 12px",
           background: "#16213E", borderRadius: "10px",
           border: "1px dashed rgba(255,255,255,0.08)",
           textAlign: "center", lineHeight: 1.4,
         }}>
-          Nessun esercizio aggiunto.<br />
-          Usa <b>+ Aggiungi esercizio</b> per registrare carichi e set strutturati.
+          Nessun esercizio. Usa <b>+ Aggiungi esercizio</b> per registrare carichi e set.
         </div>
       )}
 
@@ -338,32 +332,46 @@ export default function StrengthExercisesForm({
         const showNotes = notesOpen[exIdx] === true || (perf.notes !== undefined && perf.notes !== "");
         return (
           <div key={`${perf.exerciseId}-${exIdx}`} style={cardStyle} role="group" aria-label={displayName}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "12px" }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "15px", fontWeight: 700, color: "#E2E8F0" }}>{displayName}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+              <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap" }}>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: "#E2E8F0" }}>{displayName}</div>
                 {exercise?.pattern && (
                   <div style={{
                     fontSize: "10px", color: "#64748B",
                     fontFamily: "'JetBrains Mono', monospace",
                     textTransform: "uppercase", letterSpacing: "0.05em",
-                    marginTop: "2px",
                   }}>
                     {PATTERN_LABELS[exercise.pattern] ?? exercise.pattern}
                   </div>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={() => onRemoveExercise(exIdx)}
+                disabled={disabled}
+                aria-label={`Rimuovi esercizio ${displayName}`}
+                title="Rimuovi esercizio"
+                style={{
+                  ...iconBtnStyle,
+                  borderColor: "rgba(239,68,68,0.25)",
+                  color: "#EF4444",
+                  opacity: disabled ? 0.5 : 1,
+                  cursor: disabled ? "not-allowed" : "pointer",
+                  flexShrink: 0,
+                }}
+              >×</button>
             </div>
 
             {/* Header set */}
             <div style={{
-              display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 1fr 44px",
-              gap: "6px", marginBottom: "6px", alignItems: "end",
+              display: "grid", gridTemplateColumns: "28px 1fr 1fr 1fr 1fr 44px",
+              gap: "5px", marginBottom: "4px", alignItems: "end",
             }}>
-              <span style={{ ...labelStyle, marginBottom: 0 }} aria-hidden="true">#</span>
-              <span style={{ ...labelStyle, marginBottom: 0 }} aria-hidden="true">Reps</span>
-              <span style={{ ...labelStyle, marginBottom: 0 }} aria-hidden="true">Kg</span>
-              <span style={{ ...labelStyle, marginBottom: 0 }} aria-hidden="true">RPE</span>
-              <span style={{ ...labelStyle, marginBottom: 0 }} aria-hidden="true">RIR</span>
+              <span style={{ ...labelStyle, marginBottom: 0, textAlign: "center" }} aria-hidden="true">#</span>
+              <span style={{ ...labelStyle, marginBottom: 0, textAlign: "center" }} aria-hidden="true">Reps</span>
+              <span style={{ ...labelStyle, marginBottom: 0, textAlign: "center" }} aria-hidden="true">Kg</span>
+              <span style={{ ...labelStyle, marginBottom: 0, textAlign: "center" }} aria-hidden="true">RPE</span>
+              <span style={{ ...labelStyle, marginBottom: 0, textAlign: "center" }} aria-hidden="true">RIR</span>
               <span aria-hidden="true" />
             </div>
 
@@ -374,8 +382,8 @@ export default function StrengthExercisesForm({
               const rirId = fid(`rir-${exIdx}-${setIdx}`);
               return (
                 <div key={setIdx} style={{
-                  display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 1fr 44px",
-                  gap: "6px", marginBottom: "6px", alignItems: "center",
+                  display: "grid", gridTemplateColumns: "28px 1fr 1fr 1fr 1fr 44px",
+                  gap: "5px", marginBottom: "5px", alignItems: "center",
                 }}>
                   <div style={{
                     fontFamily: "'JetBrains Mono', monospace",
@@ -452,13 +460,13 @@ export default function StrengthExercisesForm({
               );
             })}
 
-            <div style={{ display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
               <button
                 type="button"
                 onClick={() => onAddSet(exIdx)}
                 disabled={disabled}
                 aria-label={`Aggiungi un nuovo set a ${displayName}`}
-                style={{ ...ghostBtnStyle, flex: "1 1 120px", opacity: disabled ? 0.5 : 1 }}
+                style={{ ...ghostBtnStyle, flex: "1 1 120px", padding: "8px 12px", fontSize: "13px", opacity: disabled ? 0.5 : 1 }}
               >+ Set</button>
               <button
                 type="button"
@@ -467,34 +475,24 @@ export default function StrengthExercisesForm({
                 aria-expanded={showNotes}
                 aria-controls={fid(`notes-${exIdx}`)}
                 aria-label={`${showNotes ? "Nascondi" : "Mostra"} note per ${displayName}`}
-                style={{ ...ghostBtnStyle, flex: "1 1 100px", opacity: disabled ? 0.5 : 1 }}
+                style={{ ...ghostBtnStyle, flex: "1 1 100px", padding: "8px 12px", fontSize: "13px", opacity: disabled ? 0.5 : 1 }}
               >{showNotes ? "− Note" : "+ Note"}</button>
             </div>
 
             {showNotes && (
-              <div style={{ marginTop: "10px" }}>
-                <label htmlFor={fid(`notes-${exIdx}`)} style={labelStyle}>Note esercizio</label>
+              <div style={{ marginTop: "8px" }}>
                 <textarea
                   id={fid(`notes-${exIdx}`)}
                   value={perf.notes ?? ""}
                   onChange={e => onNotesChange(exIdx, e.target.value)}
-                  placeholder="Tecnica, sensazioni, dolore..."
+                  placeholder="Note: tecnica, sensazioni, dolore..."
+                  aria-label={`Note esercizio ${displayName}`}
                   disabled={disabled}
                   rows={2}
-                  style={{ ...inputStyle, minHeight: "60px", resize: "vertical", padding: "10px 12px" }}
+                  style={{ ...inputStyle, minHeight: "52px", resize: "vertical", padding: "8px 10px" }}
                 />
               </div>
             )}
-
-            <div style={{ marginTop: "12px" }}>
-              <button
-                type="button"
-                onClick={() => onRemoveExercise(exIdx)}
-                disabled={disabled}
-                aria-label={`Rimuovi esercizio ${displayName}`}
-                style={{ ...dangerBtnStyle, width: "100%", opacity: disabled ? 0.5 : 1 }}
-              >❌ Rimuovi esercizio</button>
-            </div>
           </div>
         );
       })}

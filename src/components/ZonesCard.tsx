@@ -202,9 +202,12 @@ export default function ZonesCard({ compact = false, highlightZone }: Props) {
         </div>
       )}
 
-      <div style={{ fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 1.5, padding: "8px 0" }}>
-        {result.methodExplanation}
-      </div>
+      <details style={{ fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 1.5 }}>
+        <summary style={{ cursor: "pointer", padding: "6px 0", listStyle: "none", color: colors.textMuted, fontWeight: 600 }}>
+          Come sono calcolate le zone ›
+        </summary>
+        <div style={{ padding: "4px 0 8px" }}>{result.methodExplanation}</div>
+      </details>
     </div>
   );
 }

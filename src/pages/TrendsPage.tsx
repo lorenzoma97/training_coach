@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getAllDays } from "../lib/diaryContext";
 import { events } from "../lib/events";
 import Sparkline, { type SparklinePoint } from "../components/Sparkline";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 type Period = 7 | 14 | 30 | 90;
 
@@ -319,7 +320,7 @@ export default function TrendsPage() {
       )}
 
       {loading ? (
-        <div style={{ textAlign: "center", padding: "40px", color: "#94A3B8" }}>Caricamento…</div>
+        <LoadingSpinner variant="block" label="Caricamento…" data-testid="trends-loading" />
       ) : !hasAnyData ? (
         <div style={{ ...cardStyle, textAlign: "center", padding: "40px 20px" }}>
           <div style={{ fontSize: "36px", marginBottom: "10px" }}>📈</div>

@@ -8,6 +8,7 @@ import ProactiveFeedback from "./components/ProactiveFeedback";
 import ErrorBoundary from "./components/ErrorBoundary";
 import OfflineBanner from "./components/OfflineBanner";
 import PwaInstallBanner from "./components/PwaInstallBanner";
+import LoadingSpinner from "./components/LoadingSpinner";
 import { NotificationHost, useNotify } from "./components/Notification";
 import { getJSON, setJSON, safeBool } from "./lib/storage";
 import { maybeRunWeeklyReport } from "./lib/scheduler";
@@ -182,7 +183,13 @@ function AppShell() {
   }, []);
 
   if (onboarded === null) {
-    return <div style={{ padding: "40px", textAlign: "center", color: "#94A3B8" }}>Caricamento…</div>;
+    // Boot iniziale: legge flag onboarding da storage (~ms su mobile). Spinner
+    // helper invece di stringa testuale per coerenza visuale con resto app.
+    return (
+      <div style={{ padding: "40px" }}>
+        <LoadingSpinner variant="block" label="Caricamento…" data-testid="app-boot-loading" />
+      </div>
+    );
   }
 
   if (!onboarded) {

@@ -710,18 +710,22 @@ export default function RaceCalendarSection() {
     <div data-testid="race-calendar-section" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <div style={{
         background: "#16213E", border: "1px solid rgba(255,255,255,0.06)",
-        borderRadius: "14px", padding: "20px",
+        borderRadius: "14px", padding: "16px",
       }}>
         <div style={{
-          fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em",
-          color: "#E8553A", textTransform: "uppercase",
-          fontFamily: "'JetBrains Mono', monospace", marginBottom: "10px",
+          display: "flex", alignItems: "baseline", gap: "10px",
+          marginBottom: "12px", flexWrap: "wrap",
         }}>
-          Gare e obiettivi futuri
-        </div>
-        <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "16px", lineHeight: 1.5 }}>
-          Configura le gare future. Una gara <b>priorità A</b> attiva il macrociclo
-          (12-24 settimane con fasi base / build / peak / taper).
+          <div style={{
+            fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em",
+            color: "#E8553A", textTransform: "uppercase",
+            fontFamily: "'JetBrains Mono', monospace",
+          }}>
+            Gare e obiettivi
+          </div>
+          <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.4 }}>
+            Una gara priorità A attiva il macrociclo (12-24 sett, fasi base/build/peak/taper).
+          </div>
         </div>
 
         {/* Banner Macrociclo attivo */}
@@ -736,21 +740,20 @@ export default function RaceCalendarSection() {
           <div
             data-testid="races-empty-state"
             style={{
-              padding: "20px", background: "#1A1A2E",
+              padding: "14px 16px", background: "#1A1A2E",
               border: "1px dashed rgba(255,255,255,0.12)",
-              borderRadius: "12px", textAlign: "center",
-              color: "#94A3B8", fontSize: "13px", lineHeight: 1.6,
+              borderRadius: "12px",
+              color: "#CBD5E1", fontSize: "13px", lineHeight: 1.5,
+              display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap",
             }}
           >
-            <div style={{ fontSize: "32px", marginBottom: "8px" }} aria-hidden>🏁</div>
-            <div style={{ marginBottom: "12px" }}>
-              Nessuna gara configurata.<br />
-              Aggiungi una gara per attivare la <b>pianificazione macrociclo</b>.
+            <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+              Nessuna gara configurata. Aggiungi una gara priorità A per attivare il macrociclo.
             </div>
             <button
               type="button"
               onClick={() => setShowForm(true)}
-              style={{ ...primaryBtn, minHeight: "44px" }}
+              style={{ ...primaryBtn, minHeight: "44px", flexShrink: 0 }}
               aria-label="Aggiungi la prima gara"
             >
               + Aggiungi gara
@@ -765,7 +768,7 @@ export default function RaceCalendarSection() {
             aria-label="Elenco gare configurate"
             style={{
               listStyle: "none", padding: 0, margin: "0 0 12px",
-              display: "flex", flexDirection: "column", gap: "10px",
+              display: "flex", flexDirection: "column", gap: "6px",
             }}
           >
             {races.map(r => {
@@ -786,108 +789,102 @@ export default function RaceCalendarSection() {
                   </li>
                 );
               }
+              const daysLabel = isPast
+                ? `passata (${-days}gg fa)`
+                : days === 0 ? "oggi" : `tra ${days}gg`;
               return (
-                <li
-                  key={r.id}
-                  style={{
-                    ...cardStyle,
-                    borderLeft: `3px solid ${colors.border}`,
-                    background: isPast ? "#0F172A" : "#1A1A2E",
-                    opacity: isPast ? 0.65 : 1,
-                  }}
-                >
-                  <div style={{
-                    display: "flex", justifyContent: "space-between",
-                    alignItems: "flex-start", gap: "10px",
-                  }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        display: "flex", alignItems: "center", gap: "6px",
-                        fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em",
-                        color: colors.fg, marginBottom: "4px",
-                      }}>
-                        <span
-                          aria-label={`Priorità ${r.priority}`}
-                          style={{
-                            display: "inline-block",
-                            padding: "2px 7px", borderRadius: "4px",
-                            background: colors.bg, color: colors.fg,
-                            fontSize: "10px", fontWeight: 800,
-                          }}
-                        >
-                          {r.priority}
-                        </span>
-                        <span aria-hidden>{SPORT_ICONS[r.sport]}</span>
-                        <span>{SPORT_LABELS[r.sport]}</span>
-                      </div>
-                      <div style={{
-                        fontWeight: 700, fontSize: "15px",
-                        marginBottom: "4px", wordBreak: "break-word",
-                        color: "#E2E8F0",
-                      }}>
-                        {r.name}
-                      </div>
-                      <div
-                        aria-label={`Data gara ${r.date}, ${isPast ? `passata da ${-days} giorni` : `tra ${days} giorni`}`}
+                <li key={r.id}>
+                  <details
+                    style={{
+                      ...cardStyle,
+                      padding: 0,
+                      borderLeft: `3px solid ${colors.border}`,
+                      background: isPast ? "#0F172A" : "#1A1A2E",
+                      opacity: isPast ? 0.7 : 1,
+                    }}
+                  >
+                    <summary
+                      aria-label={`${r.name} · ${r.date} · priorità ${r.priority} · ${daysLabel}`}
+                      style={{
+                        listStyle: "none", cursor: "pointer",
+                        padding: "10px 12px", minHeight: "44px", boxSizing: "border-box",
+                        display: "flex", alignItems: "center", gap: "8px",
+                      }}
+                    >
+                      <span
+                        aria-hidden
                         style={{
-                          fontSize: "12px", color: "#94A3B8",
+                          padding: "2px 6px", borderRadius: "4px",
+                          background: colors.bg, color: colors.fg,
+                          fontSize: "10px", fontWeight: 800, flexShrink: 0,
                           fontFamily: "'JetBrains Mono', monospace",
                         }}
-                      >
-                        {r.date}
-                        {isPast
-                          ? ` · passata (${-days}gg fa)`
-                          : days === 0
-                          ? " · oggi"
-                          : ` · tra ${days}gg`}
-                        {r.distance_km != null && ` · ${r.distance_km} km`}
-                        {r.targetTime && ` · ${r.targetTime}`}
+                      >{r.priority}</span>
+                      <span aria-hidden style={{ fontSize: "14px", flexShrink: 0 }}>{SPORT_ICONS[r.sport]}</span>
+                      <span style={{
+                        flex: 1, minWidth: 0, fontWeight: 700, fontSize: "14px",
+                        color: "#E2E8F0",
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      }}>{r.name}</span>
+                      <span style={{
+                        fontSize: "11px", color: "#94A3B8", flexShrink: 0,
+                        fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap",
+                      }}>{r.date} · {daysLabel}</span>
+                    </summary>
+
+                    <div style={{
+                      padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: "8px",
+                      fontSize: "12px", color: "#CBD5E1",
+                    }}>
+                      <div style={{
+                        display: "flex", flexWrap: "wrap", gap: "6px 12px",
+                        fontFamily: "'JetBrains Mono', monospace", color: "#94A3B8",
+                      }}>
+                        <span>{SPORT_LABELS[r.sport]}</span>
+                        {r.distance_km != null && <span>{r.distance_km} km</span>}
+                        {r.targetTime && <span>target {r.targetTime}</span>}
+                        <span>{PRIORITY_LABELS[r.priority].hint}</span>
                       </div>
                       {r.notes && (
-                        <div style={{
-                          fontSize: "12px", color: "#CBD5E1",
-                          marginTop: "6px", fontStyle: "italic",
-                        }}>
-                          {r.notes}
-                        </div>
+                        <div style={{ fontStyle: "italic", lineHeight: 1.4 }}>{r.notes}</div>
                       )}
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingRace(r); setShowForm(false); }}
+                          disabled={busy || editingRace !== null}
+                          aria-label={`Modifica gara ${r.name}`}
+                          style={{
+                            flex: "1 1 120px", minHeight: "44px",
+                            padding: "8px 12px", background: "transparent",
+                            border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+                            color: "#A5B4FC", fontSize: "13px", fontWeight: 600,
+                            cursor: (busy || editingRace !== null) ? "not-allowed" : "pointer",
+                            opacity: (busy || editingRace !== null) ? 0.5 : 1,
+                          }}
+                        >
+                          Modifica
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemove(r)}
+                          disabled={busy}
+                          aria-label={`Rimuovi gara ${r.name}`}
+                          data-testid={`remove-race-${r.id}`}
+                          style={{
+                            flex: "1 1 120px", minHeight: "44px",
+                            padding: "8px 12px", background: "transparent",
+                            border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: "8px",
+                            color: "#EF4444", fontSize: "13px", fontWeight: 600,
+                            cursor: busy ? "wait" : "pointer",
+                            opacity: busy ? 0.5 : 1,
+                          }}
+                        >
+                          Rimuovi
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0 }}>
-                      <button
-                        type="button"
-                        onClick={() => { setEditingRace(r); setShowForm(false); }}
-                        disabled={busy || editingRace !== null}
-                        aria-label={`Modifica gara ${r.name}`}
-                        style={{
-                          minHeight: "44px", minWidth: "44px",
-                          padding: "8px 12px", background: "transparent",
-                          border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
-                          color: "#A5B4FC", fontSize: "12px", fontWeight: 600,
-                          cursor: (busy || editingRace !== null) ? "not-allowed" : "pointer",
-                          opacity: (busy || editingRace !== null) ? 0.5 : 1,
-                        }}
-                      >
-                        ✏ Modifica
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemove(r)}
-                        disabled={busy}
-                        aria-label={`Rimuovi gara ${r.name}`}
-                        data-testid={`remove-race-${r.id}`}
-                        style={{
-                          minHeight: "44px", minWidth: "44px",
-                          padding: "8px 12px", background: "transparent",
-                          border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: "8px",
-                          color: "#EF4444", fontSize: "12px", fontWeight: 600,
-                          cursor: busy ? "wait" : "pointer",
-                          opacity: busy ? 0.5 : 1,
-                        }}
-                      >
-                        🗑 Rimuovi
-                      </button>
-                    </div>
-                  </div>
+                  </details>
                 </li>
               );
             })}

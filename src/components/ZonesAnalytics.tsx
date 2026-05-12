@@ -159,9 +159,14 @@ export default function ZonesAnalytics() {
         </>
       )}
 
-      <div style={{ fontSize: fontSize.xs, color: colors.textDim, lineHeight: 1.5, fontStyle: "italic" }}>
-        Limite noto: senza sample HR granulari (solo fc_media per sessione), ogni corsa è assegnata a UNA zona. Una Fartlek o interval session con FC media 145 bpm viene bucket in Z2/Z3 anche se i picchi erano in Z5 — leggi il dato come approssimazione.
-      </div>
+      <details style={{ fontSize: fontSize.xs, color: colors.textDim, lineHeight: 1.5 }}>
+        <summary style={{ cursor: "pointer", padding: "4px 0", listStyle: "none", fontStyle: "italic", color: colors.textDim }}>
+          Limite calcolo time-in-zone ›
+        </summary>
+        <div style={{ padding: "4px 0", fontStyle: "italic" }}>
+          Senza sample HR granulari (solo fc_media per sessione), ogni corsa è assegnata a UNA zona. Una Fartlek con FC media 145 bpm viene bucket in Z2/Z3 anche se i picchi erano in Z5 — leggi il dato come approssimazione.
+        </div>
+      </details>
     </div>
   );
 }

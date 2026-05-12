@@ -897,27 +897,18 @@ export default function DiaryApp() {
 
       {screen === "home" && (
         <div style={{ maxWidth: "560px", margin: "0 auto" }}>
-          <div style={{ padding: "24px 24px 16px", background: "linear-gradient(180deg, #16213E 0%, #0B0F1A 100%)" }}>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>
-              Diario Allenamento
-            </div>
-            <h1 style={{ fontSize: "24px", fontWeight: 900, margin: "6px 0 0", letterSpacing: "-0.04em", background: "linear-gradient(135deg, #E2E8F0 0%, #94A3B8 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              Oggi
-            </h1>
-            {todayData && (
-              <div style={{ display: "flex", gap: "12px", marginTop: "12px", flexWrap: "wrap" }}>
-                {todayData.daily?.weight && (
-                  <div style={{ background: "#1A1A2E", borderRadius: "10px", padding: "8px 14px", fontSize: "13px" }}>
-                    <span style={{ color: "#64748B" }}>Peso </span>
-                    <span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{todayData.daily.weight} kg</span>
-                  </div>
-                )}
-                <div style={{ background: "#1A1A2E", borderRadius: "10px", padding: "8px 14px", fontSize: "13px" }}>
-                  <span style={{ color: "#64748B" }}>Oggi </span>
-                  <span style={{ fontWeight: 700 }}>{todayData.workouts?.length || 0} sessioni</span>
-                </div>
+          <div style={{ padding: "16px 24px 10px", background: "linear-gradient(180deg, #16213E 0%, #0B0F1A 100%)" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "10px", flexWrap: "wrap" }}>
+              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>
+                Diario · Oggi
               </div>
-            )}
+              {todayData && (
+                <div style={{ fontSize: "12px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", marginLeft: "auto" }}>
+                  {todayData.daily?.weight && <span>{todayData.daily.weight} kg · </span>}
+                  <span style={{ fontWeight: 700, color: "#CBD5E1" }}>{todayData.workouts?.length || 0} sessioni</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {todayPlannedSession && (
@@ -1085,35 +1076,35 @@ export default function DiaryApp() {
 
       {screen === "add" && (
         <div style={{ maxWidth: "560px", margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "20px 24px", gap: "12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-            <button onClick={() => setScreen("home")} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "15px", cursor: "pointer", padding: "8px" }}>← Indietro</button>
-            <div style={{ flex: 1, fontWeight: 700, fontSize: "17px" }}>{addType ? "Compila Sessione" : "Nuova Sessione"}</div>
+          <div style={{ display: "flex", alignItems: "center", padding: "14px 20px", gap: "10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <button onClick={() => setScreen("home")} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "15px", cursor: "pointer", padding: "8px", minHeight: "44px" }}>← Indietro</button>
+            <div style={{ flex: 1, fontWeight: 700, fontSize: "16px" }}>{addType ? "Compila Sessione" : "Nuova Sessione"}</div>
           </div>
 
-          <div style={{ padding: "20px 24px" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <label htmlFor={fid("addDate")} style={{ fontSize: "13px", fontWeight: 600, color: "#94A3B8", display: "block", marginBottom: "8px" }}>📅 Data della sessione</label>
-              <input id={fid("addDate")} type="date" value={addDate} max={today()} onChange={e => setAddDate(e.target.value)} style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }} />
-              {addDate !== today() && (
-                <div style={{ fontSize: "12px", color: "#D97706", marginTop: "6px", fontWeight: 600 }}>
-                  ⚠ Stai inserendo una sessione passata ({fmtDate(addDate)})
-                </div>
-              )}
+          <div style={{ padding: "14px 20px" }}>
+            <div style={{ marginBottom: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <label htmlFor={fid("addDate")} style={{ fontSize: "12px", fontWeight: 600, color: "#94A3B8", whiteSpace: "nowrap" }}>📅 Data</label>
+              <input id={fid("addDate")} type="date" value={addDate} max={today()} onChange={e => setAddDate(e.target.value)} style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", flex: 1, padding: "9px 12px", fontSize: "14px" }} />
             </div>
+            {addDate !== today() && (
+              <div style={{ fontSize: "11px", color: "#D97706", marginTop: "-8px", marginBottom: "10px", fontWeight: 600 }}>
+                ⚠ Sessione passata ({fmtDate(addDate)})
+              </div>
+            )}
 
             {!addType ? (
               <>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: "#94A3B8", marginBottom: "12px" }}>Che tipo di sessione hai fatto?</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "#94A3B8", marginBottom: "10px" }}>Che tipo di sessione hai fatto?</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   {WORKOUT_TYPES.map(w => (
                     <button key={w.id} onClick={() => { setAddType(w.id); setAddFields({}); }} style={{
-                      display: "flex", alignItems: "center", gap: "14px", padding: "16px 18px",
+                      display: "flex", alignItems: "center", gap: "12px", padding: "12px 14px",
                       background: "#16213E", border: "1px solid rgba(255,255,255,0.06)",
-                      borderRadius: "14px", cursor: "pointer", color: "#E2E8F0",
-                      textAlign: "left", width: "100%",
+                      borderRadius: "12px", cursor: "pointer", color: "#E2E8F0",
+                      textAlign: "left", width: "100%", minHeight: "56px",
                     }}>
-                      <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: w.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", flexShrink: 0 }}>{w.icon}</div>
-                      <div style={{ fontSize: "16px", fontWeight: 700 }}>{w.label}</div>
+                      <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: w.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", flexShrink: 0 }}>{w.icon}</div>
+                      <div style={{ fontSize: "15px", fontWeight: 700 }}>{w.label}</div>
                     </button>
                   ))}
                 </div>
@@ -1121,20 +1112,20 @@ export default function DiaryApp() {
             ) : (
               <>
                 {(() => { const w = wType(addType)!; return (
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px", padding: "14px 16px", background: w.color + "12", borderRadius: "12px", border: `1px solid ${w.color}30` }}>
-                    <span style={{ fontSize: "22px" }}>{w.icon}</span>
-                    <span style={{ fontWeight: 700, fontSize: "16px" }}>{w.label}</span>
-                    <button onClick={() => setAddType(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: "13px" }}>Cambia ↺</button>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px", padding: "10px 12px", background: w.color + "12", borderRadius: "10px", border: `1px solid ${w.color}30` }}>
+                    <span style={{ fontSize: "18px" }}>{w.icon}</span>
+                    <span style={{ fontWeight: 700, fontSize: "14px" }}>{w.label}</span>
+                    <button onClick={() => setAddType(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: "12px", padding: "6px 8px", minHeight: "32px" }}>Cambia ↺</button>
                   </div>
                 ); })()}
 
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                   {wType(addType)!.fields.map((f: any) => {
                     const inputId = fid(`workout-${f.key}`);
                     return (
                       <div key={f.key}>
-                        <div style={{ display: "flex", gap: "6px", marginBottom: "6px", alignItems: "center" }}>
-                          <label htmlFor={inputId} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1" }}>{f.label}</label>
+                        <div style={{ display: "flex", gap: "6px", marginBottom: "4px", alignItems: "center" }}>
+                          <label htmlFor={inputId} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1" }}>{f.label}</label>
                           {f.required && <span style={{ color: "#E8553A", fontSize: "10px" }} aria-label="obbligatorio">●</span>}
                         </div>
                         <FieldRow id={inputId} field={f} value={addFields[f.key]} onChange={v => setAddFields(p => ({ ...p, [f.key]: v }))} />
@@ -1147,15 +1138,15 @@ export default function DiaryApp() {
                     Toggle default OFF (backward compat). Auto-ON in edit se workout
                     ha già `exercises[]`. Salvato PARALLEL a `fields.esercizi` legacy. */}
                 {STRENGTH_TYPES.has(addType) && (
-                  <div style={{ marginTop: "20px" }}>
+                  <div style={{ marginTop: "14px" }}>
                     <label
                       htmlFor={fid("strength-mode-toggle")}
                       style={{
-                        display: "flex", alignItems: "center", gap: "12px",
-                        padding: "14px 16px", minHeight: "44px",
+                        display: "flex", alignItems: "center", gap: "10px",
+                        padding: "10px 12px", minHeight: "44px",
                         background: addStrengthMode ? "#7C3AED15" : "#16213E",
                         border: addStrengthMode ? "1px solid #7C3AED" : "1px solid rgba(255,255,255,0.06)",
-                        borderRadius: "12px", cursor: saving ? "wait" : "pointer",
+                        borderRadius: "10px", cursor: saving ? "wait" : "pointer",
                       }}
                     >
                       <input
@@ -1165,20 +1156,17 @@ export default function DiaryApp() {
                         onChange={e => setAddStrengthMode(e.target.checked)}
                         disabled={saving}
                         aria-label="Attiva modalità strutturata: registra esercizi, set, carichi e RPE"
-                        style={{ width: "20px", height: "20px", accentColor: "#7C3AED", cursor: "pointer" }}
+                        style={{ width: "20px", height: "20px", accentColor: "#7C3AED", cursor: "pointer", flexShrink: 0 }}
                       />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: "14px", fontWeight: 700, color: addStrengthMode ? "#A78BFA" : "#CBD5E1" }}>
-                          Modalità strutturata
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
-                          Registra esercizi, set e carichi (richiesto per analisi 1RM e progressione).
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: "13px", fontWeight: 700, color: addStrengthMode ? "#A78BFA" : "#CBD5E1" }}>
+                          Modalità strutturata · esercizi/set/carichi
                         </div>
                       </div>
                     </label>
 
                     {addStrengthMode && (
-                      <div style={{ marginTop: "14px" }}>
+                      <div style={{ marginTop: "10px" }}>
                         <StrengthExercisesForm
                           availableEquipment={userEquipment}
                           exercises={addExercises}
@@ -1195,22 +1183,36 @@ export default function DiaryApp() {
                   const updateArea = (phase: "pre" | "during" | "post", v: number) => {
                     setAddPainByArea(prev => ({ ...prev, [area]: { ...(prev[area] || { pre: null, during: null, post: null }), [phase]: v } }));
                   };
+                  const hasValue = p.pre !== null || p.during !== null || p.post !== null;
                   return (
-                    <div key={area} style={{ marginTop: "24px", padding: "20px", background: "#16213E", borderRadius: "14px", border: "1px solid rgba(239,68,68,0.12)" }}>
-                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#EF4444", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "16px" }}>
-                        Dolore {area}
-                      </div>
-                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+                    <details key={area} open={hasValue} style={{
+                      marginTop: "12px", padding: "10px 14px",
+                      background: "#16213E", borderRadius: "12px",
+                      border: "1px solid rgba(239,68,68,0.12)",
+                    }}>
+                      <summary style={{
+                        cursor: "pointer", fontSize: "12px", fontWeight: 700, color: "#EF4444",
+                        letterSpacing: "0.08em", textTransform: "uppercase", listStyle: "none",
+                        minHeight: "28px", display: "flex", alignItems: "center", gap: "8px",
+                      }}>
+                        <span style={{ flex: 1 }}>Dolore {area}</span>
+                        {hasValue && (
+                          <span style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
+                            {p.pre ?? "-"}/{p.during ?? "-"}/{p.post ?? "-"}
+                          </span>
+                        )}
+                      </summary>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center", marginTop: "12px" }}>
                         <PainPicker label="Pre" value={p.pre} onChange={v => updateArea("pre", v)} />
                         <PainPicker label="Durante" value={p.during} onChange={v => updateArea("during", v)} />
                         <PainPicker label="Post" value={p.post} onChange={v => updateArea("post", v)} />
                       </div>
-                    </div>
+                    </details>
                   );
                 })}
 
-                <div style={{ marginTop: "16px" }}>
-                  <div id={fid("rpe-label")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", marginBottom: "8px" }}>RPE — Sforzo Percepito</div>
+                <div style={{ marginTop: "14px" }}>
+                  <div id={fid("rpe-label")} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1", marginBottom: "6px" }}>RPE — Sforzo Percepito</div>
                   <NumberRadioPicker
                     values={[1,2,3,4,5,6,7,8,9,10]}
                     value={addRpe}
@@ -1220,16 +1222,26 @@ export default function DiaryApp() {
                   />
                 </div>
 
-                <div style={{ marginTop: "16px" }}>
-                  <label htmlFor={fid("workout-notes")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Note & Sensazioni</label>
-                  <textarea id={fid("workout-notes")} style={{ ...inputStyle, minHeight: "70px", resize: "vertical" }} value={addNotes} onChange={e => setAddNotes(e.target.value)} placeholder="Come ti sei sentito? Sensazioni muscolari, energia..." />
-                </div>
+                <details open={!!addNotes} style={{
+                  marginTop: "12px", padding: "8px 12px",
+                  background: "#16213E", borderRadius: "10px",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                }}>
+                  <summary style={{
+                    cursor: "pointer", fontSize: "12px", fontWeight: 600, color: "#CBD5E1",
+                    listStyle: "none", minHeight: "28px", display: "flex", alignItems: "center", gap: "8px",
+                  }}>
+                    <span style={{ flex: 1 }}>Note &amp; sensazioni{addNotes ? " ·" : ""}</span>
+                    {addNotes && <span style={{ fontSize: "11px", color: "#94A3B8" }}>{addNotes.length} car.</span>}
+                  </summary>
+                  <textarea id={fid("workout-notes")} style={{ ...inputStyle, minHeight: "60px", resize: "vertical", marginTop: "8px" }} value={addNotes} onChange={e => setAddNotes(e.target.value)} placeholder="Come ti sei sentito? Sensazioni muscolari, energia..." />
+                </details>
 
                 <button onClick={handleSaveWorkout} disabled={saving} style={{
-                  width: "100%", padding: "16px", marginTop: "24px",
+                  width: "100%", padding: "14px", marginTop: "16px", minHeight: "52px",
                   background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
-                  border: "none", borderRadius: "14px", color: "#FFF",
-                  fontSize: "16px", fontWeight: 800,
+                  border: "none", borderRadius: "12px", color: "#FFF",
+                  fontSize: "15px", fontWeight: 800,
                   cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1,
                 }}>{saving ? "Salvataggio…" : editingWorkoutId ? "Aggiorna Sessione" : "Salva Sessione"}</button>
               </>
@@ -1240,26 +1252,26 @@ export default function DiaryApp() {
 
       {screen === "daily" && (
         <div style={{ maxWidth: "560px", margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "20px 24px", gap: "12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-            <button onClick={() => { setEditingDaily(false); resetDailyFields(); setScreen("home"); }} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "15px", cursor: "pointer", padding: "8px" }}>← Indietro</button>
-            <div style={{ flex: 1, fontWeight: 700, fontSize: "17px" }}>
+          <div style={{ display: "flex", alignItems: "center", padding: "14px 20px", gap: "10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <button onClick={() => { setEditingDaily(false); resetDailyFields(); setScreen("home"); }} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "15px", cursor: "pointer", padding: "8px", minHeight: "44px" }}>← Indietro</button>
+            <div style={{ flex: 1, fontWeight: 700, fontSize: "16px" }}>
               📋 Check Giornaliero
               {editingDaily && (
                 <span style={{
-                  marginLeft: "10px", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em",
+                  marginLeft: "8px", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em",
                   color: "#F59E0B", background: "#F59E0B20",
-                  padding: "3px 8px", borderRadius: "999px", verticalAlign: "middle",
+                  padding: "2px 6px", borderRadius: "999px", verticalAlign: "middle",
                 }}>MODIFICA</span>
               )}
             </div>
           </div>
-          <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div>
-              <label htmlFor={fid("daily-date")} style={{ fontSize: "13px", fontWeight: 600, color: "#94A3B8", display: "block", marginBottom: "6px" }}>📅 Data</label>
-              <input id={fid("daily-date")} type="date" value={dailyDate} max={today()} onChange={e => setDailyDate(e.target.value)} style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }} />
+          <div style={{ padding: "14px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <label htmlFor={fid("daily-date")} style={{ fontSize: "12px", fontWeight: 600, color: "#94A3B8", whiteSpace: "nowrap" }}>📅 Data</label>
+              <input id={fid("daily-date")} type="date" value={dailyDate} max={today()} onChange={e => setDailyDate(e.target.value)} style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", flex: 1, padding: "9px 12px", fontSize: "14px" }} />
             </div>
             <div>
-              <label htmlFor={fid("daily-weight")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Peso Mattutino (a digiuno)</label>
+              <label htmlFor={fid("daily-weight")} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "4px" }}>Peso Mattutino (a digiuno)</label>
               {(() => {
                 const val = dailyFields.weight;
                 const err = val !== "" ? ((): string | null => {
@@ -1285,7 +1297,7 @@ export default function DiaryApp() {
               })()}
             </div>
             <div>
-              <label htmlFor={fid("daily-sleep")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Ore di Sonno</label>
+              <label htmlFor={fid("daily-sleep")} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "4px" }}>Ore di Sonno</label>
               {(() => {
                 const val = dailyFields.sleep;
                 const err = val !== "" ? ((): string | null => {
@@ -1311,7 +1323,7 @@ export default function DiaryApp() {
               })()}
             </div>
             <div>
-              <label htmlFor={fid("daily-sleepQ")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Qualità Sonno</label>
+              <label htmlFor={fid("daily-sleepQ")} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "4px" }}>Qualità Sonno</label>
               <select id={fid("daily-sleepQ")} value={dailyFields.sleepQ} onChange={e => setDailyFields(p => ({ ...p, sleepQ: e.target.value }))} style={inputStyle}>
                 <option value="">Seleziona...</option>
                 <option value="ottima">Ottima — riposato</option>
@@ -1321,9 +1333,9 @@ export default function DiaryApp() {
               </select>
             </div>
             <div>
-              <label htmlFor={fid("daily-morningHR")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>FC a riposo mattutina</label>
-              <div id={fid("daily-morningHR-hint")} style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "6px" }}>
-                Misurata al risveglio prima di alzarti (da smartwatch/fascia o manualmente contando 60 sec). Abilita il calcolo zone Karvonen personalizzato + indicatore di recupero.
+              <label htmlFor={fid("daily-morningHR")} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "4px" }}>FC a riposo mattutina</label>
+              <div id={fid("daily-morningHR-hint")} style={{ fontSize: "11px", color: "#64748B", marginBottom: "4px" }}>
+                Al risveglio, prima di alzarti. Abilita zone Karvonen + recupero.
               </div>
               {(() => {
                 const val = dailyFields.morningHR;
@@ -1351,9 +1363,8 @@ export default function DiaryApp() {
               })()}
             </div>
             <div>
-              <div id={fid("daily-freshness-label")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "8px" }}>Freschezza percepita al risveglio</div>
-              <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "6px" }}>
-                1 = molto stanco/indolenzito · 10 = lucido e pimpante. Usato dal coach come indicatore di recupero (Saw 2016).
+              <div id={fid("daily-freshness-label")} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "4px" }}>
+                Freschezza al risveglio <span style={{ color: "#64748B", fontWeight: 500 }}>· 1 stanco → 10 pimpante</span>
               </div>
               <NumberRadioPicker
                 values={[1,2,3,4,5,6,7,8,9,10]}
@@ -1364,7 +1375,7 @@ export default function DiaryApp() {
               />
             </div>
             <div>
-              <div id={fid("daily-fatigue-label")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "8px" }}>Stanchezza Generale</div>
+              <div id={fid("daily-fatigue-label")} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "4px" }}>Stanchezza Generale</div>
               <NumberRadioPicker
                 values={[1,2,3,4,5,6,7,8,9,10]}
                 value={dailyFields.fatigue}
@@ -1374,17 +1385,17 @@ export default function DiaryApp() {
               />
             </div>
             <div>
-              <label htmlFor={fid("daily-meds")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>Farmaci / Integratori</label>
+              <label htmlFor={fid("daily-meds")} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "4px" }}>Farmaci / Integratori</label>
               <input id={fid("daily-meds")} type="text" value={dailyFields.meds} onChange={e => setDailyFields(p => ({ ...p, meds: e.target.value }))} placeholder="es. Antistaminico, Magnesio..." style={inputStyle} />
             </div>
 
-            <details style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "12px", padding: "12px 14px" }}>
-              <summary style={{ cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "#CBD5E1", listStyle: "none" }}>
-                📊 Composizione corporea (da bilancia smart, opzionale)
+            <details style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "10px", padding: "8px 12px" }}>
+              <summary style={{ cursor: "pointer", fontSize: "12px", fontWeight: 600, color: "#CBD5E1", listStyle: "none", minHeight: "28px", display: "flex", alignItems: "center" }}>
+                📊 Composizione corporea (bilancia smart, opzionale)
               </summary>
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "14px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "10px" }}>
                 <div>
-                  <label htmlFor={fid("daily-bodyFat")} style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Massa grassa (% BF)</label>
+                  <label htmlFor={fid("daily-bodyFat")} style={{ fontSize: "11px", color: "#94A3B8", display: "block", marginBottom: "3px" }}>Massa grassa (% BF)</label>
                   {(() => {
                     const val = dailyFields.bodyFat;
                     const err = val !== "" ? ((): string | null => {
@@ -1410,14 +1421,14 @@ export default function DiaryApp() {
                   })()}
                 </div>
                 <div>
-                  <label htmlFor={fid("daily-muscleMass")} style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Massa muscolare</label>
+                  <label htmlFor={fid("daily-muscleMass")} style={{ fontSize: "11px", color: "#94A3B8", display: "block", marginBottom: "3px" }}>Massa muscolare</label>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <input id={fid("daily-muscleMass")} type="number" step="0.1" value={dailyFields.muscleMass} onChange={e => setDailyFields(p => ({ ...p, muscleMass: e.target.value }))} placeholder="es. 34.2 (kg) o 41.5 (%)" style={{ ...inputStyle, flex: 1 }} />
                     <span style={{ fontSize: "13px", color: "#94A3B8" }}>kg / %</span>
                   </div>
                 </div>
                 <div>
-                  <label htmlFor={fid("daily-bodyWater")} style={{ fontSize: "12px", color: "#94A3B8", display: "block", marginBottom: "4px" }}>Acqua corporea (% TBW)</label>
+                  <label htmlFor={fid("daily-bodyWater")} style={{ fontSize: "11px", color: "#94A3B8", display: "block", marginBottom: "3px" }}>Acqua corporea (% TBW)</label>
                   {(() => {
                     const val = dailyFields.bodyWater;
                     const err = val !== "" ? ((): string | null => {
@@ -1442,16 +1453,16 @@ export default function DiaryApp() {
                     );
                   })()}
                 </div>
-                <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.4 }}>
-                  Valori da bilancia BIA (impedenziometria). Hanno errore ~±3-8% ma utili per trend.
+                <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.3 }}>
+                  Bilancia BIA · errore ~±3-8%, utile per trend.
                 </div>
               </div>
             </details>
 
             {profileSex === "f" && (
               <div>
-                <label htmlFor={fid("daily-cyclePhase")} style={{ fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" }}>
-                  🌸 Fase ciclo (opzionale)
+                <label htmlFor={fid("daily-cyclePhase")} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "4px" }}>
+                  🌸 Fase ciclo (opzionale) <span style={{ color: "#64748B", fontWeight: 500 }}>· adatta suggerimenti coach</span>
                 </label>
                 <select
                   id={fid("daily-cyclePhase")}
@@ -1468,17 +1479,14 @@ export default function DiaryApp() {
                   <option value="menopausa">Menopausa</option>
                   <option value="contraccettivo">Contraccettivo ormonale</option>
                 </select>
-                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px", lineHeight: 1.4 }}>
-                  Il coach considera la fase per adattare suggerimenti. "Amenorrea" ripetuto triggers alert RED-S.
-                </div>
               </div>
             )}
 
             <button onClick={handleSaveDaily} disabled={saving} style={{
-              width: "100%", padding: "16px", marginTop: "12px",
+              width: "100%", padding: "14px", marginTop: "8px", minHeight: "52px",
               background: "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
-              border: "none", borderRadius: "14px", color: "#FFF",
-              fontSize: "16px", fontWeight: 800,
+              border: "none", borderRadius: "12px", color: "#FFF",
+              fontSize: "15px", fontWeight: 800,
               cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1,
             }}>{saving ? "Salvataggio…" : "Salva Check Giornaliero"}</button>
           </div>

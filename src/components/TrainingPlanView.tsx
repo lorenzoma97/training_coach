@@ -657,11 +657,18 @@ export default function TrainingPlanView() {
   );
 
   if (!plan) {
+    // Empty state "no plan": preserva il regenerateBtn esistente (che gestisce
+    // generazione + label dinamica "Genera piano") wrappato in card dashed
+    // coerente con EmptyState helper. Non usiamo <EmptyState> diretto perché
+    // il bottone CTA qui ha logica complessa (busy state, error inline) che
+    // non è generalizzabile a prop semplici.
     return (
-      <div style={{ background: "#16213E", borderRadius: "14px", padding: "24px 20px", border: "1px dashed rgba(255,255,255,0.1)", textAlign: "center", color: "#94A3B8" }}>
-        <div style={{ fontSize: "40px", marginBottom: "10px" }}>🗺</div>
-        <div style={{ fontSize: "14px", marginBottom: "4px" }}>Nessun piano attivo</div>
-        <div style={{ fontSize: "12px", marginBottom: "16px" }}>Genera un piano personalizzato dal tuo profilo + obiettivi.</div>
+      <div style={{ background: "#16213E", borderRadius: "14px", padding: "24px 20px", border: "1px dashed rgba(255,255,255,0.12)", textAlign: "center" }}>
+        <div style={{ fontSize: "40px", marginBottom: "10px" }} aria-hidden>🗺</div>
+        <div style={{ fontSize: "15px", fontWeight: 700, color: "#CBD5E1", marginBottom: "6px" }}>Nessun piano attivo</div>
+        <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "16px", lineHeight: 1.5 }}>
+          Genera il primo piano: il coach lo costruisce sul tuo profilo, equipment e obiettivi.
+        </div>
         {regenerateBtn}
         {regenError && <div style={{ color: "#EF4444", fontSize: "12px", marginTop: "10px" }}>{regenError}</div>}
       </div>

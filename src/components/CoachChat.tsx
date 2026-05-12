@@ -371,9 +371,11 @@ DOMANDA UTENTE: ${sanitizePII(text)}
         style={{ flex: 1, overflowY: "auto", padding: "8px 0", display: "flex", flexDirection: "column", gap: "10px", minHeight: "300px" }}
       >
         {messages.length === 0 && (
-          <div style={{ textAlign: "center", color: "#94A3B8", padding: "30px 20px" }}>
-            <div style={{ fontSize: "40px", marginBottom: "10px" }}>💬</div>
-            <div style={{ fontSize: "14px" }}>Fai una domanda al coach. Ha accesso ai tuoi dati.</div>
+          <div style={{
+            textAlign: "center", color: "#94A3B8",
+            padding: "16px 12px", fontSize: "13px", lineHeight: 1.5,
+          }}>
+            Inizia chiedendo al coach. Ha accesso a profilo, piano e ultimi giorni.
           </div>
         )}
 
@@ -465,24 +467,26 @@ DOMANDA UTENTE: ${sanitizePII(text)}
       )}
 
       {messages.length === 0 && (
-        <div style={{ marginBottom: "12px" }}>
-          <div style={{
+        <details open style={{ marginBottom: "10px" }}>
+          <summary style={{
+            listStyle: "none", cursor: "pointer",
             fontSize: "11px", color: "#94A3B8",
             letterSpacing: "0.12em", textTransform: "uppercase",
-            fontWeight: 700, marginBottom: "8px",
+            fontWeight: 700, marginBottom: "6px",
+            padding: "4px 0",
           }}>
-            💡 Suggerimenti per iniziare
-          </div>
+            Suggerimenti per iniziare
+          </summary>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
             {buildQuickPrompts(painAreas).map(p => (
               <button key={p} onClick={() => send(p)} style={{
                 background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: "999px", padding: "8px 14px", fontSize: "12px",
-                color: "#CBD5E1", cursor: "pointer", minHeight: "36px",
+                borderRadius: "999px", padding: "6px 12px", fontSize: "12px",
+                color: "#CBD5E1", cursor: "pointer", minHeight: "32px",
               }}>{p}</button>
             ))}
           </div>
-        </div>
+        </details>
       )}
 
       <div style={{ display: "flex", gap: "8px", padding: "8px 0", alignItems: "flex-end" }}>
@@ -535,15 +539,28 @@ DOMANDA UTENTE: ${sanitizePII(text)}
         )}
       </div>
 
-      <div style={{ fontSize: "11px", color: "#94A3B8", textAlign: "center", marginTop: "4px" }}>
-        Il coach può sbagliare. Le decisioni cliniche sono responsabilità tua.
+      <div style={{
+        display: "flex", alignItems: "center", gap: "8px",
+        marginTop: "4px", minHeight: "28px",
+      }}>
+        <div style={{ fontSize: "11px", color: "#94A3B8", flex: 1, lineHeight: 1.3 }}>
+          Il coach può sbagliare. Le decisioni cliniche sono responsabilità tua.
+        </div>
+        {messages.length > 0 && (
+          <button
+            onClick={clearChat}
+            aria-label="Pulisci chat"
+            style={{
+              background: "none", border: "none", color: "#94A3B8",
+              fontSize: "11px", cursor: "pointer", padding: "4px 8px",
+              flexShrink: 0, whiteSpace: "nowrap",
+              textDecoration: "underline",
+            }}
+          >
+            Pulisci
+          </button>
+        )}
       </div>
-
-      {messages.length > 0 && (
-        <button onClick={clearChat} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "12px", cursor: "pointer", alignSelf: "flex-end", padding: "8px 12px", marginTop: "4px" }}>
-          Pulisci chat
-        </button>
-      )}
     </div>
   );
 }

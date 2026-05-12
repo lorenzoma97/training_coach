@@ -15,6 +15,7 @@ import { buildCoachContext } from "../lib/diaryContext";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { hasApiKey } from "../lib/gemini";
 import { events } from "../lib/events";
+import EmptyState from "./EmptyState";
 
 const MAX_GOALS = 3;
 
@@ -231,9 +232,12 @@ export default function GoalsEditor() {
 
   if (!profile) {
     return (
-      <div style={{ color: "#94A3B8", fontSize: "13px", fontStyle: "italic", padding: "8px 0" }}>
-        Completa l'onboarding del profilo per gestire gli obiettivi.
-      </div>
+      <EmptyState
+        title="Profilo non ancora configurato"
+        description="Completa l'onboarding per impostare i tuoi obiettivi e ricevere un piano personalizzato."
+        data-testid="goals-no-profile"
+        compact
+      />
     );
   }
 
@@ -281,9 +285,13 @@ export default function GoalsEditor() {
       )}
 
       {goals.length === 0 && !adding && (
-        <div style={{ ...cardStyle, textAlign: "center", color: "#94A3B8", fontSize: "13px" }}>
-          Nessun obiettivo impostato. Aggiungine uno per orientare il coach.
-        </div>
+        <EmptyState
+          title="Nessun obiettivo impostato"
+          description="Aggiungi il primo obiettivo per orientare il piano e i feedback del coach."
+          ctaLabel="Aggiungi obiettivo"
+          onCta={startAdd}
+          data-testid="goals-empty"
+        />
       )}
 
       {goals.map(g => {

@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { getJSON, setJSON } from "../lib/storage";
 import type { UserProfile } from "../lib/types";
 import { events } from "../lib/events";
+import EmptyState from "./EmptyState";
 
 const SUGGESTED_AREAS = [
   "polpaccio", "ginocchio", "tendine d'achille", "schiena lombare",
@@ -111,9 +112,12 @@ export default function ProfileEditor() {
 
   if (!profile) {
     return (
-      <div style={{ color: "#94A3B8", fontSize: "13px", fontStyle: "italic" }}>
-        Profilo non ancora configurato. Completa l'onboarding prima.
-      </div>
+      <EmptyState
+        title="Profilo non ancora configurato"
+        description="Completa l'onboarding per attivare il coach e gestire qui i dettagli (infortuni, farmaci, equipaggiamento)."
+        data-testid="profile-empty"
+        compact
+      />
     );
   }
 
