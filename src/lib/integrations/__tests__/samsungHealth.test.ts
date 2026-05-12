@@ -310,8 +310,11 @@ async function buildExerciseZip(csv: string, encoding: "utf-16le" | "utf-8" = "u
   // Genera come Uint8Array (path stabile in jsdom), poi wrap in Blob nativo
   // standard. `new Blob([u8])` produce Blob bytes-correct con arrayBuffer()
   // funzionante, evitando il bug jsdom su generateAsync({type:"blob"}).
+  // Cast `as BlobPart`: TS strict tipa Uint8Array come <ArrayBufferLike>
+  // (include SharedArrayBuffer); BlobPart richiede ArrayBuffer puro. JSZip
+  // ritorna Uint8Array con ArrayBuffer normale, cast safe.
   const u8 = await zip.generateAsync({ type: "uint8array" });
-  return new Blob([u8], { type: "application/zip" });
+  return new Blob([u8 as BlobPart], { type: "application/zip" });
 }
 
 const SAMPLE_CSV = [

@@ -56,14 +56,14 @@ async function buildExerciseZip(csv: string): Promise<Blob> {
   const zip = new JSZip();
   zip.file("com.samsung.shealth.exercise.20260508.csv", new TextEncoder().encode(csv));
   const u8 = await zip.generateAsync({ type: "uint8array" });
-  return new Blob([u8], { type: "application/zip" });
+  return new Blob([u8 as BlobPart], { type: "application/zip" });
 }
 
 async function buildEmptyZip(): Promise<Blob> {
   const zip = new JSZip();
   zip.file("readme.txt", "no exercise here");
   const u8 = await zip.generateAsync({ type: "uint8array" });
-  return new Blob([u8], { type: "application/zip" });
+  return new Blob([u8 as BlobPart], { type: "application/zip" });
 }
 
 // ─── Smoke ──────────────────────────────────────────────────────────────────
