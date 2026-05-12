@@ -193,11 +193,11 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       setSaved(true);
       const r = await adapter.ping(config.apiKey, config.modelId);
       setTestResult(r.ok
-        ? (provider === "ollama" ? "✓ Ollama raggiungibile e modello installato" : "✓ Chiave valida, connessione OK")
-        : `✗ ${r.error || "Errore"}`);
+        ? (provider === "ollama" ? "OK Ollama raggiungibile e modello installato" : "OK Chiave valida, connessione OK")
+        : `Errore: ${r.error || "Errore"}`);
       await refreshKbStatus();
     } catch (e: any) {
-      setTestResult(`✗ ${e?.message || String(e)}`);
+      setTestResult(`Errore: ${e?.message || String(e)}`);
     } finally {
       setSaving(false);
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
@@ -207,15 +207,15 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
 
   // Test connessione Ollama dedicato (read-only, non salva config).
   const testOllamaConnection = async () => {
-    setTestResult("Test in corso…");
+    setTestResult("Test in corso...");
     invalidateOllamaHealthCache();
     setOllamaBaseUrl(ollamaBaseUrl);
     const h = await ollamaHealthCheck(ollamaBaseUrl);
     if (h.ok) {
       const count = h.models?.length ?? 0;
-      setTestResult(`✓ Ollama raggiungibile. Modelli installati: ${count}`);
+      setTestResult(`OK Ollama raggiungibile. Modelli installati: ${count}`);
     } else {
-      setTestResult(`✗ ${h.error || "Ollama non raggiungibile"}`);
+      setTestResult(`Errore: ${h.error || "Ollama non raggiungibile"}`);
     }
   };
 
@@ -280,10 +280,10 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
     if (input?.trim() !== "CONFERMO") return;
     for (const k of dayKeys) await storage.delete(k);
     await storage.delete("diary-index");
-    alert(`✓ Diario cancellato (${count} giorni rimossi).`);
+    alert(`Diario cancellato (${count} giorni rimossi).`);
   };
 
-  // ─── Samsung Health import handlers ──────────────────────────────────────
+  // --- Samsung Health import handlers --------------------------------------
   const showImportToast = (toast: { type: "success" | "error"; text: string }) => {
     setImportToast(toast);
     if (importToastTimerRef.current) clearTimeout(importToastTimerRef.current);
@@ -368,7 +368,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       if (result.duplicatesSkipped > 0) parts.push(`${result.duplicatesSkipped} skip`);
       showImportToast({
         type: "success",
-        text: `OK Import completato: ${parts.join(" · ") || "nessuna modifica"}`,
+        text: `Import completato: ${parts.join(" - ") || "nessuna modifica"}`,
       });
       resetImportState();
     } catch (e) {
@@ -414,11 +414,11 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
 
-  const labelStyle: React.CSSProperties = { fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" };
+  const labelStyle: React.CSSProperties = { fontSize: "12px", fontWeight: 600, color: "#94A3B8", display: "block", marginBottom: "4px" };
   const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "11px 14px", background: "#1A1A2E",
+    width: "100%", padding: "10px 12px", background: "#1A1A2E",
     border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px",
-    color: "#E2E8F0", fontSize: "15px", outline: "none", boxSizing: "border-box",
+    color: "#E2E8F0", fontSize: "14px", outline: "none", boxSizing: "border-box",
     fontFamily: "'JetBrains Mono', monospace",
   };
   const selectStyle: React.CSSProperties = {
@@ -427,20 +427,46 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   };
   const cardStyle: React.CSSProperties = {
     background: "#16213E", border: "1px solid rgba(255,255,255,0.06)",
-    borderRadius: "14px", padding: "18px 20px",
+    borderRadius: "14px", padding: "16px 18px",
+  };
+  // Stile uniforme accordion top-level (sezioni intere collapsibili).
+  const sectionDetailsStyle: React.CSSProperties = {
+    ...cardStyle,
+    padding: 0,
+    overflow: "hidden",
+  };
+  const sectionSummaryStyle: React.CSSProperties = {
+    cursor: "pointer",
+    padding: "14px 18px",
+    minHeight: "44px",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    fontSize: "13px",
+    fontWeight: 700,
+    color: "#E2E8F0",
+    userSelect: "none",
+    listStyle: "revert",
+  };
+  const sectionBodyStyle: React.CSSProperties = {
+    padding: "4px 18px 18px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
   };
 
   const help = PROVIDER_HELP[provider];
 
   return (
-    <div style={{ maxWidth: "560px", margin: "0 auto", padding: "24px 20px 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
+    <div style={{ maxWidth: "560px", margin: "0 auto", padding: "20px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
       <div>
         <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Impostazioni</div>
-        <h1 style={{ fontSize: "26px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.03em" }}>Configurazione</h1>
+        <h1 style={{ fontSize: "24px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.03em" }}>Configurazione</h1>
       </div>
 
+      {/* ─── Provider LLM ─────────────────────────────────────────────── */}
       <div style={cardStyle}>
-        <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "14px" }}>Provider LLM</div>
+        <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "12px" }}>Provider LLM</div>
 
         <label style={labelStyle}>Provider</label>
         <select style={selectStyle} value={provider} onChange={e => onProviderChange(e.target.value as ProviderId)}>
@@ -451,55 +477,43 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
 
         {provider === "ollama" && (
           <div style={{
-            marginTop: "14px", padding: "12px 14px",
+            marginTop: "10px", padding: "10px 12px",
             background: "#1A1A2E", border: "1px solid #F59E0B44",
             borderRadius: "10px",
-            fontSize: "12px", color: "#FCD34D", lineHeight: 1.6,
+            fontSize: "11px", color: "#FCD34D", lineHeight: 1.5,
           }}>
-            <div style={{ fontWeight: 700, color: "#F59E0B", marginBottom: "4px" }}>
-              ⚠ Modalità Ollama (locale)
-            </div>
-            <div>
-              Dati e prompt restano sul tuo PC (zero cloud).
-              <b> RAG (paper scientifici) DISABILITATO</b> — Ollama non fornisce embeddings compatibili.
-              Funziona <b>solo</b> da desktop con Ollama in esecuzione su {ollamaBaseUrl}.
-              Su mobile o quando Ollama non risponde, l'app fa fallback automatico a Gemini (se configurato).
-            </div>
+            <b style={{ color: "#F59E0B" }}>Modalità Ollama (locale)</b> — RAG paper disabilitato (no embeddings). Solo desktop con demone su {ollamaBaseUrl}. Fallback automatico a Gemini su mobile / offline.
           </div>
         )}
 
         {provider === "ollama" ? (
-          <>
-            <div style={{ marginTop: "14px" }}>
-              <label style={labelStyle}>URL Ollama</label>
-              <input
-                type="text" style={inputStyle}
-                value={ollamaBaseUrl}
-                onChange={e => { setOllamaBaseUrlState(e.target.value); setTestResult(null); }}
-                placeholder="http://localhost:11434"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "8px", lineHeight: 1.5 }}>
-                Endpoint locale di Ollama. Installa da <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{help.label}</a>{" "}
-                e avvia il demone (<code>ollama serve</code>).
-                Scarica un modello: <code>ollama pull qwen2.5:7b-instruct</code>.
-              </div>
-              <button
-                onClick={testOllamaConnection}
-                style={{
-                  marginTop: "8px",
-                  padding: "8px 12px", background: "#1A1A2E",
-                  border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
-                  color: "#E2E8F0", fontSize: "12px", fontWeight: 600, cursor: "pointer",
-                }}
-              >
-                Testa connessione Ollama
-              </button>
+          <div style={{ marginTop: "10px" }}>
+            <label style={labelStyle}>URL Ollama</label>
+            <input
+              type="text" style={inputStyle}
+              value={ollamaBaseUrl}
+              onChange={e => { setOllamaBaseUrlState(e.target.value); setTestResult(null); }}
+              placeholder="http://localhost:11434"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <div style={{ fontSize: "11px", color: "#64748B", marginTop: "6px", lineHeight: 1.4 }}>
+              Installa da <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{help.label}</a>, avvia <code>ollama serve</code>, scarica un modello: <code>ollama pull qwen2.5:7b-instruct</code>.
             </div>
-          </>
+            <button
+              onClick={testOllamaConnection}
+              style={{
+                marginTop: "6px", minHeight: "36px",
+                padding: "8px 12px", background: "#1A1A2E",
+                border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+                color: "#E2E8F0", fontSize: "12px", fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              Testa connessione
+            </button>
+          </div>
         ) : (
-          <div style={{ marginTop: "14px" }}>
+          <div style={{ marginTop: "10px" }}>
             <label style={labelStyle}>Chiave API</label>
             <input
               type="password" style={inputStyle}
@@ -508,21 +522,18 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
               placeholder={PROVIDER_PLACEHOLDER[provider]}
               autoComplete="off"
             />
-            <div style={{ fontSize: "12px", color: "#64748B", marginTop: "8px", lineHeight: 1.5 }}>
-              Ottieni la chiave su <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{help.label}</a>.
-              La chiave resta sul tuo dispositivo (localStorage), mai inviata a server terzi.
+            <div style={{ fontSize: "11px", color: "#64748B", marginTop: "6px", lineHeight: 1.4 }}>
+              Chiave su <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{help.label}</a>. Resta sul dispositivo (localStorage).
               {!providerSupportsEmbeddings && (
-                <div style={{ marginTop: "6px", color: "#F59E0B" }}>
-                  Nota: {PROVIDER_LABELS[provider].replace(" (consigliato)", "")} non fornisce embeddings nativi. La knowledge base RAG sarà disabilitata.
-                </div>
+                <span style={{ color: "#F59E0B" }}>{" "}Nota: provider senza embeddings nativi → RAG disabilitato.</span>
               )}
             </div>
           </div>
         )}
 
-        <div style={{ marginTop: "14px" }}>
+        <div style={{ marginTop: "10px" }}>
           <label style={labelStyle}>Modello</label>
-          <div style={{ display: "flex", gap: "8px", alignItems: "stretch" }}>
+          <div style={{ display: "flex", gap: "6px", alignItems: "stretch" }}>
             <select
               style={{ ...selectStyle, flex: 1 }}
               value={modelId}
@@ -544,728 +555,674 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
               onClick={discoverModels}
               disabled={loadingModels || (provider !== "ollama" && !apiKey.trim())}
               style={{
-                padding: "10px 14px", background: "#1A1A2E",
+                padding: "10px 12px", minHeight: "44px",
+                background: "#1A1A2E",
                 border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px",
-                color: "#E2E8F0", fontWeight: 600, cursor: "pointer",
+                color: "#E2E8F0", fontWeight: 600, fontSize: "12px", cursor: "pointer",
                 whiteSpace: "nowrap",
                 opacity: (loadingModels || (provider !== "ollama" && !apiKey.trim())) ? 0.5 : 1,
               }}
             >
-              {loadingModels ? "Carico…" : "Scopri modelli"}
+              {loadingModels ? "..." : "Scopri"}
             </button>
           </div>
           {modelsError && (
-            <div style={{ color: "#EF4444", fontSize: "12px", marginTop: "8px" }}>{modelsError}</div>
+            <div style={{ color: "#EF4444", fontSize: "11px", marginTop: "6px" }}>{modelsError}</div>
           )}
           {models.length > 0 && (
-            <div style={{ fontSize: "11px", color: "#64748B", marginTop: "6px" }}>
-              {models.length} modelli compatibili trovati.
+            <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px" }}>
+              {models.length} modelli compatibili.
             </div>
           )}
         </div>
 
-        <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
+        <div style={{ display: "flex", gap: "8px", marginTop: "12px", alignItems: "center" }}>
           <button
             onClick={saveAndTest}
             disabled={saving || (provider !== "ollama" && !apiKey.trim()) || !modelId.trim()}
             style={{
-              padding: "10px 16px",
+              padding: "10px 16px", minHeight: "44px",
               background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
               border: "none", borderRadius: "10px", color: "#FFF",
-              fontWeight: 700, cursor: "pointer",
+              fontWeight: 700, fontSize: "13px", cursor: "pointer",
               opacity: (saving || (provider !== "ollama" && !apiKey.trim()) || !modelId.trim()) ? 0.5 : 1,
             }}
           >
-            {saving ? "Testo…" : saved ? "✓ Salvata" : "Salva e testa"}
+            {saving ? "Testo..." : saved ? "Salvata" : "Salva e testa"}
           </button>
+          {testResult && (
+            <div style={{
+              fontSize: "12px", flex: 1,
+              color: testResult.startsWith("OK") ? "#22C55E" : "#EF4444",
+            }}>{testResult}</div>
+          )}
         </div>
-        {testResult && (
-          <div style={{
-            marginTop: "10px", fontSize: "13px",
-            color: testResult.startsWith("✓") ? "#22C55E" : "#EF4444",
-          }}>{testResult}</div>
-        )}
       </div>
 
+      {/* ─── Profilo atleta ───────────────────────────────────────────── */}
       <div style={cardStyle}>
-        <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "12px" }}>Gestione dati</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div style={{
-            padding: "14px", background: "#1A1A2E",
-            border: "1px solid #0891B244", borderRadius: "10px",
+        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "10px" }}>
+          Profilo atleta
+        </div>
+        <div style={{ fontSize: "12px", color: "#64748B", marginBottom: "12px", lineHeight: 1.4 }}>
+          Aggiorna stato di salute corrente. Età/peso/altezza si modificano dal Reset coach.
+        </div>
+        <ProfileEditor />
+      </div>
+
+      {/* ─── Obiettivi ────────────────────────────────────────────────── */}
+      <div style={cardStyle}>
+        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "10px" }}>
+          Obiettivi
+        </div>
+        <GoalsEditor />
+      </div>
+
+      {/* ─── Calendario gare (componente separato) ───────────────────── */}
+      <RaceCalendarSection />
+
+      {/* ─── Knowledge base RAG (collapsible) ─────────────────────────── */}
+      <details style={sectionDetailsStyle}>
+        <summary style={sectionSummaryStyle} aria-label="Knowledge base scientifica">
+          <span style={{ flex: 1 }}>Knowledge base scientifica</span>
+          <span style={{
+            padding: "3px 9px", borderRadius: "999px",
+            fontSize: "10px", fontWeight: 700, letterSpacing: "0.04em",
+            background:
+              kbStatus === "ready" ? "#16A34A22" :
+              kbStatus === "stale" ? "#F59E0B22" :
+              kbStatus === "no-key" ? "#EF444422" :
+              kbStatus === "unsupported" ? "#F59E0B22" : "#64748B22",
+            color:
+              kbStatus === "ready" ? "#22C55E" :
+              kbStatus === "stale" ? "#F59E0B" :
+              kbStatus === "no-key" ? "#EF4444" :
+              kbStatus === "unsupported" ? "#F59E0B" : "#94A3B8",
           }}>
-            <div style={{ color: "#0891B2", fontWeight: 700, fontSize: "13px", marginBottom: "6px" }}>
-              Knowledge base scientifica
-            </div>
-            <div style={{ color: "#94A3B8", fontSize: "12px", lineHeight: 1.5, marginBottom: "10px" }}>
-              Indice di embeddings sui fondamenti scientifici (24 aree) usato dal coach per citare evidenze pertinenti.
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px", flexWrap: "wrap" }}>
-              <span style={{
-                display: "inline-block",
-                padding: "3px 9px",
-                borderRadius: "999px",
-                fontSize: "11px",
-                fontWeight: 700,
-                letterSpacing: "0.04em",
-                background:
-                  kbStatus === "ready" ? "#16A34A22" :
-                  kbStatus === "stale" ? "#F59E0B22" :
-                  kbStatus === "no-key" ? "#EF444422" :
-                  kbStatus === "unsupported" ? "#F59E0B22" : "#64748B22",
-                color:
-                  kbStatus === "ready" ? "#22C55E" :
-                  kbStatus === "stale" ? "#F59E0B" :
-                  kbStatus === "no-key" ? "#EF4444" :
-                  kbStatus === "unsupported" ? "#F59E0B" : "#94A3B8",
-              }}>
-                {kbStatus === "ready" && "Pronta"}
-                {kbStatus === "stale" && "Da rigenerare"}
-                {kbStatus === "missing" && "Non creata"}
-                {kbStatus === "no-key" && "Chiave API richiesta"}
-                {kbStatus === "unsupported" && "Provider non supportato"}
-              </span>
-              {(kbStatus === "ready" || kbStatus === "stale") && kbCount > 0 && (
-                <span style={{ color: "#94A3B8", fontSize: "12px" }}>
-                  {kbCount}/{CHUNKS.length} chunks
-                  {kbCreatedAt && (() => { const d = new Date(kbCreatedAt); return ` · ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; })()}
-                </span>
-              )}
-            </div>
-
-            {kbFailures > 0 && !kbBusy && (
-              <div style={{ color: "#F59E0B", fontSize: "12px", marginBottom: "8px", padding: "6px 10px", background: "#F59E0B15", borderRadius: "6px" }}>
-                ⚠ Ultima generazione: {kbFailures} chunk falliti su {CHUNKS.length}.
-                {kbLastFailureMsg && <div style={{ marginTop: "4px", fontSize: "11px", fontStyle: "italic", color: "#FCD34D" }}>Causa: {kbLastFailureMsg.slice(0, 160)}</div>}
-                <div style={{ fontSize: "11px", marginTop: "4px" }}>Rigenera per completare i mancanti.</div>
-              </div>
-            )}
-
-            {kbBusy && kbProgress && (
-              <div style={{ marginBottom: "10px" }}>
-                <div style={{ fontSize: "12px", color: "#94A3B8", marginBottom: "4px" }}>
-                  Generazione embeddings… {kbProgress.done}/{kbProgress.total}
-                </div>
-                <div style={{ height: "6px", background: "#0F172A", borderRadius: "3px", overflow: "hidden" }}>
-                  <div style={{
-                    height: "100%",
-                    width: `${(kbProgress.done / kbProgress.total) * 100}%`,
-                    background: "#0891B2",
-                    transition: "width 0.2s ease",
-                  }} />
-                </div>
-              </div>
-            )}
-
-            {kbError && (
-              <div style={{ color: "#EF4444", fontSize: "12px", marginBottom: "8px" }}>
-                {kbError}
-              </div>
-            )}
-
-            <button
-              onClick={regenerateKnowledgeBase}
-              disabled={kbBusy || !hasApiKey() || !providerSupportsEmbeddings}
-              style={{
-                padding: "9px 14px",
-                background: (kbBusy || !hasApiKey() || !providerSupportsEmbeddings) ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
-                border: "none",
-                borderRadius: "8px",
-                color: "#FFF",
-                fontWeight: 700,
-                fontSize: "13px",
-                cursor: (kbBusy || !hasApiKey() || !providerSupportsEmbeddings) ? "not-allowed" : "pointer",
-                opacity: (kbBusy || !hasApiKey() || !providerSupportsEmbeddings) ? 0.5 : 1,
-              }}
-            >
-              {kbBusy ? "Rigenerazione in corso…" : "Rigenera knowledge base"}
-            </button>
+            {kbStatus === "ready" && "Pronta"}
+            {kbStatus === "stale" && "Da rigenerare"}
+            {kbStatus === "missing" && "Non creata"}
+            {kbStatus === "no-key" && "Chiave richiesta"}
+            {kbStatus === "unsupported" && "Non supportato"}
+          </span>
+        </summary>
+        <div style={sectionBodyStyle}>
+          <div style={{ color: "#94A3B8", fontSize: "12px", lineHeight: 1.5 }}>
+            Indice embeddings su fondamenti scientifici (24 aree) usato dal coach per citare evidenze pertinenti.
           </div>
 
-          <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "20px" }}>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "12px" }}>
-              Profilo atleta
+          {(kbStatus === "ready" || kbStatus === "stale") && kbCount > 0 && (
+            <div style={{ color: "#94A3B8", fontSize: "12px" }}>
+              {kbCount}/{CHUNKS.length} chunks
+              {kbCreatedAt && (() => { const d = new Date(kbCreatedAt); return ` - ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; })()}
             </div>
-            <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "14px", lineHeight: 1.5 }}>
-              Aggiorna lo stato di salute corrente: infortuni guariti, nuovi farmaci/integratori, zone di dolore da monitorare. Età/peso/altezza si modificano dal Reset coach.
+          )}
+
+          {kbFailures > 0 && !kbBusy && (
+            <div style={{ color: "#F59E0B", fontSize: "12px", padding: "8px 10px", background: "#F59E0B15", borderRadius: "8px" }}>
+              Ultima generazione: {kbFailures} chunk falliti su {CHUNKS.length}.
+              {kbLastFailureMsg && <div style={{ marginTop: "4px", fontSize: "11px", fontStyle: "italic", color: "#FCD34D" }}>Causa: {kbLastFailureMsg.slice(0, 160)}</div>}
             </div>
-            <ProfileEditor />
-          </div>
+          )}
 
-          <div style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", padding: "20px" }}>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "12px" }}>
-              Obiettivi
-            </div>
-            <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "14px", lineHeight: 1.5 }}>
-              Gestisci i tuoi obiettivi attivi. Il coach dimensiona il piano su questi.
-            </div>
-            <GoalsEditor />
-          </div>
-
-          {/* ───── Race calendar + Macrociclo (Wave 3.3) ───── */}
-          <RaceCalendarSection />
-
-          <BackupSection />
-
-          {/* ───── Samsung Health import (Wave 3.2) ───── */}
-          <div style={{
-            padding: "16px 18px", background: "#1A1A2E",
-            border: "1px solid #6366F144", borderRadius: "12px",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-              <span aria-hidden style={{ fontSize: "20px" }}>📥</span>
-              <div style={{ color: "#A5B4FC", fontWeight: 700, fontSize: "14px" }}>
-                Importa dati wearable (Samsung Health)
+          {kbBusy && kbProgress && (
+            <div>
+              <div style={{ fontSize: "12px", color: "#94A3B8", marginBottom: "4px" }}>
+                Generazione embeddings... {kbProgress.done}/{kbProgress.total}
+              </div>
+              <div style={{ height: "6px", background: "#0F172A", borderRadius: "3px", overflow: "hidden" }}>
+                <div style={{
+                  height: "100%",
+                  width: `${(kbProgress.done / kbProgress.total) * 100}%`,
+                  background: "#0891B2",
+                  transition: "width 0.2s ease",
+                }} />
               </div>
             </div>
-            <div id="samsung-import-help" style={{ color: "#94A3B8", fontSize: "12px", lineHeight: 1.5, marginBottom: "10px" }}>
-              Importa workout, FC e dati registrati dal tuo Galaxy Watch / Samsung Health.
-              Riceverai dati più precisi di quelli che inseresti a mano.
-              <div style={{ marginTop: "6px", color: "#64748B", fontSize: "11px" }}>
-                I dati restano sul tuo dispositivo, niente upload server.
-              </div>
-            </div>
+          )}
 
+          {kbError && (
+            <div style={{ color: "#EF4444", fontSize: "12px" }}>
+              {kbError}
+            </div>
+          )}
+
+          <button
+            onClick={regenerateKnowledgeBase}
+            disabled={kbBusy || !hasApiKey() || !providerSupportsEmbeddings}
+            style={{
+              alignSelf: "flex-start",
+              padding: "10px 14px", minHeight: "44px",
+              background: (kbBusy || !hasApiKey() || !providerSupportsEmbeddings) ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
+              border: "none", borderRadius: "10px",
+              color: "#FFF", fontWeight: 700, fontSize: "13px",
+              cursor: (kbBusy || !hasApiKey() || !providerSupportsEmbeddings) ? "not-allowed" : "pointer",
+              opacity: (kbBusy || !hasApiKey() || !providerSupportsEmbeddings) ? 0.5 : 1,
+            }}
+          >
+            {kbBusy ? "Rigenerazione..." : "Rigenera knowledge base"}
+          </button>
+        </div>
+      </details>
+
+      {/* ─── Backup / restore (componente separato) ──────────────────── */}
+      <BackupSection />
+
+      {/* ─── Samsung Health import (collapsible) ──────────────────────── */}
+      <details style={sectionDetailsStyle}>
+        <summary style={sectionSummaryStyle} aria-label="Importa dati Samsung Health">
+          <span style={{ flex: 1 }}>Importa Samsung Health</span>
+          <span style={{ fontSize: "11px", color: "#A5B4FC", fontWeight: 700 }}>wearable</span>
+        </summary>
+        <div style={sectionBodyStyle}>
+          <div id="samsung-import-help" style={{ color: "#94A3B8", fontSize: "12px", lineHeight: 1.5 }}>
+            Importa workout, FC e dati dal Galaxy Watch / Samsung Health. Dati restano sul dispositivo.{" "}
             <a
               href="docs/guida-import-samsung-health.md"
               target="_blank"
               rel="noreferrer"
-              style={{
-                display: "inline-block",
-                color: "#A5B4FC", fontSize: "12px",
-                textDecoration: "underline", marginBottom: "12px",
-              }}
+              style={{ color: "#A5B4FC", textDecoration: "underline" }}
             >
-              📖 Come esportare da Samsung Health
-            </a>
+              Come esportare
+            </a>.
+          </div>
 
-            {/* File input nascosto + button label */}
-            <input
-              ref={samsungFileRef}
-              type="file"
-              accept=".zip"
-              aria-describedby="samsung-import-help"
-              aria-label="Carica file ZIP esportato da Samsung Health"
-              onChange={(e) => onSamsungFileSelected(e.target.files?.[0] ?? null)}
-              disabled={importBusy}
-              style={{
-                position: "absolute",
-                width: 1, height: 1,
-                padding: 0, margin: -1,
-                overflow: "hidden", clip: "rect(0,0,0,0)",
-                whiteSpace: "nowrap", border: 0,
-              }}
-            />
+          {/* File input nascosto + button label */}
+          <input
+            ref={samsungFileRef}
+            type="file"
+            accept=".zip"
+            aria-describedby="samsung-import-help"
+            aria-label="Carica file ZIP esportato da Samsung Health"
+            onChange={(e) => onSamsungFileSelected(e.target.files?.[0] ?? null)}
+            disabled={importBusy}
+            style={{
+              position: "absolute",
+              width: 1, height: 1,
+              padding: 0, margin: -1,
+              overflow: "hidden", clip: "rect(0,0,0,0)",
+              whiteSpace: "nowrap", border: 0,
+            }}
+          />
+          <input
+            ref={samsungFolderRef}
+            type="file"
+            multiple
+            // Attributi non standard: spread cast as any per evitare
+            // sia errori TS quando i types React non li conoscono, sia
+            // "unused @ts-expect-error" se i types vengono aggiornati.
+            {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+            aria-describedby="samsung-folder-help"
+            aria-label="Carica cartella estratta Samsung Health (Android)"
+            onChange={(e) => onSamsungFolderSelected(e.target.files)}
+            disabled={importBusy}
+            style={{
+              position: "absolute",
+              width: 1, height: 1,
+              padding: 0, margin: -1,
+              overflow: "hidden", clip: "rect(0,0,0,0)",
+              whiteSpace: "nowrap", border: 0,
+            }}
+          />
 
-            {!importPreview && (
-              <>
-                {/* Wave 3.5: selettore finestra PRE-upload */}
-                <fieldset
-                  style={{
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: "10px",
-                    padding: "10px 12px 12px",
-                    marginBottom: "12px",
-                    background: "#0F172A",
-                  }}
+          {!importPreview && (
+            <>
+              {/* Wave 3.5: selettore finestra PRE-upload — dropdown invece di 2 radio verbose */}
+              <div>
+                <label style={labelStyle} htmlFor="samsung-window">Finestra import</label>
+                <select
+                  id="samsung-window"
+                  value={importWindowDays >= 365 ? "all" : "recent"}
+                  onChange={(e) => setImportWindowDays(e.target.value === "all" ? 3650 : SAMSUNG_DEFAULT_WINDOW)}
+                  disabled={importBusy}
+                  style={selectStyle}
                 >
-                  <legend style={{ fontSize: "11px", fontWeight: 700, color: "#A5B4FC", padding: "0 6px" }}>
-                    Finestra import
-                  </legend>
-                  <label style={{
-                    display: "flex", alignItems: "flex-start", gap: "8px",
-                    padding: "6px 0", cursor: importBusy ? "not-allowed" : "pointer",
-                    color: "#CBD5E1", fontSize: "13px", lineHeight: 1.4,
-                  }}>
-                    <input
-                      type="radio" name="import-window"
-                      checked={importWindowDays === SAMSUNG_DEFAULT_WINDOW}
-                      onChange={() => setImportWindowDays(SAMSUNG_DEFAULT_WINDOW)}
-                      disabled={importBusy}
-                      style={{ marginTop: "3px" }}
-                    />
-                    <span>
-                      <b>Ultime 2 settimane</b> (raccomandato)
-                      <div style={{ color: "#64748B", fontSize: "11px" }}>
-                        Importa solo i workout recenti. Più veloce e meno noise.
-                      </div>
-                    </span>
-                  </label>
-                  <label style={{
-                    display: "flex", alignItems: "flex-start", gap: "8px",
-                    padding: "6px 0", cursor: importBusy ? "not-allowed" : "pointer",
-                    color: "#CBD5E1", fontSize: "13px", lineHeight: 1.4,
-                  }}>
-                    <input
-                      type="radio" name="import-window"
-                      checked={importWindowDays >= 365}
-                      onChange={() => setImportWindowDays(3650)}
-                      disabled={importBusy}
-                      style={{ marginTop: "3px" }}
-                    />
-                    <span>
-                      <b>Tutto lo storico</b>
-                      <div style={{ color: "#64748B", fontSize: "11px" }}>
-                        Importa tutti i workout presenti nello ZIP (anche di anni fa).
-                      </div>
-                    </span>
-                  </label>
-                </fieldset>
+                  <option value="recent">Ultime 2 settimane (raccomandato)</option>
+                  <option value="all">Tutto lo storico</option>
+                </select>
+              </div>
 
+              {/* I 2 bottoni in row compatta su desktop, stack su mobile via flex-wrap. */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                 <button
                   onClick={() => samsungFileRef.current?.click()}
                   disabled={importBusy}
                   aria-busy={importBusy}
                   style={{
-                    display: "block", width: "100%",
-                    minHeight: "44px", padding: "12px 16px",
+                    flex: "1 1 200px",
+                    minHeight: "44px", padding: "12px 14px",
                     background: importBusy
                       ? "#1E293B"
                       : "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
                     border: "none", borderRadius: "10px",
-                    color: "#FFF", fontWeight: 700, fontSize: "14px",
+                    color: "#FFF", fontWeight: 700, fontSize: "13px",
                     cursor: importBusy ? "wait" : "pointer",
                     opacity: importBusy ? 0.7 : 1,
                   }}
                 >
-                  {importBusy ? "In corso..." : "Carica file ZIP Samsung Health"}
+                  {importBusy ? "In corso..." : "Carica file ZIP"}
                 </button>
-
-                {/* Fix 2 — Secondo input/button per cartella estratta (Android).
-                    `webkitdirectory directory` (multi-attribute per compat
-                    Chrome/Firefox vs Safari legacy). multiple per garantire che
-                    tutti i file della cartella selezionata arrivino in FileList. */}
-                <input
-                  ref={samsungFolderRef}
-                  type="file"
-                  multiple
-                  // Attributi non standard: spread cast as any per evitare
-                  // sia errori TS quando i types React non li conoscono, sia
-                  // "unused @ts-expect-error" se i types vengono aggiornati.
-                  {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
-                  aria-describedby="samsung-folder-help"
-                  aria-label="Carica cartella estratta Samsung Health (Android)"
-                  onChange={(e) => onSamsungFolderSelected(e.target.files)}
-                  disabled={importBusy}
-                  style={{
-                    position: "absolute",
-                    width: 1, height: 1,
-                    padding: 0, margin: -1,
-                    overflow: "hidden", clip: "rect(0,0,0,0)",
-                    whiteSpace: "nowrap", border: 0,
-                  }}
-                />
                 <button
                   onClick={() => samsungFolderRef.current?.click()}
                   disabled={importBusy}
                   aria-busy={importBusy}
                   style={{
-                    display: "block", width: "100%",
-                    minHeight: "44px", padding: "12px 16px",
-                    marginTop: "10px",
-                    background: importBusy
-                      ? "#1E293B"
-                      : "transparent",
+                    flex: "1 1 200px",
+                    minHeight: "44px", padding: "12px 14px",
+                    background: "transparent",
                     border: "1px solid rgba(99, 102, 241, 0.5)",
                     borderRadius: "10px",
-                    color: "#A5B4FC", fontWeight: 700, fontSize: "14px",
+                    color: "#A5B4FC", fontWeight: 700, fontSize: "13px",
                     cursor: importBusy ? "wait" : "pointer",
                     opacity: importBusy ? 0.7 : 1,
                   }}
                 >
-                  {importBusy ? "In corso..." : "Carica cartella estratta (Android)"}
+                  {importBusy ? "In corso..." : "Cartella Android"}
                 </button>
+              </div>
+              <div
+                id="samsung-folder-help"
+                style={{
+                  fontSize: "11px", color: "#64748B", lineHeight: 1.4,
+                }}
+              >
+                Cartella estratta funziona su Android Chrome. Su iOS comprimi prima in zip e usa il primo bottone.
+              </div>
+            </>
+          )}
+
+          {importPhase === "parsing" && (
+            <div
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+              aria-label="Analisi file in corso"
+              style={{
+                padding: "10px 12px",
+                background: "#1E293B", borderRadius: "8px",
+                color: "#A5B4FC", fontSize: "12px", lineHeight: 1.5,
+              }}
+            >
+              Analizzo il file... (può impiegare 30s-2min)
+            </div>
+          )}
+
+          {importError && !importBusy && (
+            <div
+              role="alert"
+              style={{
+                padding: "10px 12px",
+                background: "#EF444415", border: "1px solid #EF444444",
+                borderRadius: "8px", color: "#EF4444", fontSize: "12px", lineHeight: 1.5,
+              }}
+            >
+              Errore: {importError}
+              <button
+                onClick={() => setImportError(null)}
+                style={{
+                  display: "block", marginTop: "8px", minHeight: "36px",
+                  padding: "6px 12px", background: "#1A1A2E",
+                  border: "1px solid #EF444466", borderRadius: "8px",
+                  color: "#EF4444", fontSize: "12px", fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Chiudi
+              </button>
+            </div>
+          )}
+
+          {importPreview && !importBusy && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {/* Stats card riassunto + finestra applicata */}
+              <div style={{
+                padding: "12px", background: "#0F172A",
+                border: "1px solid rgba(255,255,255,0.08)", borderRadius: "10px",
+                fontSize: "13px", lineHeight: 1.7, color: "#E2E8F0",
+              }}>
+                <div style={{ color: "#94A3B8", fontSize: "11px", marginBottom: "4px" }}>
+                  Finestra: ultime {importPreview.windowDays} giorni - totale {importPreview.totalSamples} sample
+                </div>
+                <div style={{ color: "#22C55E" }}>
+                  Nuovi allenamenti: <b>{importPreview.newWorkouts.length}</b>
+                </div>
+                <div style={{ color: "#A5B4FC" }}>
+                  Arricchimenti automatici: <b>{importPreview.autoEnrichments.length}</b>
+                </div>
+                <div style={{ color: "#F59E0B" }}>
+                  Da confermare: <b>{importPreview.ambiguousMatches.length}</b>
+                </div>
+              </div>
+
+              {/* Warning tipi sconosciuti */}
+              {importPreview.unrecognizedTypes.length > 0 && (
                 <div
-                  id="samsung-folder-help"
+                  role="alert"
                   style={{
-                    fontSize: "11px", color: "#64748B",
-                    marginTop: "6px", lineHeight: 1.4,
+                    padding: "10px 12px",
+                    background: "#F59E0B15", border: "1px solid #F59E0B44",
+                    borderRadius: "8px", color: "#F59E0B",
+                    fontSize: "12px", lineHeight: 1.5,
                   }}
                 >
-                  Funziona su Android Chrome. Su iOS comprimi la cartella in zip
-                  prima e usa il bottone sopra.
+                  Tipi sconosciuti: {importPreview.unrecognizedTypes.join(", ")} - mappati a "sport (Altro)"
                 </div>
-              </>
-            )}
+              )}
 
-            {importPhase === "parsing" && (
-              <div
-                role="status"
-                aria-live="polite"
-                aria-busy="true"
-                aria-label="Analisi file in corso"
-                style={{
-                  marginTop: "10px", padding: "10px 12px",
-                  background: "#1E293B", borderRadius: "8px",
-                  color: "#A5B4FC", fontSize: "12px", lineHeight: 1.5,
-                }}
-              >
-                🔄 Analizzo il file… (può impiegare 30s-2min)
-              </div>
-            )}
-
-            {importError && !importBusy && (
-              <div
-                role="alert"
-                style={{
-                  marginTop: "10px", padding: "10px 12px",
-                  background: "#EF444415", border: "1px solid #EF444444",
-                  borderRadius: "8px", color: "#EF4444", fontSize: "12px", lineHeight: 1.5,
-                }}
-              >
-                ✗ Errore: {importError}
-                <button
-                  onClick={() => setImportError(null)}
+              {/* Errori parsing */}
+              {importPreview.parseErrors.length > 0 && (
+                <div
+                  role="alert"
                   style={{
-                    display: "block", marginTop: "8px", minHeight: "36px",
-                    padding: "6px 12px", background: "#1A1A2E",
-                    border: "1px solid #EF444466", borderRadius: "8px",
-                    color: "#EF4444", fontSize: "12px", fontWeight: 600,
-                    cursor: "pointer",
+                    padding: "10px 12px",
+                    background: "#EF444415", border: "1px solid #EF444444",
+                    borderRadius: "8px", color: "#EF4444",
+                    fontSize: "12px", lineHeight: 1.5,
                   }}
                 >
-                  Chiudi
-                </button>
-              </div>
-            )}
+                  {importPreview.parseErrors.length} errori parsing - workout potenzialmente persi
+                </div>
+              )}
 
-            {importPreview && !importBusy && (
-              <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                {/* Stats card riassunto + finestra applicata */}
+              {/* SEZIONE 1: Nuovi allenamenti (max 10 in preview) */}
+              {importPreview.newWorkouts.length > 0 && (
                 <div style={{
-                  padding: "12px", background: "#0F172A",
-                  border: "1px solid rgba(255,255,255,0.08)", borderRadius: "10px",
-                  fontSize: "13px", lineHeight: 1.7, color: "#E2E8F0",
+                  padding: "10px 12px",
+                  background: "#0F172A", borderRadius: "8px",
+                  border: "1px solid rgba(34,197,94,0.18)",
+                  fontSize: "12px", lineHeight: 1.6,
                 }}>
-                  <div style={{ color: "#94A3B8", fontSize: "11px", marginBottom: "4px" }}>
-                    Finestra: ultime {importPreview.windowDays} giorni · totale {importPreview.totalSamples} sample
+                  <div style={{ color: "#22C55E", fontWeight: 700, fontSize: "12px", marginBottom: "8px" }}>
+                    Nuovi allenamenti ({importPreview.newWorkouts.length})
                   </div>
-                  <div style={{ color: "#22C55E" }}>
-                    Nuovi allenamenti: <b>{importPreview.newWorkouts.length}</b>
-                  </div>
-                  <div style={{ color: "#A5B4FC" }}>
-                    Arricchimenti automatici: <b>{importPreview.autoEnrichments.length}</b>
-                  </div>
-                  <div style={{ color: "#F59E0B" }}>
-                    Da confermare: <b>{importPreview.ambiguousMatches.length}</b>
-                  </div>
+                  {importPreview.newWorkouts.slice(0, 10).map((s, i) => (
+                    <div
+                      key={`new-${i}`}
+                      style={{
+                        display: "flex", flexWrap: "wrap", gap: "6px",
+                        padding: "4px 0",
+                        borderBottom: i < Math.min(9, importPreview.newWorkouts.length - 1)
+                          ? "1px solid rgba(255,255,255,0.04)" : "none",
+                        color: "#CBD5E1",
+                      }}
+                    >
+                      <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>
+                        {formatSampleDate(s.startedAt)}
+                      </span>
+                      <span style={{ color: "#A5B4FC", fontWeight: 600 }}>{s.mappedType}</span>
+                      <span style={{ color: "#94A3B8" }}>{s.duration_min}min</span>
+                      {s.hrAvg !== undefined && (
+                        <span style={{ color: "#F59E0B" }}>FC {s.hrAvg}</span>
+                      )}
+                    </div>
+                  ))}
+                  {importPreview.newWorkouts.length > 10 && (
+                    <div style={{ color: "#64748B", marginTop: "6px", fontStyle: "italic" }}>
+                      ...e altri {importPreview.newWorkouts.length - 10}
+                    </div>
+                  )}
                 </div>
+              )}
 
-                {/* Warning tipi sconosciuti */}
-                {importPreview.unrecognizedTypes.length > 0 && (
-                  <div
-                    role="alert"
-                    style={{
-                      padding: "10px 12px",
-                      background: "#F59E0B15", border: "1px solid #F59E0B44",
-                      borderRadius: "8px", color: "#F59E0B",
-                      fontSize: "12px", lineHeight: 1.5,
-                    }}
-                  >
-                    Tipi sconosciuti: {importPreview.unrecognizedTypes.join(", ")} - mappati a "sport (Altro)"
+              {/* SEZIONE 2: Arricchimenti automatici (match certo, score >= 80) */}
+              {importPreview.autoEnrichments.length > 0 && (
+                <div style={{
+                  padding: "10px 12px",
+                  background: "#0F172A", borderRadius: "8px",
+                  border: "1px solid rgba(165,180,252,0.25)",
+                  fontSize: "12px", lineHeight: 1.6,
+                }}>
+                  <div style={{ color: "#A5B4FC", fontWeight: 700, fontSize: "12px", marginBottom: "8px" }}>
+                    Arricchimenti automatici ({importPreview.autoEnrichments.length})
                   </div>
-                )}
-
-                {/* Errori parsing */}
-                {importPreview.parseErrors.length > 0 && (
-                  <div
-                    role="alert"
-                    style={{
-                      padding: "10px 12px",
-                      background: "#EF444415", border: "1px solid #EF444444",
-                      borderRadius: "8px", color: "#EF4444",
-                      fontSize: "12px", lineHeight: 1.5,
-                    }}
-                  >
-                    {importPreview.parseErrors.length} errori parsing - workout potenzialmente persi
-                  </div>
-                )}
-
-                {/* SEZIONE 1: Nuovi allenamenti (max 10 in preview) */}
-                {importPreview.newWorkouts.length > 0 && (
-                  <div style={{
-                    padding: "10px 12px",
-                    background: "#0F172A", borderRadius: "8px",
-                    border: "1px solid rgba(34,197,94,0.18)",
-                    fontSize: "12px", lineHeight: 1.6,
-                  }}>
-                    <div style={{ color: "#22C55E", fontWeight: 700, fontSize: "12px", marginBottom: "8px" }}>
-                      Nuovi allenamenti ({importPreview.newWorkouts.length})
+                  {importPreview.autoEnrichments.slice(0, 10).map((e, i) => (
+                    <div
+                      key={`enrich-${i}`}
+                      style={{
+                        display: "flex", flexWrap: "wrap", gap: "6px",
+                        padding: "4px 0",
+                        borderBottom: i < Math.min(9, importPreview.autoEnrichments.length - 1)
+                          ? "1px solid rgba(255,255,255,0.04)" : "none",
+                        color: "#CBD5E1",
+                      }}
+                    >
+                      <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>
+                        {formatSampleDate(e.sample.startedAt)}
+                      </span>
+                      <span style={{ color: "#A5B4FC", fontWeight: 600 }}>
+                        {e.sample.mappedType} {e.sample.duration_min}min
+                      </span>
+                      <span style={{ color: "#22C55E" }}>{formatFieldsAdded(e.fieldsAdded)}</span>
+                      <span style={{ color: "#64748B", fontFamily: "'JetBrains Mono', monospace" }}>
+                        score {e.score}
+                      </span>
                     </div>
-                    {importPreview.newWorkouts.slice(0, 10).map((s, i) => (
-                      <div
-                        key={`new-${i}`}
+                  ))}
+                  {importPreview.autoEnrichments.length > 10 && (
+                    <div style={{ color: "#64748B", marginTop: "6px", fontStyle: "italic" }}>
+                      ...e altri {importPreview.autoEnrichments.length - 10}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SEZIONE 3: Da confermare (ambigui o no-match con candidati) */}
+              {importPreview.ambiguousMatches.length > 0 && (
+                <div style={{
+                  padding: "10px 12px",
+                  background: "#0F172A", borderRadius: "8px",
+                  border: "1px solid rgba(245,158,11,0.25)",
+                  fontSize: "12px", lineHeight: 1.6,
+                }}>
+                  <div style={{ color: "#F59E0B", fontWeight: 700, fontSize: "12px", marginBottom: "8px" }}>
+                    Da confermare ({importPreview.ambiguousMatches.length})
+                  </div>
+                  <div style={{ color: "#94A3B8", fontSize: "11px", marginBottom: "10px", lineHeight: 1.4 }}>
+                    Sample senza match certo. Scegli per ognuno: associa, crea nuovo, o salta.
+                  </div>
+                  {importPreview.ambiguousMatches.map((amb, i) => {
+                    const sampleKey = amb.sample.dedupKey;
+                    const decision = pendingDecisions.get(sampleKey);
+                    return (
+                      <fieldset
+                        key={`amb-${i}`}
                         style={{
-                          display: "flex", flexWrap: "wrap", gap: "6px",
-                          padding: "4px 0",
-                          borderBottom: i < Math.min(9, importPreview.newWorkouts.length - 1)
-                            ? "1px solid rgba(255,255,255,0.04)" : "none",
-                          color: "#CBD5E1",
+                          border: "1px solid rgba(255,255,255,0.06)",
+                          borderRadius: "8px",
+                          padding: "8px 10px",
+                          marginBottom: "8px",
+                          background: "rgba(15,23,42,0.6)",
                         }}
                       >
-                        <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>
-                          {formatSampleDate(s.startedAt)}
-                        </span>
-                        <span style={{ color: "#A5B4FC", fontWeight: 600 }}>{s.mappedType}</span>
-                        <span style={{ color: "#94A3B8" }}>{s.duration_min}min</span>
-                        {s.hrAvg !== undefined && (
-                          <span style={{ color: "#F59E0B" }}>FC {s.hrAvg}</span>
-                        )}
-                      </div>
-                    ))}
-                    {importPreview.newWorkouts.length > 10 && (
-                      <div style={{ color: "#64748B", marginTop: "6px", fontStyle: "italic" }}>
-                        ...e altri {importPreview.newWorkouts.length - 10}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* SEZIONE 2: Arricchimenti automatici (match certo, score >= 80) */}
-                {importPreview.autoEnrichments.length > 0 && (
-                  <div style={{
-                    padding: "10px 12px",
-                    background: "#0F172A", borderRadius: "8px",
-                    border: "1px solid rgba(165,180,252,0.25)",
-                    fontSize: "12px", lineHeight: 1.6,
-                  }}>
-                    <div style={{ color: "#A5B4FC", fontWeight: 700, fontSize: "12px", marginBottom: "8px" }}>
-                      Arricchimenti automatici ({importPreview.autoEnrichments.length})
-                    </div>
-                    {importPreview.autoEnrichments.slice(0, 10).map((e, i) => (
-                      <div
-                        key={`enrich-${i}`}
-                        style={{
-                          display: "flex", flexWrap: "wrap", gap: "6px",
-                          padding: "4px 0",
-                          borderBottom: i < Math.min(9, importPreview.autoEnrichments.length - 1)
-                            ? "1px solid rgba(255,255,255,0.04)" : "none",
-                          color: "#CBD5E1",
-                        }}
-                      >
-                        <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>
-                          {formatSampleDate(e.sample.startedAt)}
-                        </span>
-                        <span style={{ color: "#A5B4FC", fontWeight: 600 }}>
-                          {e.sample.mappedType} {e.sample.duration_min}min
-                        </span>
-                        <span style={{ color: "#22C55E" }}>{formatFieldsAdded(e.fieldsAdded)}</span>
-                        <span style={{ color: "#64748B", fontFamily: "'JetBrains Mono', monospace" }}>
-                          score {e.score}
-                        </span>
-                      </div>
-                    ))}
-                    {importPreview.autoEnrichments.length > 10 && (
-                      <div style={{ color: "#64748B", marginTop: "6px", fontStyle: "italic" }}>
-                        ...e altri {importPreview.autoEnrichments.length - 10}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* SEZIONE 3: Da confermare (ambigui o no-match con candidati) */}
-                {importPreview.ambiguousMatches.length > 0 && (
-                  <div style={{
-                    padding: "10px 12px",
-                    background: "#0F172A", borderRadius: "8px",
-                    border: "1px solid rgba(245,158,11,0.25)",
-                    fontSize: "12px", lineHeight: 1.6,
-                  }}>
-                    <div style={{ color: "#F59E0B", fontWeight: 700, fontSize: "12px", marginBottom: "8px" }}>
-                      Da confermare ({importPreview.ambiguousMatches.length})
-                    </div>
-                    <div style={{ color: "#94A3B8", fontSize: "11px", marginBottom: "10px", lineHeight: 1.4 }}>
-                      Questi sample non hanno un match certo. Scegli per ognuno: associa a un workout esistente, crea nuovo, o salta.
-                    </div>
-                    {importPreview.ambiguousMatches.map((amb, i) => {
-                      const sampleKey = amb.sample.dedupKey;
-                      const decision = pendingDecisions.get(sampleKey);
-                      return (
-                        <fieldset
-                          key={`amb-${i}`}
-                          style={{
-                            border: "1px solid rgba(255,255,255,0.06)",
-                            borderRadius: "8px",
-                            padding: "8px 10px",
-                            marginBottom: "8px",
-                            background: "rgba(15,23,42,0.6)",
-                          }}
-                        >
-                          <legend style={{
-                            fontSize: "11px", padding: "0 4px",
-                            color: "#CBD5E1", fontWeight: 600,
-                          }}>
-                            {formatSampleDate(amb.sample.startedAt)} {" "}
-                            <span style={{ color: "#A5B4FC" }}>
-                              Samsung {amb.sample.mappedType} {amb.sample.duration_min}min
-                            </span>
-                          </legend>
-                          {amb.candidates.map((c) => (
-                            <label
-                              key={c.workoutId}
-                              style={{
-                                display: "flex", alignItems: "center", gap: "8px",
-                                padding: "4px 0", color: "#CBD5E1", fontSize: "12px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              <input
-                                type="radio"
-                                name={`amb-${sampleKey}`}
-                                checked={decision?.kind === "enrich" && decision.workoutId === c.workoutId}
-                                onChange={() => setSampleDecision(sampleKey, { kind: "enrich", workoutId: c.workoutId })}
-                              />
-                              <span>
-                                Associa a "{c.preview}"
-                                <span style={{ color: "#64748B", marginLeft: "6px", fontFamily: "'JetBrains Mono', monospace" }}>
-                                  (score {c.score})
-                                </span>
+                        <legend style={{
+                          fontSize: "11px", padding: "0 4px",
+                          color: "#CBD5E1", fontWeight: 600,
+                        }}>
+                          {formatSampleDate(amb.sample.startedAt)} {" "}
+                          <span style={{ color: "#A5B4FC" }}>
+                            Samsung {amb.sample.mappedType} {amb.sample.duration_min}min
+                          </span>
+                        </legend>
+                        {amb.candidates.map((c) => (
+                          <label
+                            key={c.workoutId}
+                            style={{
+                              display: "flex", alignItems: "center", gap: "8px",
+                              padding: "4px 0", color: "#CBD5E1", fontSize: "12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name={`amb-${sampleKey}`}
+                              checked={decision?.kind === "enrich" && decision.workoutId === c.workoutId}
+                              onChange={() => setSampleDecision(sampleKey, { kind: "enrich", workoutId: c.workoutId })}
+                            />
+                            <span>
+                              Associa a "{c.preview}"
+                              <span style={{ color: "#64748B", marginLeft: "6px", fontFamily: "'JetBrains Mono', monospace" }}>
+                                (score {c.score})
                               </span>
-                            </label>
-                          ))}
-                          <label style={{
-                            display: "flex", alignItems: "center", gap: "8px",
-                            padding: "4px 0", color: "#22C55E", fontSize: "12px",
-                            cursor: "pointer",
-                          }}>
-                            <input
-                              type="radio"
-                              name={`amb-${sampleKey}`}
-                              checked={decision?.kind === "new"}
-                              onChange={() => setSampleDecision(sampleKey, { kind: "new" })}
-                            />
-                            <span>Crea nuovo</span>
+                            </span>
                           </label>
-                          <label style={{
-                            display: "flex", alignItems: "center", gap: "8px",
-                            padding: "4px 0", color: "#94A3B8", fontSize: "12px",
-                            cursor: "pointer",
-                          }}>
-                            <input
-                              type="radio"
-                              name={`amb-${sampleKey}`}
-                              checked={!decision || decision.kind === "skip"}
-                              onChange={() => setSampleDecision(sampleKey, { kind: "skip" })}
-                            />
-                            <span>Skip (non importare)</span>
-                          </label>
-                        </fieldset>
-                      );
-                    })}
+                        ))}
+                        <label style={{
+                          display: "flex", alignItems: "center", gap: "8px",
+                          padding: "4px 0", color: "#22C55E", fontSize: "12px",
+                          cursor: "pointer",
+                        }}>
+                          <input
+                            type="radio"
+                            name={`amb-${sampleKey}`}
+                            checked={decision?.kind === "new"}
+                            onChange={() => setSampleDecision(sampleKey, { kind: "new" })}
+                          />
+                          <span>Crea nuovo</span>
+                        </label>
+                        <label style={{
+                          display: "flex", alignItems: "center", gap: "8px",
+                          padding: "4px 0", color: "#94A3B8", fontSize: "12px",
+                          cursor: "pointer",
+                        }}>
+                          <input
+                            type="radio"
+                            name={`amb-${sampleKey}`}
+                            checked={!decision || decision.kind === "skip"}
+                            onChange={() => setSampleDecision(sampleKey, { kind: "skip" })}
+                          />
+                          <span>Skip (non importare)</span>
+                        </label>
+                      </fieldset>
+                    );
+                  })}
+                </div>
+              )}
+
+              {importPhase === "committing" && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  aria-busy="true"
+                  aria-label="Importazione in corso"
+                  style={{
+                    padding: "10px 12px", background: "#1E293B",
+                    borderRadius: "8px", color: "#A5B4FC",
+                    fontSize: "12px",
+                  }}
+                >
+                  Importo i workout...
+                </div>
+              )}
+
+              {/* Conferma / Annulla */}
+              {(() => {
+                // Conferma abilitabile se almeno 1 azione disponibile
+                const hasActionable =
+                  importPreview.newWorkouts.length > 0 ||
+                  importPreview.autoEnrichments.length > 0 ||
+                  Array.from(pendingDecisions.values()).some(d => d.kind !== "skip");
+                return (
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      onClick={onConfirmSamsungImport}
+                      disabled={importBusy || !hasActionable}
+                      style={{
+                        flex: 1, minHeight: "44px", padding: "12px 16px",
+                        background: (importBusy || !hasActionable)
+                          ? "#1E293B"
+                          : "linear-gradient(135deg, #22C55E 0%, #16A34A 100%)",
+                        border: "none", borderRadius: "10px",
+                        color: "#FFF", fontWeight: 700, fontSize: "14px",
+                        cursor: (importBusy || !hasActionable) ? "not-allowed" : "pointer",
+                        opacity: (importBusy || !hasActionable) ? 0.5 : 1,
+                      }}
+                    >
+                      {importPhase === "committing" ? "Importo..." : "Conferma import"}
+                    </button>
+                    <button
+                      onClick={onCancelSamsungImport}
+                      disabled={importBusy}
+                      style={{
+                        minHeight: "44px", padding: "12px 16px",
+                        background: "transparent",
+                        border: "1px solid rgba(255,255,255,0.18)", borderRadius: "10px",
+                        color: "#CBD5E1", fontWeight: 600, fontSize: "14px",
+                        cursor: importBusy ? "not-allowed" : "pointer",
+                        opacity: importBusy ? 0.5 : 1,
+                      }}
+                    >
+                      Annulla
+                    </button>
                   </div>
-                )}
+                );
+              })()}
+            </div>
+          )}
 
-                {importPhase === "committing" && (
-                  <div
-                    role="status"
-                    aria-live="polite"
-                    aria-busy="true"
-                    aria-label="Importazione in corso"
-                    style={{
-                      padding: "10px 12px", background: "#1E293B",
-                      borderRadius: "8px", color: "#A5B4FC",
-                      fontSize: "12px",
-                    }}
-                  >
-                    Importo i workout...
-                  </div>
-                )}
+          {/* Toast post-conferma */}
+          {importToast && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              style={{
+                padding: "10px 12px",
+                background: importToast.type === "success" ? "#22C55E15" : "#EF444415",
+                border: `1px solid ${importToast.type === "success" ? "#22C55E44" : "#EF444444"}`,
+                borderRadius: "8px",
+                color: importToast.type === "success" ? "#22C55E" : "#EF4444",
+                fontSize: "13px", lineHeight: 1.5,
+              }}
+            >
+              {importToast.text}
+            </div>
+          )}
+        </div>
+      </details>
 
-                {/* Conferma / Annulla */}
-                {(() => {
-                  // Conferma abilitabile se almeno 1 azione disponibile
-                  const hasActionable =
-                    importPreview.newWorkouts.length > 0 ||
-                    importPreview.autoEnrichments.length > 0 ||
-                    Array.from(pendingDecisions.values()).some(d => d.kind !== "skip");
-                  return (
-                    <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
-                      <button
-                        onClick={onConfirmSamsungImport}
-                        disabled={importBusy || !hasActionable}
-                        style={{
-                          flex: 1, minHeight: "44px", padding: "12px 16px",
-                          background: (importBusy || !hasActionable)
-                            ? "#1E293B"
-                            : "linear-gradient(135deg, #22C55E 0%, #16A34A 100%)",
-                          border: "none", borderRadius: "10px",
-                          color: "#FFF", fontWeight: 700, fontSize: "14px",
-                          cursor: (importBusy || !hasActionable) ? "not-allowed" : "pointer",
-                          opacity: (importBusy || !hasActionable) ? 0.5 : 1,
-                        }}
-                      >
-                        {importPhase === "committing" ? "Importo..." : "Conferma import"}
-                      </button>
-                      <button
-                        onClick={onCancelSamsungImport}
-                        disabled={importBusy}
-                        style={{
-                          minHeight: "44px", padding: "12px 16px",
-                          background: "transparent",
-                          border: "1px solid rgba(255,255,255,0.18)", borderRadius: "10px",
-                          color: "#CBD5E1", fontWeight: 600, fontSize: "14px",
-                          cursor: importBusy ? "not-allowed" : "pointer",
-                          opacity: importBusy ? 0.5 : 1,
-                        }}
-                      >
-                        Annulla
-                      </button>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* Toast post-conferma */}
-            {importToast && (
-              <div
-                role="alert"
-                aria-live="assertive"
-                style={{
-                  marginTop: "10px", padding: "10px 12px",
-                  background: importToast.type === "success" ? "#22C55E15" : "#EF444415",
-                  border: `1px solid ${importToast.type === "success" ? "#22C55E44" : "#EF444444"}`,
-                  borderRadius: "8px",
-                  color: importToast.type === "success" ? "#22C55E" : "#EF4444",
-                  fontSize: "13px", lineHeight: 1.5,
-                }}
-              >
-                {importToast.text}
-              </div>
-            )}
-          </div>
-
+      {/* ─── Zona pericolosa: reset coach + cancella diario ──────────── */}
+      <details style={{ ...sectionDetailsStyle, border: "1px solid #EF444422" }}>
+        <summary
+          style={{ ...sectionSummaryStyle, color: "#EF4444" }}
+          aria-label="Zona pericolosa: reset coach e cancella diario"
+        >
+          <span style={{ flex: 1 }}>Zona pericolosa</span>
+          <span style={{ fontSize: "10px", color: "#EF4444", fontWeight: 700, letterSpacing: "0.04em" }}>
+            IRREVERSIBILE
+          </span>
+        </summary>
+        <div style={sectionBodyStyle}>
           <button onClick={resetAll} disabled={resetting} style={{
-            padding: "14px", background: "#1A1A2E",
+            padding: "12px", minHeight: "44px",
+            background: "#1A1A2E",
             border: "1px solid #F59E0B44", borderRadius: "10px",
             cursor: resetting ? "wait" : "pointer", textAlign: "left",
           }}>
             <div style={{ color: "#F59E0B", fontWeight: 700, fontSize: "13px", marginBottom: "4px" }}>
-              🔄 Reset coach (mantieni diario)
+              Reset coach (mantieni diario)
             </div>
-            <div style={{ color: "#94A3B8", fontSize: "12px", lineHeight: 1.4 }}>
-              Cancella: profilo, obiettivi, piano, chat e feed. <b>Diario e sessioni restano.</b>
+            <div style={{ color: "#94A3B8", fontSize: "11px", lineHeight: 1.4 }}>
+              Cancella profilo, obiettivi, piano, chat, feed. <b>Diario resta.</b>
             </div>
           </button>
           <button onClick={wipeDiary} style={{
-            padding: "14px", background: "#1A1A2E",
+            padding: "12px", minHeight: "44px",
+            background: "#1A1A2E",
             border: "1px solid #EF444444", borderRadius: "10px",
             cursor: "pointer", textAlign: "left",
           }}>
             <div style={{ color: "#EF4444", fontWeight: 700, fontSize: "13px", marginBottom: "4px" }}>
-              🗑 Cancella tutto il diario
+              Cancella tutto il diario
             </div>
-            <div style={{ color: "#94A3B8", fontSize: "12px", lineHeight: 1.4 }}>
-              Cancella TUTTE le sessioni e i check giornalieri. <b>Coach e profilo restano.</b>
+            <div style={{ color: "#94A3B8", fontSize: "11px", lineHeight: 1.4 }}>
+              Elimina TUTTE le sessioni e i check. <b>Coach e profilo restano.</b>
             </div>
           </button>
         </div>
-      </div>
+      </details>
 
       <div style={{ ...cardStyle, background: "#1A1A2E" }}>
-        <div style={{ fontSize: "12px", color: "#64748B", lineHeight: 1.6 }}>
-          <b>Privacy</b>: questa app non ha backend. Tutti i dati restano nel tuo browser. Quando interagisci col coach, i dati necessari vengono inviati al provider LLM scelto (con la tua chiave). Nessuna telemetria, nessun tracking.
+        <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.5 }}>
+          <b>Privacy</b>: nessun backend. Dati nel browser. Le interazioni col coach inviano dati al provider LLM (con tua chiave). Nessuna telemetria.
         </div>
       </div>
     </div>

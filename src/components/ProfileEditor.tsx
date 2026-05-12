@@ -5,6 +5,15 @@
 //
 // Pattern: read-on-mount, controlled inputs, save-on-blur per tag (CSV) e
 // save esplicito per alterare painTrackingAreas (richiede consapevolezza).
+//
+// UX redesign — feedback Lorenzo "troppo verboso":
+//  - Sezioni base (disponibilità, giorni allenabili, intensità) sempre visibili
+//    ma compatte (1 riga ciascuna).
+//  - Giorni allenabili: 1 riga, label 1-char ("L M M G V S D"), pillole 36px.
+//  - Sezioni avanzate (equipment, infortuni, farmaci, aree dolore) chiuse di
+//    default in <details>, expand on demand. Counter nel summary se popolato.
+//  - Aree dolore: collapsed con count "N monitorate", elimina UI custom add
+//    quando chiuso (resta accessibile dentro).
 
 import { useEffect, useState } from "react";
 import { getJSON, setJSON } from "../lib/storage";
@@ -16,9 +25,52 @@ const SUGGESTED_AREAS = [
   "schiena cervicale", "spalla", "anca", "caviglia", "fascia plantare",
 ];
 
+const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const;
+// Label 1-char per layout 1-riga richiesto da Lorenzo. Stessa lettera "M" per
+// martedì/mercoledì è ambigua ma standard IT (vedi calendari); titolo HTML
+// completo accessibile via aria-label sul bottone.
+const DAY_LETTERS: Record<typeof DAY_KEYS[number], string> = {
+  lun: "L", mar: "M", mer: "M", gio: "G", ven: "V", sab: "S", dom: "D",
+};
+const DAY_FULL: Record<typeof DAY_KEYS[number], string> = {
+  lun: "Lunedì", mar: "Martedì", mer: "Mercoledì", gio: "Giovedì",
+  ven: "Venerdì", sab: "Sabato", dom: "Domenica",
+};
+
 function parseCSV(s: string): string[] {
   return s.split(",").map(x => x.trim()).filter(Boolean);
 }
+
+// Stile uniforme per <summary> degli accordion — touch target 44px, chevron
+// implicito (marker browser default). Mantiene cursor pointer e niente
+// outline rumoroso al focus tastiera (sostituito da bordo dinamico).
+const summaryStyle: React.CSSProperties = {
+  cursor: "pointer",
+  padding: "12px 14px",
+  minHeight: "44px",
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+  fontSize: "13px",
+  fontWeight: 600,
+  color: "#CBD5E1",
+  userSelect: "none",
+  listStyle: "revert", // mantiene marker triangolino nativo
+};
+
+const detailsStyle: React.CSSProperties = {
+  background: "#1A1A2E",
+  border: "1px solid rgba(255,255,255,0.08)",
+  borderRadius: "10px",
+  overflow: "hidden",
+};
+
+const detailsBodyStyle: React.CSSProperties = {
+  padding: "4px 14px 14px",
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+};
 
 export default function ProfileEditor() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -152,62 +204,98 @@ export default function ProfileEditor() {
     await persist({ intensityPreference: v });
   };
 
-  const labelStyle = { fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" };
+  const labelStyle = { fontSize: "12px", fontWeight: 600, color: "#94A3B8", display: "block", marginBottom: "4px" };
   const inputStyle = {
-    width: "100%", padding: "11px 14px", background: "#1A1A2E",
+    width: "100%", padding: "10px 12px", background: "#1A1A2E",
     border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px",
-    color: "#E2E8F0", fontSize: "15px", outline: "none", boxSizing: "border-box" as const,
+    color: "#E2E8F0", fontSize: "14px", outline: "none", boxSizing: "border-box" as const,
   };
 
+  // Conteggi per i summary degli accordion (sempre visibili nel collapsed).
+  const equipmentCount = profile.equipment?.length ?? 0;
+  const injuriesCount = profile.injuries?.length ?? 0;
+  const medsPresent = (profile.meds || "").trim().length > 0;
+  const areasCount = areas.length;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      {/* ─── Disponibilità: 1 riga compatta giorni/ore/min ────────────── */}
       <div>
         <label style={labelStyle}>Disponibilità settimanale</label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
-          <div>
-            <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Giorni/sett.</div>
-            <select
-              value={days}
-              onChange={e => { const v = Number(e.target.value); setDays(v); void saveAvailability(v, sessionHours, sessionMinutes); }}
-              style={{ ...inputStyle, fontFamily: "inherit" }}
-            >
-              {[1, 2, 3, 4, 5, 6, 7].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </div>
-          <div>
-            <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Ore/sessione</div>
-            <select
-              value={sessionHours}
-              onChange={e => { const v = Number(e.target.value); setSessionHours(v); void saveAvailability(days, v, sessionMinutes); }}
-              style={{ ...inputStyle, fontFamily: "inherit" }}
-            >
-              {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </div>
-          <div>
-            <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Minuti</div>
-            <select
-              value={sessionMinutes}
-              onChange={e => { const v = Number(e.target.value); setSessionMinutes(v); void saveAvailability(days, sessionHours, v); }}
-              style={{ ...inputStyle, fontFamily: "inherit" }}
-            >
-              {[0, 15, 30, 45].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </div>
-        </div>
-        <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "6px", lineHeight: 1.5 }}>
-          Il coach userà questi valori come <b>vincolo HARD</b>: nessuna sessione del piano supererà la durata dichiarata.
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
+          <select
+            aria-label="Giorni a settimana"
+            value={days}
+            onChange={e => { const v = Number(e.target.value); setDays(v); void saveAvailability(v, sessionHours, sessionMinutes); }}
+            style={{ ...inputStyle, fontFamily: "inherit" }}
+          >
+            {[1, 2, 3, 4, 5, 6, 7].map(n => <option key={n} value={n}>{n} gg/sett</option>)}
+          </select>
+          <select
+            aria-label="Ore a sessione"
+            value={sessionHours}
+            onChange={e => { const v = Number(e.target.value); setSessionHours(v); void saveAvailability(days, v, sessionMinutes); }}
+            style={{ ...inputStyle, fontFamily: "inherit" }}
+          >
+            {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n} h</option>)}
+          </select>
+          <select
+            aria-label="Minuti a sessione"
+            value={sessionMinutes}
+            onChange={e => { const v = Number(e.target.value); setSessionMinutes(v); void saveAvailability(days, sessionHours, v); }}
+            style={{ ...inputStyle, fontFamily: "inherit" }}
+          >
+            {[0, 15, 30, 45].map(n => <option key={n} value={n}>{n} min</option>)}
+          </select>
         </div>
       </div>
 
+      {/* ─── Giorni allenabili: 1 riga, 1-char, 36px ──────────────────── */}
       <div>
-        <label style={labelStyle}>Preferenza intensità</label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
+        <label style={labelStyle}>Giorni allenabili</label>
+        <div style={{ display: "flex", gap: "4px", justifyContent: "space-between" }}>
+          {DAY_KEYS.map(d => {
+            const active = (availableDays || []).includes(d);
+            return (
+              <button
+                key={d}
+                onClick={() => toggleAvailableDay(d)}
+                aria-pressed={active}
+                aria-label={DAY_FULL[d]}
+                title={DAY_FULL[d]}
+                style={{
+                  flex: 1,
+                  minWidth: "32px",
+                  height: "36px",
+                  padding: 0,
+                  background: active ? "#22C55E25" : "#1A1A2E",
+                  border: active ? "1px solid #22C55E66" : "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: "10px",
+                  color: active ? "#22C55E" : "#64748B",
+                  fontSize: "13px", fontWeight: 800,
+                  cursor: "pointer",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  textTransform: "uppercase",
+                  opacity: active ? 1 : 0.7,
+                }}
+              >{DAY_LETTERS[d]}</button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: "10px", color: "#64748B", marginTop: "4px" }}>
+          Vuoto = scelta libera del coach. Override settimanale dal picker "Rigenera piano".
+        </div>
+      </div>
+
+      {/* ─── Intensità: 4 pillole single-line ─────────────────────────── */}
+      <div>
+        <label style={labelStyle}>Intensità preferita</label>
+        <div style={{ display: "flex", gap: "4px" }}>
           {([
             { v: "soft" as const, label: "Soft" },
-            { v: "balanced" as const, label: "Bilanciato" },
+            { v: "balanced" as const, label: "Equilib." },
             { v: "intense" as const, label: "Intenso" },
-            { v: "very_intense" as const, label: "Molto intenso" },
+            { v: "very_intense" as const, label: "Molto" },
           ]).map(opt => {
             const active = intensity === opt.v;
             return (
@@ -216,179 +304,185 @@ export default function ProfileEditor() {
                 onClick={() => setIntensityValue(active ? undefined : opt.v)}
                 aria-pressed={active}
                 style={{
-                  padding: "12px 16px", minHeight: "44px",
+                  flex: 1,
+                  height: "36px",
+                  padding: "0 4px",
                   background: active ? "#E8553A25" : "#1A1A2E",
                   border: active ? "1px solid #E8553A66" : "1px solid rgba(255,255,255,0.1)",
-                  borderRadius: "999px",
+                  borderRadius: "10px",
                   color: active ? "#E8553A" : "#94A3B8",
-                  fontSize: "13px", fontWeight: 700, cursor: "pointer",
+                  fontSize: "12px", fontWeight: 700, cursor: "pointer",
                 }}
               >{opt.label}</button>
             );
           })}
         </div>
-        <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5 }}>
-          Indica al coach lo stile di settimana che preferisci. Le regole di sicurezza (FC max, recovery 48h, dolore stop) restano sempre applicate. Click di nuovo per deselezionare = scelta libera del coach.
-        </div>
       </div>
 
-      <div>
-        <label style={labelStyle}>Giorni allenabili (default settimanale)</label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
-          {(["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const).map(d => {
-            const active = (availableDays || []).includes(d);
-            return (
-              <button
-                key={d}
-                onClick={() => toggleAvailableDay(d)}
-                aria-pressed={active}
-                style={{
-                  padding: "12px 18px", minWidth: "56px", minHeight: "44px",
-                  background: active ? "#22C55E25" : "#1A1A2E",
-                  border: active ? "1px solid #22C55E66" : "1px solid rgba(255,255,255,0.1)",
-                  borderRadius: "999px",
-                  color: active ? "#22C55E" : "#94A3B8",
-                  fontSize: "13px", fontWeight: 700, cursor: "pointer",
-                  fontFamily: "'JetBrains Mono', monospace",
-                  textTransform: "uppercase", letterSpacing: "0.05em",
-                }}
-              >{d}</button>
-            );
-          })}
+      {/* ─── Attrezzatura: collapsibile ───────────────────────────────── */}
+      <details style={detailsStyle}>
+        <summary style={summaryStyle} aria-label="Attrezzatura disponibile">
+          <span style={{ flex: 1 }}>Attrezzatura</span>
+          <span style={{ fontSize: "11px", color: equipmentCount > 0 ? "#22C55E" : "#64748B", fontWeight: 700 }}>
+            {equipmentCount > 0 ? `${equipmentCount} oggetti` : "vuoto"}
+          </span>
+        </summary>
+        <div style={detailsBodyStyle}>
+          <input
+            id="prof-equipment"
+            type="text"
+            style={inputStyle}
+            value={equipmentRaw}
+            placeholder="es. tapis roulant, manubri 10kg, palestra"
+            onChange={e => setEquipmentRaw(e.target.value)}
+            onBlur={saveEquipment}
+          />
+          <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.5 }}>
+            Lista separata da virgola. Vuoto = solo corpo libero, corsa outdoor, mobilità.
+          </div>
         </div>
-        <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5 }}>
-          Routine "fissa" (es. lavoro il ven sera, calcetto il mar). Il coach prescriverà sessioni <b>solo</b> nei giorni selezionati. Vuoto = scelta libera del coach. Puoi sempre fare override per la singola settimana dal picker "Rigenera piano".
-        </div>
-      </div>
+      </details>
 
-      <div>
-        <label htmlFor="prof-equipment" style={labelStyle}>Attrezzatura disponibile</label>
-        <input
-          id="prof-equipment"
-          type="text"
-          style={inputStyle}
-          value={equipmentRaw}
-          placeholder="es. tapis roulant, manubri 10kg, palestra (separati da virgola)"
-          onChange={e => setEquipmentRaw(e.target.value)}
-          onBlur={saveEquipment}
-        />
-        <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "6px", lineHeight: 1.5 }}>
-          Il coach proporrà <b>solo</b> esercizi realizzabili con quanto in lista. Vuoto = solo corpo libero, corsa outdoor, mobilità.
-        </div>
-      </div>
-
-      <div>
-        <label htmlFor="prof-injuries" style={labelStyle}>Infortuni o condizioni attive</label>
-        <input
-          id="prof-injuries"
-          type="text"
-          style={inputStyle}
-          value={injuriesRaw}
-          placeholder="es. tendinopatia rotulea, ernia L5 (separati da virgola)"
-          onChange={e => setInjuriesRaw(e.target.value)}
-          onBlur={saveInjuries}
-        />
-        <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "6px", lineHeight: 1.5 }}>
-          Se sei guarito da un infortunio, <b>cancellalo dalla lista</b> — il coach smetterà di suggerire adattamenti per quella zona.
-          {(profile.injuries || []).length > 0 && (
+      {/* ─── Infortuni: collapsible (open di default se popolato) ─────── */}
+      {/* Pattern: spread di {open: true} solo se vogliamo l'expanded iniziale.
+          Passare open={false} renderebbe <details> controllato e bloccherebbe
+          il toggle utente — pattern HTML/React noto. */}
+      <details style={detailsStyle} {...(injuriesCount > 0 ? { open: true } : {})}>
+        <summary style={summaryStyle} aria-label="Infortuni o condizioni attive">
+          <span style={{ flex: 1 }}>Infortuni / condizioni</span>
+          <span style={{ fontSize: "11px", color: injuriesCount > 0 ? "#F59E0B" : "#64748B", fontWeight: 700 }}>
+            {injuriesCount > 0 ? `${injuriesCount} attivi` : "nessuno"}
+          </span>
+        </summary>
+        <div style={detailsBodyStyle}>
+          <input
+            id="prof-injuries"
+            type="text"
+            style={inputStyle}
+            value={injuriesRaw}
+            placeholder="es. tendinopatia rotulea, ernia L5"
+            onChange={e => setInjuriesRaw(e.target.value)}
+            onBlur={saveInjuries}
+          />
+          <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.5 }}>
+            Lista separata da virgola. Se sei guarito, <b>cancellalo</b> — il coach smetterà di adattare per quella zona.
+          </div>
+          {injuriesCount > 0 && (
             <button
               onClick={async () => { setInjuriesRaw(""); await persist({ injuries: [] }); }}
               style={{
-                marginLeft: "8px", background: "transparent", border: "1px solid rgba(255,255,255,0.15)",
+                alignSelf: "flex-start",
+                background: "transparent", border: "1px solid rgba(255,255,255,0.15)",
                 borderRadius: "8px", color: "#CBD5E1",
                 padding: "10px 14px", fontSize: "12px", cursor: "pointer",
-                minHeight: "40px",
+                minHeight: "44px",
               }}
             >Rimuovi tutti</button>
           )}
         </div>
-      </div>
+      </details>
 
-      <div>
-        <label htmlFor="prof-meds" style={labelStyle}>Farmaci / integratori</label>
-        <input
-          id="prof-meds"
-          type="text"
-          style={inputStyle}
-          value={medsRaw}
-          placeholder="es. magnesio, vitamina D, ibuprofene al bisogno"
-          onChange={e => setMedsRaw(e.target.value)}
-          onBlur={saveMeds}
-        />
-      </div>
-
-      <div>
-        <label style={labelStyle}>Zone di dolore da monitorare nel diario</label>
-        <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "10px", lineHeight: 1.5 }}>
-          Per ogni zona attiva, il diario mostra una scala 0-4 pre/durante/post per ciascun allenamento. Disattiva una zona se non hai più dolore lì.
+      {/* ─── Farmaci/integratori: collapsibile ────────────────────────── */}
+      <details style={detailsStyle}>
+        <summary style={summaryStyle} aria-label="Farmaci e integratori">
+          <span style={{ flex: 1 }}>Farmaci / integratori</span>
+          <span style={{ fontSize: "11px", color: medsPresent ? "#22C55E" : "#64748B", fontWeight: 700 }}>
+            {medsPresent ? "compilato" : "vuoto"}
+          </span>
+        </summary>
+        <div style={detailsBodyStyle}>
+          <input
+            id="prof-meds"
+            type="text"
+            style={inputStyle}
+            value={medsRaw}
+            placeholder="es. magnesio, vitamina D, ibuprofene al bisogno"
+            onChange={e => setMedsRaw(e.target.value)}
+            onBlur={saveMeds}
+          />
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
-          {SUGGESTED_AREAS.map(area => {
-            const active = areas.includes(area);
-            return (
+      </details>
+
+      {/* ─── Aree dolore monitorate: collapsibile (richiesta esplicita) ─ */}
+      <details style={detailsStyle}>
+        <summary style={summaryStyle} aria-label="Aree dolore monitorate nel diario">
+          <span style={{ flex: 1 }}>Aree dolore monitorate</span>
+          <span style={{ fontSize: "11px", color: areasCount > 0 ? "#22C55E" : "#64748B", fontWeight: 700 }}>
+            {areasCount > 0 ? `${areasCount} attive` : "nessuna"}
+          </span>
+        </summary>
+        <div style={detailsBodyStyle}>
+          <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.5 }}>
+            Per ogni zona attiva il diario mostra scala 0-4 pre/durante/post sessione.
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {SUGGESTED_AREAS.map(area => {
+              const active = areas.includes(area);
+              return (
+                <button
+                  key={area}
+                  onClick={() => toggleArea(area)}
+                  aria-pressed={active}
+                  style={{
+                    padding: "8px 12px", minHeight: "36px",
+                    background: active ? "#22C55E25" : "#0F172A",
+                    border: active ? "1px solid #22C55E66" : "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: "999px",
+                    color: active ? "#22C55E" : "#94A3B8",
+                    fontSize: "12px", fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  {active ? "- " : "+ "}{area}
+                </button>
+              );
+            })}
+            {areas.filter(a => !SUGGESTED_AREAS.includes(a)).map(area => (
               <button
                 key={area}
                 onClick={() => toggleArea(area)}
-                aria-pressed={active}
+                aria-pressed={true}
                 style={{
-                  padding: "10px 14px", minHeight: "40px",
-                  background: active ? "#22C55E25" : "#1A1A2E",
-                  border: active ? "1px solid #22C55E66" : "1px solid rgba(255,255,255,0.1)",
+                  padding: "8px 12px", minHeight: "36px",
+                  background: "#22C55E25",
+                  border: "1px solid #22C55E66",
                   borderRadius: "999px",
-                  color: active ? "#22C55E" : "#94A3B8",
-                  fontSize: "13px", fontWeight: 600, cursor: "pointer",
+                  color: "#22C55E",
+                  fontSize: "12px", fontWeight: 600, cursor: "pointer",
                 }}
               >
-                {active ? "✓ " : "+ "}{area}
+                - {area}
               </button>
-            );
-          })}
-          {areas.filter(a => !SUGGESTED_AREAS.includes(a)).map(area => (
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: "6px" }}>
+            <input
+              type="text"
+              placeholder="Aggiungi zona personalizzata"
+              value={newAreaInput}
+              onChange={e => setNewAreaInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void addCustomArea(); } }}
+              style={{ ...inputStyle, fontSize: "13px", padding: "8px 12px", flex: 1 }}
+            />
             <button
-              key={area}
-              onClick={() => toggleArea(area)}
-              aria-pressed={true}
+              onClick={addCustomArea}
+              disabled={!newAreaInput.trim()}
               style={{
-                padding: "6px 12px",
-                background: "#22C55E25",
-                border: "1px solid #22C55E66",
-                borderRadius: "999px",
-                color: "#22C55E",
-                fontSize: "12px", fontWeight: 600, cursor: "pointer",
+                padding: "8px 14px", minHeight: "40px",
+                background: newAreaInput.trim() ? "#1A1A2E" : "#0F172A",
+                border: "1px solid rgba(255,255,255,0.15)",
+                borderRadius: "8px",
+                color: "#CBD5E1", fontSize: "13px", fontWeight: 600,
+                cursor: newAreaInput.trim() ? "pointer" : "not-allowed",
+                opacity: newAreaInput.trim() ? 1 : 0.5,
               }}
-            >
-              ✓ {area}
-            </button>
-          ))}
+            >Aggiungi</button>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: "6px" }}>
-          <input
-            type="text"
-            placeholder="Aggiungi zona personalizzata"
-            value={newAreaInput}
-            onChange={e => setNewAreaInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void addCustomArea(); } }}
-            style={{ ...inputStyle, fontSize: "13px", padding: "8px 12px", flex: 1 }}
-          />
-          <button
-            onClick={addCustomArea}
-            disabled={!newAreaInput.trim()}
-            style={{
-              padding: "8px 14px",
-              background: newAreaInput.trim() ? "#1A1A2E" : "#0F172A",
-              border: "1px solid rgba(255,255,255,0.15)",
-              borderRadius: "8px",
-              color: "#CBD5E1", fontSize: "13px", fontWeight: 600,
-              cursor: newAreaInput.trim() ? "pointer" : "not-allowed",
-              opacity: newAreaInput.trim() ? 1 : 0.5,
-            }}
-          >Aggiungi</button>
-        </div>
-      </div>
+      </details>
 
       {saved && (
         <div role="status" aria-live="polite" style={{ fontSize: "12px", color: "#22C55E", fontWeight: 600 }}>
-          ✓ Profilo aggiornato
+          Profilo aggiornato
         </div>
       )}
     </div>
