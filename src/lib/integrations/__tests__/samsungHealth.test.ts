@@ -287,34 +287,35 @@ describe("CSV parser", () => {
 
 /** Helper: costruisce uno ZIP in-memory con un singolo exercise.csv.
  *
- * NB jsdom + vitest: `zip.generateAsync({type:"blob"})` quando il file ha
- * content Uint8Array (non string) produce un Blob malformato che `loadAsync`
- * legge come ZipObject con `_data` non-riconosciuto → file.async("uint8array")
- * fallisce con "Can't read the data of '<file>'". In produzione non succede
- * perché l'utente carica File reali dal disco (Blob standard). Workaround test:
- * generateAsync({type:"uint8array"}) + wrap manuale in `new Blob([u8])`.
+ * Bug noto JSZip 3.10.x in jsdom + vitest: cycle `zip.file(name, Uint8Array)`
+ * → generateAsync → loadAsync → file.async("uint8array") fallisce con
+ * "Can't read the data of '<file>'. Is it in a supported JS type?". Affligge
+ * SOLO i file con content originale Uint8Array; passando STRING a zip.file()
+ * JSZip eager-decodifica e mantiene cache pulita.
+ *
+ * Per UTF-8 (default) → passiamo la string. Per UTF-16 LE con BOM serve
+ * bytes binari → Uint8Array path (un solo test usa questo encoding e
+ * funziona perché il bug non sempre triggera con buffer SharedArray-aliased).
+ *
+ * In produzione non succede mai: l'utente carica un File reale dal disco
+ * (Blob nativo standard, content binario serializzato dal sistema operativo,
+ * niente fixture in-memory).
  */
 async function buildExerciseZip(csv: string, encoding: "utf-16le" | "utf-8" = "utf-8"): Promise<Blob> {
   const zip = new JSZip();
-  let bytes: Uint8Array;
   if (encoding === "utf-16le") {
-    // Encode manuale UTF-16 LE con BOM
+    // UTF-16 LE con BOM: serve binary, JSZip path bug-prone ma il test
+    // dedicato (encoding) sembra navigarci comunque.
     const u16 = new Uint16Array(csv.length + 1);
     u16[0] = 0xFEFF;
     for (let i = 0; i < csv.length; i++) u16[i + 1] = csv.charCodeAt(i);
-    bytes = new Uint8Array(u16.buffer);
+    const bytes = new Uint8Array(u16.buffer);
+    zip.file("com.samsung.shealth.exercise.20260508.csv", bytes);
   } else {
-    bytes = new TextEncoder().encode(csv);
+    // UTF-8 default: passa STRING direttamente a JSZip. Bypassa il bug.
+    zip.file("com.samsung.shealth.exercise.20260508.csv", csv);
   }
-  zip.file("com.samsung.shealth.exercise.20260508.csv", bytes);
-  // Genera come Uint8Array (path stabile in jsdom), poi wrap in Blob nativo
-  // standard. `new Blob([u8])` produce Blob bytes-correct con arrayBuffer()
-  // funzionante, evitando il bug jsdom su generateAsync({type:"blob"}).
-  // Cast `as BlobPart`: TS strict tipa Uint8Array come <ArrayBufferLike>
-  // (include SharedArrayBuffer); BlobPart richiede ArrayBuffer puro. JSZip
-  // ritorna Uint8Array con ArrayBuffer normale, cast safe.
-  const u8 = await zip.generateAsync({ type: "uint8array" });
-  return new Blob([u8 as BlobPart], { type: "application/zip" });
+  return await zip.generateAsync({ type: "blob" });
 }
 
 const SAMPLE_CSV = [
