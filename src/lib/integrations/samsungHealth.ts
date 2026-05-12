@@ -610,7 +610,12 @@ export async function parseSamsungHealthZipDetailed(
     zip = preloadedZip;
   } else {
     try {
-      zip = await JSZip.loadAsync(zipBlob);
+      // Usa loadSamsungZipOnce (type-guarded arrayBuffer) per evitare la
+      // lazy-read trap di JSZip.loadAsync(Blob) → file.async("uint8array")
+      // che fallisce con "Can't read the data of '<file>'" quando il Blob
+      // originale viene consumato/perso. Preloaded path già passato dal
+      // caller usa stesso helper.
+      zip = await loadSamsungZipOnce(zipBlob);
     } catch (e) {
       parseErrors.push({ file: "<zip>", error: `ZIP non valido: ${e instanceof Error ? e.message : String(e)}` });
       return { samples, parseErrors, unrecognizedTypes };

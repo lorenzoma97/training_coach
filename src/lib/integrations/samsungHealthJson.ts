@@ -246,7 +246,9 @@ export async function parseSamsungHrvFromZip(
     zip = preloadedZip;
   } else {
     try {
-      zip = await JSZip.loadAsync(zipBlob);
+      // loadSamsungZipOnce: type-guarded arrayBuffer per evitare lazy-read
+      // trap di JSZip.loadAsync(Blob) che fallisce su file.async() successivi.
+      zip = await loadSamsungZipOnce(zipBlob);
     } catch {
       return [];
     }
@@ -398,7 +400,9 @@ export async function parseSamsungSleepFromZip(
     zip = preloadedZip;
   } else {
     try {
-      zip = await JSZip.loadAsync(zipBlob);
+      // loadSamsungZipOnce: type-guarded arrayBuffer per evitare lazy-read
+      // trap di JSZip.loadAsync(Blob) che fallisce su file.async() successivi.
+      zip = await loadSamsungZipOnce(zipBlob);
     } catch {
       return [];
     }
@@ -512,7 +516,8 @@ export async function parseHrLiveDataForWorkout(
     zip = preloadedZip;
   } else {
     try {
-      zip = await JSZip.loadAsync(zipBlob);
+      // loadSamsungZipOnce: type-guarded arrayBuffer (lazy-read fix).
+      zip = await loadSamsungZipOnce(zipBlob);
     } catch {
       return null;
     }
