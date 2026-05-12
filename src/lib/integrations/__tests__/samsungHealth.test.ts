@@ -285,7 +285,15 @@ describe("CSV parser", () => {
 // Preview/Commit integration (3 test)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Helper: costruisce uno ZIP in-memory con un singolo exercise.csv. */
+/** Helper: costruisce uno ZIP in-memory con un singolo exercise.csv.
+ *
+ * NB jsdom + vitest: `zip.generateAsync({type:"blob"})` quando il file ha
+ * content Uint8Array (non string) produce un Blob malformato che `loadAsync`
+ * legge come ZipObject con `_data` non-riconosciuto → file.async("uint8array")
+ * fallisce con "Can't read the data of '<file>'". In produzione non succede
+ * perché l'utente carica File reali dal disco (Blob standard). Workaround test:
+ * generateAsync({type:"uint8array"}) + wrap manuale in `new Blob([u8])`.
+ */
 async function buildExerciseZip(csv: string, encoding: "utf-16le" | "utf-8" = "utf-8"): Promise<Blob> {
   const zip = new JSZip();
   let bytes: Uint8Array;
@@ -299,8 +307,11 @@ async function buildExerciseZip(csv: string, encoding: "utf-16le" | "utf-8" = "u
     bytes = new TextEncoder().encode(csv);
   }
   zip.file("com.samsung.shealth.exercise.20260508.csv", bytes);
-  const blob = await zip.generateAsync({ type: "blob" });
-  return blob;
+  // Genera come Uint8Array (path stabile in jsdom), poi wrap in Blob nativo
+  // standard. `new Blob([u8])` produce Blob bytes-correct con arrayBuffer()
+  // funzionante, evitando il bug jsdom su generateAsync({type:"blob"}).
+  const u8 = await zip.generateAsync({ type: "uint8array" });
+  return new Blob([u8], { type: "application/zip" });
 }
 
 const SAMPLE_CSV = [

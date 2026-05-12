@@ -47,16 +47,23 @@ beforeEach(() => {
 });
 
 // ─── Helper: build minimal Samsung Health ZIP in-memory ─────────────────────
+// NB jsdom + vitest: generateAsync({type:"blob"}) con file content Uint8Array
+// produce Blob malformato (file._data non riconosciuto da JSZip.loadAsync).
+// Workaround: generateAsync({type:"uint8array"}) + new Blob([u8]) per ottenere
+// Blob standard con arrayBuffer() funzionante. In prod l'utente carica File
+// reali dal disco, niente bug.
 async function buildExerciseZip(csv: string): Promise<Blob> {
   const zip = new JSZip();
   zip.file("com.samsung.shealth.exercise.20260508.csv", new TextEncoder().encode(csv));
-  return await zip.generateAsync({ type: "blob" });
+  const u8 = await zip.generateAsync({ type: "uint8array" });
+  return new Blob([u8], { type: "application/zip" });
 }
 
 async function buildEmptyZip(): Promise<Blob> {
   const zip = new JSZip();
   zip.file("readme.txt", "no exercise here");
-  return await zip.generateAsync({ type: "blob" });
+  const u8 = await zip.generateAsync({ type: "uint8array" });
+  return new Blob([u8], { type: "application/zip" });
 }
 
 // ─── Smoke ──────────────────────────────────────────────────────────────────
