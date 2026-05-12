@@ -580,6 +580,11 @@ export default function TrainingPlanView() {
         return ageDays > 7;
       })();
       const shouldSaveAsNext = mode === "next-week" && currentStillActive && newPlanStart > today && !currentIsStale;
+      // Log diagnostico (F12 console) per debug se ancora "rigenera lascia
+      // piano vecchio" — Lorenzo può mandarmi questi output.
+      console.log("[handleRegenerate] mode=%s shouldSaveAsNext=%s currentIsStale=%s currentStartDate=%s currentValidUntil=%s newPlanStartDate=%s",
+        mode, shouldSaveAsNext, currentIsStale,
+        plan?.startDate ?? "-", plan?.validUntil ?? "-", next.startDate ?? "-");
       if (shouldSaveAsNext) {
         await saveNextPlan(next);
         title = "✓ Prossima settimana pianificata in anteprima — il piano corrente resta attivo";

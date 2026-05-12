@@ -76,6 +76,15 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   const [importWindowDays, setImportWindowDays] = useState<number>(SAMSUNG_DEFAULT_WINDOW);
   // Wave 3.5: decisioni utente per match ambigui (sampleDedupKey → decision)
   const [pendingDecisions, setPendingDecisions] = useState<Map<string, SamsungSampleDecision>>(new Map());
+  // 2-step import (feedback Lorenzo): step 1 = seleziona file/cartella → state.
+  // Step 2 = bottone "Avvia import" parte il previewImport vero.
+  // Senza, l'utente clicca seleziona, niente succede (10s indicizzazione browser),
+  // partono cose async senza feedback chiaro.
+  const [selectedSource, setSelectedSource] = useState<
+    | { kind: "file"; file: File }
+    | { kind: "folder"; files: FileList; relevantCount: number }
+    | null
+  >(null);
   const samsungFileRef = useRef<HTMLInputElement>(null);
   // Fix 2 — ref separato per il picker cartella estratta (Android Samsung Health
   // esporta in /Documents/Samsung Health/<ts>/ come cartella non zippata).
@@ -299,33 +308,14 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
     if (samsungFolderRef.current) samsungFolderRef.current.value = "";
   };
 
-  const onSamsungFileSelected = async (file: File | null) => {
+  // Step 1: solo salva la selezione, NON parte ancora l'import.
+  // L'utente vedra' un riepilogo + bottone "Avvia import" (step 2).
+  const onSamsungFileSelected = (file: File | null) => {
     if (!file || importBusy) return;
-    setImportBusy(true);
-    setImportPhase("parsing");
     setImportError(null);
     setImportPreview(null);
     setPendingDecisions(new Map());
-    try {
-      // Applica la finestra scelta dall'utente PRIMA del matching.
-      const preview = await samsungPreviewImport(file, { windowDays: importWindowDays });
-      setImportPreview(preview);
-      const totalActionable = preview.newWorkouts.length + preview.autoEnrichments.length + preview.ambiguousMatches.length;
-      showImportToast({
-        type: "success",
-        text: totalActionable > 0
-          ? `Preview pronta: ${preview.newWorkouts.length} nuovi, ${preview.autoEnrichments.length} da arricchire, ${preview.ambiguousMatches.length} da confermare`
-          : "ZIP caricato: nessun nuovo workout nella finestra selezionata",
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setImportError(msg);
-      showImportToast({ type: "error", text: `Lettura ZIP fallita: ${msg}` });
-    } finally {
-      setImportBusy(false);
-      setImportPhase("idle");
-      if (samsungFileRef.current) samsungFileRef.current.value = "";
-    }
+    setSelectedSource({ kind: "file", file });
   };
 
   // Fix 2 — Handler upload cartella estratta (Android). Samsung Health Android
@@ -334,34 +324,61 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
   // `previewImport(blob)` senza modificare il parser.
   // NB iOS Safari ignora `webkitdirectory` → il picker mostra file singoli; in
   // quel caso l'utente vedrà la nota sotto il bottone con istruzioni alternative.
-  const onSamsungFolderSelected = async (files: FileList | null) => {
+  // Step 1: solo salva la selezione cartella, NON parte l'import.
+  // Conta i file rilevanti (matching pattern) per dare feedback immediato.
+  const onSamsungFolderSelected = (files: FileList | null) => {
     if (!files || files.length === 0 || importBusy) return;
-    setImportBusy(true);
-    setImportPhase("parsing");
     setImportError(null);
     setImportPreview(null);
     setPendingDecisions(new Map());
+    // Count rilevanti senza leggerli (pattern check su nome)
+    const RELEVANT_PATTERNS = [
+      /com\.samsung\.shealth\.exercise\.\d+\.csv$/i,
+      /com\.samsung\.(?:shealth|health)\.hrv\.\d+\.csv$/i,
+      /com\.samsung\.shealth\.sleep\.\d+\.csv$/i,
+    ];
+    let relevantCount = 0;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const relPath = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+      if (RELEVANT_PATTERNS.some(re => re.test(relPath))) relevantCount++;
+    }
+    setSelectedSource({ kind: "folder", files, relevantCount });
+  };
+
+  // Step 2: parte il previewImport vero, con overlay full-screen.
+  const startImport = async () => {
+    if (!selectedSource || importBusy) return;
+    setImportBusy(true);
+    setImportPhase("parsing");
+    setImportError(null);
     try {
-      const blob = await samsungFileListToZipBlob(files);
-      const preview = await samsungPreviewImport(blob, { windowDays: importWindowDays });
+      let preview: SamsungImportPreview;
+      if (selectedSource.kind === "file") {
+        preview = await samsungPreviewImport(selectedSource.file, { windowDays: importWindowDays });
+      } else {
+        const blob = await samsungFileListToZipBlob(selectedSource.files);
+        preview = await samsungPreviewImport(blob, { windowDays: importWindowDays });
+      }
       setImportPreview(preview);
-      // Toast feedback immediato post-preview (importante: pre-fix utente non
-      // vedeva nulla durante import di cartella con migliaia di file).
       const totalActionable = preview.newWorkouts.length + preview.autoEnrichments.length + preview.ambiguousMatches.length;
       showImportToast({
         type: "success",
         text: totalActionable > 0
           ? `Preview pronta: ${preview.newWorkouts.length} nuovi, ${preview.autoEnrichments.length} da arricchire, ${preview.ambiguousMatches.length} da confermare`
-          : "Cartella caricata: nessun nuovo workout da importare nella finestra selezionata",
+          : "Caricamento OK: nessun nuovo workout nella finestra selezionata",
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setImportError(msg);
-      showImportToast({ type: "error", text: `Lettura cartella fallita: ${msg}` });
+      showImportToast({ type: "error", text: `Lettura fallita: ${msg}` });
     } finally {
       setImportBusy(false);
       setImportPhase("idle");
+      // Reset input + selectedSource per permettere nuovo upload pulito
+      if (samsungFileRef.current) samsungFileRef.current.value = "";
       if (samsungFolderRef.current) samsungFolderRef.current.value = "";
+      setSelectedSource(null);
     }
   };
 
@@ -888,6 +905,61 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
                 workout per data DOPO la lettura (Samsung mette tutti gli allenamenti in un unico
                 CSV). Su iOS comprimi prima in zip e usa il primo bottone.
               </div>
+
+              {/* Step 2: riepilogo selezione + bottone "Avvia import".
+                  Si attiva solo se l'utente ha selezionato qualcosa (selectedSource).
+                  Flow 2-step richiesto da Lorenzo: prima vedi cosa hai caricato,
+                  poi confermi per partire con l'import vero (overlay loading). */}
+              {selectedSource && (
+                <div style={{
+                  marginTop: "10px",
+                  background: "#22C55E15",
+                  border: "1px solid #22C55E66",
+                  borderRadius: "10px",
+                  padding: "12px 14px",
+                  display: "flex", flexDirection: "column", gap: "10px",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 700, fontSize: "13px", color: "#22C55E" }}>
+                      Selezione pronta
+                    </span>
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#E2E8F0", lineHeight: 1.4 }}>
+                    {selectedSource.kind === "file"
+                      ? <>File: <b>{selectedSource.file.name}</b> ({Math.round(selectedSource.file.size / 1024)} KB)</>
+                      : <>Cartella: <b>{selectedSource.relevantCount}</b> file rilevanti su {selectedSource.files.length} totali (gli altri verranno scartati automaticamente)</>}
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    <button
+                      onClick={startImport}
+                      disabled={importBusy}
+                      style={{
+                        flex: "1 1 200px",
+                        minHeight: "44px", padding: "12px 14px",
+                        background: "linear-gradient(135deg, #22C55E 0%, #16A34A 100%)",
+                        border: "none", borderRadius: "10px",
+                        color: "#FFF", fontWeight: 800, fontSize: "14px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Avvia import
+                    </button>
+                    <button
+                      onClick={() => setSelectedSource(null)}
+                      disabled={importBusy}
+                      style={{
+                        minHeight: "44px", padding: "12px 16px",
+                        background: "transparent",
+                        border: "1px solid rgba(255,255,255,0.18)", borderRadius: "10px",
+                        color: "#CBD5E1", fontWeight: 600, fontSize: "13px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Annulla
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
 

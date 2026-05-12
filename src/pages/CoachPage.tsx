@@ -184,21 +184,25 @@ export default function CoachPage() {
       )}
 
       <div role="tablist" style={{
-        display: "flex", gap: "6px",
+        display: "flex", gap: "4px",
         background: "#1A1A2E", padding: "4px", borderRadius: "12px",
         marginBottom: "16px",
-        // Sticky top: il menu dei tab resta visibile quando si scorre (es. chat
-        // lunga). L'offset negativo compensa il padding-top del contenitore
-        // della pagina in modo che il bar "tocchi" il bordo superiore del
-        // viewport. Lo z-index tiene i tab sopra il contenuto che scorre.
         position: "sticky", top: "0", zIndex: 20,
         boxShadow: "0 2px 12px rgba(11,15,26,0.65)",
+        // Safety overflow-x se la somma dei tab sfora viewport stretto
+        // (es. iPhone SE 320px). Evita zoom-out del viewport e perdita
+        // riferimenti di sticky/fixed (bottom nav).
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
       }}>
+        {/* Tab bar coach: 5 tab principali (rimosso Mobility — fit mobile <400px).
+            Mobility library resta accessibile via deep-link e sezione "Recovery"
+            interna a Plan. Vedi tab "mobility" condizionale sotto per backward
+            compat con deep-link esterni (es. notifications). */}
         {([
           { id: "plan" as const, label: "Piano" },
           { id: "chat" as const, label: "Chat" },
           { id: "feed" as const, label: feedUnread > 0 ? `Feed (${feedUnread})` : "Feed" },
-          { id: "mobility" as const, label: "Mobility" },
           { id: "zones" as const, label: "Zone FC" },
           { id: "goals" as const, label: "Obiettivi" },
         ]).map(t => (
@@ -206,7 +210,8 @@ export default function CoachPage() {
             role="tab" aria-selected={tab === t.id}
             aria-label={`Tab ${t.label}`}
             style={{
-              flex: 1, padding: "10px", borderRadius: "8px",
+              flex: 1, minWidth: "60px",
+              padding: "10px 8px", borderRadius: "8px",
               background: tab === t.id ? "#16213E" : "transparent",
               border: "none", color: tab === t.id ? "#E2E8F0" : "#94A3B8",
               fontSize: "12px", fontWeight: 700, cursor: "pointer",
