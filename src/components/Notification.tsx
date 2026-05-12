@@ -126,29 +126,52 @@ function ToastCard({ n, onDismiss }: { n: StoredNotification; onDismiss: () => v
     <div role="status" aria-live={n.tone === "error" ? "assertive" : "polite"} style={{
       background: c.bg, color: c.text,
       border: `1px solid ${c.border}`,
-      borderRadius: "10px", padding: "10px 12px",
+      borderRadius: "10px",
       fontSize: "13px", lineHeight: 1.4,
-      display: "flex", alignItems: "flex-start", gap: "10px",
+      // Toast layout: header sticky (icon + title + X) + body scrollabile
+      // se message è lungo. Dimensione cappata a 40vh per non occupare mezzo
+      // schermo. Caps fisso width 420px (vedi container parent maxWidth 92vw).
+      display: "flex", flexDirection: "column",
+      maxHeight: "40vh",
       boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
       animation: "slideDown 0.2s ease",
+      overflow: "hidden", // serve per il border-radius coi figli scrollabili
     }}>
-      <span aria-hidden="true" style={{ fontWeight: 800, marginTop: "1px" }}>{c.icon}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 700 }}>{n.title}</div>
-        {n.message && <div style={{ color: "#E2E8F0", marginTop: "3px", fontSize: "12px", lineHeight: 1.5 }}>{n.message}</div>}
+      {/* Header sempre visibile: icona + title + (action) + X */}
+      <div style={{
+        display: "flex", alignItems: "flex-start", gap: "10px",
+        padding: "10px 12px",
+        flexShrink: 0,
+        borderBottom: n.message ? "1px solid rgba(255,255,255,0.08)" : "none",
+      }}>
+        <span aria-hidden="true" style={{ fontWeight: 800, marginTop: "1px" }}>{c.icon}</span>
+        <div style={{ flex: 1, minWidth: 0, fontWeight: 700, paddingTop: "4px" }}>{n.title}</div>
+        {n.action && (
+          <button onClick={() => { n.action!.onClick(); onDismiss(); }} style={{
+            background: "transparent", border: `1px solid ${c.border}`,
+            borderRadius: "6px", color: c.text, padding: "4px 10px",
+            fontSize: "12px", fontWeight: 700, cursor: "pointer",
+            flexShrink: 0,
+          }}>{n.action.label}</button>
+        )}
+        <button onClick={onDismiss} aria-label="Chiudi" style={{
+          background: "transparent", border: "none", color: "inherit",
+          fontSize: "18px", lineHeight: 1, cursor: "pointer", padding: "0 8px",
+          minWidth: "44px", minHeight: "44px",
+          flexShrink: 0,
+        }}>×</button>
       </div>
-      {n.action && (
-        <button onClick={() => { n.action!.onClick(); onDismiss(); }} style={{
-          background: "transparent", border: `1px solid ${c.border}`,
-          borderRadius: "6px", color: c.text, padding: "4px 10px",
-          fontSize: "12px", fontWeight: 700, cursor: "pointer",
-        }}>{n.action.label}</button>
+      {/* Body scrollabile se message è lungo */}
+      {n.message && (
+        <div style={{
+          padding: "10px 12px",
+          color: "#E2E8F0", fontSize: "12px", lineHeight: 1.5,
+          overflowY: "auto",
+          flex: 1,
+        }}>
+          {n.message}
+        </div>
       )}
-      <button onClick={onDismiss} aria-label="Chiudi" style={{
-        background: "transparent", border: "none", color: "inherit",
-        fontSize: "18px", lineHeight: 1, cursor: "pointer", padding: "0 8px",
-        minWidth: "44px", minHeight: "44px",
-      }}>×</button>
     </div>
   );
 }

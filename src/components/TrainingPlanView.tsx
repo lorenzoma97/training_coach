@@ -569,7 +569,17 @@ export default function TrainingPlanView() {
       const today = new Date(); today.setHours(0,0,0,0);
       const newPlanStart = next.startDate ? new Date(`${next.startDate}T00:00:00`) : today;
       const currentStillActive = !!plan && !!plan.validUntil && new Date(plan.validUntil) > today;
-      const shouldSaveAsNext = mode === "next-week" && currentStillActive && newPlanStart > today;
+      // Fix bug "rigenera lascia settimana vecchia": se il piano corrente è
+      // STALE (>7gg dalla startDate originale), il next-week DEVE sostituirlo
+      // direttamente nello slot corrente. Senza questo, finiva in
+      // training-plan-next (preview) e l'UI mostrava ancora il vecchio.
+      const currentIsStale = (() => {
+        if (!plan?.startDate) return false;
+        const planStart = new Date(`${plan.startDate}T00:00:00`);
+        const ageDays = Math.floor((today.getTime() - planStart.getTime()) / 86400000);
+        return ageDays > 7;
+      })();
+      const shouldSaveAsNext = mode === "next-week" && currentStillActive && newPlanStart > today && !currentIsStale;
       if (shouldSaveAsNext) {
         await saveNextPlan(next);
         title = "✓ Prossima settimana pianificata in anteprima — il piano corrente resta attivo";
