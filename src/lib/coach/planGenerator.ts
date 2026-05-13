@@ -100,7 +100,16 @@ const weekSchema = z.object({
 // automatica al lunedì successivo.
 const planSchema = z.object({
   weeks: z.array(weekSchema).min(1).max(4),
-  rationale: z.string(),
+  // Bug fix live (Lorenzo F12 log): Gemini interpreta "lista 3-4 bullet"
+  // nel schemaHint come ARRAY JSON di stringhe invece di stringa unica
+  // formattata. Schema ora accetta entrambi: string passthrough, array
+  // joinato come bullet list.
+  rationale: z.union([
+    z.string(),
+    z.array(z.string()).transform(arr =>
+      arr.map(s => s.startsWith("- ") ? s : `- ${s}`).join("\n"),
+    ),
+  ]),
 });
 
 const schemaHint = `
@@ -122,7 +131,7 @@ const schemaHint = `
       ]
     }
   ],
-  "rationale": "lista 3-4 bullet (formato '- punto'); UNO dei bullet DEVE confermare i vincoli rispettati come da PROMPT planGeneration"
+  "rationale": "STRINGA UNICA (NON array JSON) contenente 3-4 bullet separati da newline. Formato: '- bullet 1\\n- bullet 2\\n- bullet 3'. UNO dei bullet DEVE confermare i vincoli rispettati come da PROMPT planGeneration."
 }
 IMPORTANTE: l'array "weeks" deve contenere UNA SOLA settimana con weekNumber=1.
 
