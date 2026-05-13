@@ -666,8 +666,8 @@ export default function TrainingPlanView() {
       }}
     >
       {regenerating
-        ? <span role="progressbar" aria-label={`Rigenerazione in corso — ${llmElapsedSec} secondi`} aria-busy="true">⏳ Rigenerazione… {llmElapsedSec}s</span>
-        : (plan ? "🔁 Rigenera piano (integra dati recenti)" : "🎯 Genera piano")}
+        ? <span role="progressbar" aria-label={`Generazione in corso — ${llmElapsedSec} secondi`} aria-busy="true">⏳ Generazione… {llmElapsedSec}s</span>
+        : "🎯 Genera piano"}
     </button>
   );
 
@@ -820,11 +820,15 @@ export default function TrainingPlanView() {
       <MacroUpdatedBanner onRegenerate={() => handleRegenerate("next-week")} />
       {/* Fix 1 — Banner amber "piano scaduto" se startDate > 7gg fa. Non
           dismissibile: l'utente deve rigenerare per ripristinare uno stato
-          allineato alla settimana corrente. */}
+          allineato alla settimana corrente.
+          UX redesign #3: la CTA del banner non rigenera direttamente, ma
+          apre il picker primario unificato (stesso entry-point del bottone
+          "Rigenera piano" in header) così l'utente sceglie esplicitamente
+          fra "Riparti da oggi" / "Settimana prossima" / "Adatta deviazioni". */}
       {isPlanStale && plan.startDate && !isExpired && (
         <StalePlanBanner
           startDate={plan.startDate}
-          onRegenerate={() => handleRegenerate("next-week")}
+          onRegenerate={() => { setRegenPickerOpen(true); setAdaptOpen(false); }}
           disabled={regenerating}
         />
       )}
@@ -886,8 +890,11 @@ export default function TrainingPlanView() {
             {isExpired ? "Il piano sottostante non viene più mostrato per evitare confusione. Rigenera o adatta per riceverne uno aggiornato." : "Presto il coach dovrà produrre il microciclo successivo."}
           </div>
           {isExpired && (
+            // UX redesign #3: anche la CTA "Piano scaduto" apre il picker
+            // primario invece di rigenerare diretta. Coerente con StalePlanBanner
+            // e con il bottone header "Rigenera piano".
             <button
-              onClick={() => handleRegenerate("next-week")}
+              onClick={() => { setRegenPickerOpen(true); setAdaptOpen(false); }}
               disabled={regenerating}
               aria-busy={regenerating || undefined}
               role={regenerating ? "status" : undefined}
@@ -1014,217 +1021,251 @@ export default function TrainingPlanView() {
         </div>
       )}
 
-      {/* CTA deviazioni — fuori dall'accordion: azione urgente actionable.
-          Se hasDeviations è false, niente render. */}
-      {!isExpired && hasDeviations && (
-        <div style={{
-          background: "#78350F20", border: "1px solid #F59E0B66",
-          borderRadius: "10px", padding: "10px 12px",
-          display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
-        }}>
-          <div style={{ flex: 1, minWidth: "160px" }}>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#F59E0B", marginBottom: "3px" }}>
-              Piano discostato dalla realtà
-            </div>
-            <div style={{ fontSize: "11px", color: "#CBD5E1", lineHeight: 1.4 }}>
-              {[
+      {/* UX redesign #3 — Bottone primario unico "Rigenera piano".
+          Visibile sempre (non più nascosto in <details>) come entry-point
+          principale. Apre il picker unificato sotto, che contiene:
+            - "Riparti da oggi" (rest-of-week)
+            - "Pianifica settimana prossima" (next-week)
+            - "Adatta alle deviazioni" (solo se hasDeviations, scorciatoia
+              al flusso adapt con buildDeviationRequest)
+          Il bottone "Adatta con richiesta" (free-text) resta accessibile
+          ma in <details> "Opzioni avanzate" più sotto.
+          StalePlanBanner e CTA "Piano scaduto" puntano allo stesso picker. */}
+      {!isExpired && (
+        <div style={{ background: "#16213E", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 18px", display: "flex", flexDirection: "column", gap: "10px" }}>
+          <button
+            onClick={() => { setRegenPickerOpen(o => !o); setAdaptOpen(false); }}
+            disabled={regenerating || adapting}
+            aria-busy={regenerating || undefined}
+            role={regenerating ? "status" : undefined}
+            aria-label={regenerating ? "Rigenerazione piano in corso" : "Rigenera piano"}
+            style={{
+              padding: "12px 16px", minHeight: "48px",
+              background: regenerating ? "#1E293B" : regenPickerOpen ? "#0891B222" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
+              border: regenPickerOpen ? "1px solid #0891B2" : "none",
+              borderRadius: "10px",
+              color: regenPickerOpen ? "#0891B2" : "#FFF",
+              fontSize: "14px", fontWeight: 700,
+              cursor: regenerating ? "wait" : "pointer",
+              opacity: regenerating ? 0.5 : 1,
+              width: "100%",
+            }}
+          >
+            {regenerating
+              ? <span role="progressbar" aria-label={`Rigenerazione in corso — ${llmElapsedSec} secondi`} aria-busy="true">⏳ Rigenerazione… {llmElapsedSec}s</span>
+              : (regenPickerOpen ? "✕ Chiudi" : "🔁 Rigenera piano")}
+          </button>
+          {hasDeviations && !regenPickerOpen && !regenerating && (
+            <div style={{ fontSize: "11px", color: "#F59E0B", lineHeight: 1.4, padding: "0 4px" }}>
+              ⚠ Piano discostato dalla realtà ({[
                 deviationCount.skipped > 0 ? `${deviationCount.skipped} saltate` : "",
                 deviationCount.partial > 0 ? `${deviationCount.partial} variate` : "",
                 deviationCount.extras > 0 ? `${deviationCount.extras} autonomi` : "",
-              ].filter(Boolean).join(" · ")}. Riallinea al fatto.
+              ].filter(Boolean).join(" · ")}). Apri il picker per riallineare.
             </div>
-          </div>
-          <button
-            onClick={() => handleAdapt(buildDeviationRequest())}
-            disabled={adapting || regenerating}
-            style={{
-              padding: "10px 14px", minHeight: "44px",
-              background: adapting ? "#1E293B" : "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)",
-              border: "none", borderRadius: "9px", color: "#FFF",
-              fontSize: "12px", fontWeight: 700,
-              cursor: adapting ? "wait" : "pointer",
-              opacity: (adapting || regenerating) ? 0.5 : 1,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {adapting ? `⏳ Adatto… ${llmElapsedSec}s` : "🔁 Adatta alle deviazioni"}
-          </button>
-        </div>
-      )}
+          )}
 
-      {/* Sezione modifica piano — collapsable. Default closed: utente apre
-          quando vuole "Adatta con richiesta" o "Rigenera piano". */}
-      <details style={{ background: "#16213E", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)" }}>
-        <summary
-          style={{
-            cursor: "pointer", listStyle: "none",
-            padding: "14px 18px", minHeight: "44px",
-            fontSize: "12px", color: "#CBD5E1",
-            letterSpacing: "0.1em", textTransform: "uppercase",
-            fontWeight: 700,
-            display: "flex", alignItems: "center", gap: "8px",
-            userSelect: "none",
-          }}
-        >
-          <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "14px" }}>▸</span>
-          Modifica piano (adatta / rigenera)
-        </summary>
-        <div style={{ padding: "0 18px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
-
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); setRegenPickerOpen(false); }} disabled={adapting || regenerating} style={{ flex: "1 1 140px", padding: "10px 14px", background: adaptOpen ? "#E8553A22" : "#1A1A2E", border: adaptOpen ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#E8553A" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
-            ✏ Adatta con richiesta
-          </button>
-          <button onClick={() => { setRegenPickerOpen(o => !o); setAdaptOpen(false); }} disabled={regenerating || adapting} aria-busy={regenerating || undefined} role={regenerating ? "status" : undefined} aria-label={regenerating ? "Rigenerazione piano in corso" : undefined} style={{ flex: "1 1 140px", padding: "10px 14px", background: regenerating ? "#1E293B" : regenPickerOpen ? "#0891B222" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border: regenPickerOpen ? "1px solid #0891B2" : "none", borderRadius: "10px", color: regenPickerOpen ? "#0891B2" : "#FFF", fontSize: "13px", fontWeight: 700, cursor: regenerating ? "wait" : "pointer", opacity: regenerating ? 0.5 : 1 }}>
-            {regenerating
-              ? <span role="progressbar" aria-label={`Rigenerazione in corso — ${llmElapsedSec} secondi`} aria-busy="true">⏳ Rigenerazione… {llmElapsedSec}s</span>
-              : "🔁 Rigenera piano"}
-          </button>
-        </div>
-
-        {regenPickerOpen && !regenerating && (() => {
-          const today = new Date();
-          const dow = today.getDay(); // 0=dom..6=sab
-          const todayIdx = (dow + 6) % 7; // 0=lun..6=dom
-          const labels = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
-          const todayLabel = labels[todayIdx];
-          const remaining = labels.slice(todayIdx);
-          // Mostra "rest-of-week" lun-sab. Su lunedì copre l'intera settimana
-          // corrente (lun→dom). Su domenica non ha senso (solo 1 giorno).
-          const showRestOfWeek = todayIdx >= 0 && todayIdx <= 5;
-          // Toggle giorno nel picker. Stato locale, non persiste — è override
-          // SOLO per la prossima generazione.
-          const togglePickerDay = (d: string) => {
-            setPickerDays(prev => {
-              const cur = prev || [];
-              return cur.includes(d) ? cur.filter(x => x !== d) : [...cur, d];
-            });
-          };
-          // Reset al default profilo (utility quando l'utente ha smanettato troppo).
-          const resetToProfile = () => {
-            const def = currentProfile?.availableDays;
-            if (def && def.length > 0) setPickerDays([...def]);
-            else setPickerDays(["lun","mar","mer","gio","ven","sab","dom"]);
-          };
-          // Per "Riparti da oggi" mostra in evidenza i giorni rimanenti che
-          // rientrano nella selezione (intersezione).
-          const remainingActive = (pickerDays || []).filter(d => remaining.includes(d));
-          const noDaysSelected = !pickerDays || pickerDays.length === 0;
-          return (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600 }}>Giorni allenabili questa settimana</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                {labels.map(d => {
-                  const active = (pickerDays || []).includes(d);
-                  return (
-                    <button
-                      key={d}
-                      onClick={() => togglePickerDay(d)}
-                      aria-pressed={active}
-                      style={{
-                        padding: "8px 12px", minWidth: "44px",
-                        background: active ? "#0891B225" : "#1A1A2E",
-                        border: active ? "1px solid #0891B266" : "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: "999px",
-                        color: active ? "#38BDF8" : "#94A3B8",
-                        fontSize: "12px", fontWeight: 700, cursor: "pointer",
-                        fontFamily: "'JetBrains Mono', monospace",
-                        textTransform: "uppercase",
-                      }}
-                    >{d}</button>
-                  );
-                })}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
-                <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.4 }}>
-                  {currentProfile?.availableDays && currentProfile.availableDays.length > 0
-                    ? <>Default profilo: <b>{currentProfile.availableDays.join(", ")}</b>. Questa scelta è solo per la prossima generazione.</>
-                    : "Nessun default impostato. Configurarlo in Impostazioni → Profilo per pre-selezione automatica."}
+          {regenPickerOpen && !regenerating && (() => {
+            const today = new Date();
+            const dow = today.getDay(); // 0=dom..6=sab
+            const todayIdx = (dow + 6) % 7; // 0=lun..6=dom
+            const labels = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+            const todayLabel = labels[todayIdx];
+            const remaining = labels.slice(todayIdx);
+            // Mostra "rest-of-week" lun-sab. Su lunedì copre l'intera settimana
+            // corrente (lun→dom). Su domenica non ha senso (solo 1 giorno).
+            const showRestOfWeek = todayIdx >= 0 && todayIdx <= 5;
+            // Toggle giorno nel picker. Stato locale, non persiste — è override
+            // SOLO per la prossima generazione.
+            const togglePickerDay = (d: string) => {
+              setPickerDays(prev => {
+                const cur = prev || [];
+                return cur.includes(d) ? cur.filter(x => x !== d) : [...cur, d];
+              });
+            };
+            // Reset al default profilo (utility quando l'utente ha smanettato troppo).
+            const resetToProfile = () => {
+              const def = currentProfile?.availableDays;
+              if (def && def.length > 0) setPickerDays([...def]);
+              else setPickerDays(["lun","mar","mer","gio","ven","sab","dom"]);
+            };
+            // Per "Riparti da oggi" mostra in evidenza i giorni rimanenti che
+            // rientrano nella selezione (intersezione).
+            const remainingActive = (pickerDays || []).filter(d => remaining.includes(d));
+            const noDaysSelected = !pickerDays || pickerDays.length === 0;
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600 }}>Giorni allenabili questa settimana</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {labels.map(d => {
+                    const active = (pickerDays || []).includes(d);
+                    return (
+                      <button
+                        key={d}
+                        onClick={() => togglePickerDay(d)}
+                        aria-pressed={active}
+                        style={{
+                          padding: "8px 12px", minWidth: "44px",
+                          background: active ? "#0891B225" : "#1A1A2E",
+                          border: active ? "1px solid #0891B266" : "1px solid rgba(255,255,255,0.1)",
+                          borderRadius: "999px",
+                          color: active ? "#38BDF8" : "#94A3B8",
+                          fontSize: "12px", fontWeight: 700, cursor: "pointer",
+                          fontFamily: "'JetBrains Mono', monospace",
+                          textTransform: "uppercase",
+                        }}
+                      >{d}</button>
+                    );
+                  })}
                 </div>
-                <button
-                  onClick={resetToProfile}
-                  style={{
-                    padding: "5px 10px", background: "transparent",
-                    border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
-                    color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
-                  }}
-                >↺ Reset</button>
-              </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
+                  <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.4 }}>
+                    {currentProfile?.availableDays && currentProfile.availableDays.length > 0
+                      ? <>Default profilo: <b>{currentProfile.availableDays.join(", ")}</b>. Questa scelta è solo per la prossima generazione.</>
+                      : "Nessun default impostato. Configurarlo in Impostazioni → Profilo per pre-selezione automatica."}
+                  </div>
+                  <button
+                    onClick={resetToProfile}
+                    style={{
+                      padding: "5px 10px", background: "transparent",
+                      border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+                      color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
+                    }}
+                  >↺ Reset</button>
+                </div>
 
-              <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600, marginTop: "4px" }}>Come vuoi rigenerare?</div>
-              {showRestOfWeek && (
+                <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600, marginTop: "4px" }}>Come vuoi rigenerare?</div>
+                {showRestOfWeek && (
+                  <button
+                    onClick={() => handleRegenerate("rest-of-week", pickerDays)}
+                    disabled={noDaysSelected || remainingActive.length === 0}
+                    style={{
+                      textAlign: "left", padding: "12px 14px",
+                      background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.12)",
+                      borderRadius: "10px", color: "#E2E8F0",
+                      cursor: (noDaysSelected || remainingActive.length === 0) ? "not-allowed" : "pointer",
+                      opacity: (noDaysSelected || remainingActive.length === 0) ? 0.5 : 1,
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: "13px", color: "#0891B2", marginBottom: "3px" }}>
+                      ▶ Riparti da oggi
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
+                      {remainingActive.length === 0
+                        ? `Nessuno dei giorni selezionati rientra nei rimanenti (${remaining.join(", ")}).`
+                        : `Genera fino a ${remainingActive.length} sessione/i in ${remainingActive.join(", ")}. I giorni passati restano chiusi.`}
+                    </div>
+                  </button>
+                )}
                 <button
-                  onClick={() => handleRegenerate("rest-of-week", pickerDays)}
-                  disabled={noDaysSelected || remainingActive.length === 0}
+                  onClick={() => handleRegenerate("next-week", pickerDays)}
+                  disabled={noDaysSelected}
                   style={{
                     textAlign: "left", padding: "12px 14px",
                     background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.12)",
                     borderRadius: "10px", color: "#E2E8F0",
-                    cursor: (noDaysSelected || remainingActive.length === 0) ? "not-allowed" : "pointer",
-                    opacity: (noDaysSelected || remainingActive.length === 0) ? 0.5 : 1,
+                    cursor: noDaysSelected ? "not-allowed" : "pointer",
+                    opacity: noDaysSelected ? 0.5 : 1,
                   }}
                 >
                   <div style={{ fontWeight: 700, fontSize: "13px", color: "#0891B2", marginBottom: "3px" }}>
-                    ▶ Riparti da oggi
+                    ▶ Pianifica settimana prossima
                   </div>
                   <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
-                    {remainingActive.length === 0
-                      ? `Nessuno dei giorni selezionati rientra nei rimanenti (${remaining.join(", ")}).`
-                      : `Genera fino a ${remainingActive.length} sessione/i in ${remainingActive.join(", ")}. I giorni passati restano chiusi.`}
+                    {noDaysSelected
+                      ? "Seleziona almeno un giorno sopra."
+                      : `Genera fino a ${(pickerDays || []).length} sessione/i tra: ${(pickerDays || []).join(", ")}.`}
+                    {!showRestOfWeek && ` (Oggi è ${todayLabel}, l'opzione "riparti" non è disponibile.)`}
                   </div>
                 </button>
-              )}
-              <button
-                onClick={() => handleRegenerate("next-week", pickerDays)}
-                disabled={noDaysSelected}
-                style={{
-                  textAlign: "left", padding: "12px 14px",
-                  background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: "10px", color: "#E2E8F0",
-                  cursor: noDaysSelected ? "not-allowed" : "pointer",
-                  opacity: noDaysSelected ? 0.5 : 1,
-                }}
-              >
-                <div style={{ fontWeight: 700, fontSize: "13px", color: "#0891B2", marginBottom: "3px" }}>
-                  ▶ Pianifica settimana prossima
-                </div>
-                <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
-                  {noDaysSelected
-                    ? "Seleziona almeno un giorno sopra."
-                    : `Genera fino a ${(pickerDays || []).length} sessione/i tra: ${(pickerDays || []).join(", ")}.`}
-                  {!showRestOfWeek && ` (Oggi è ${todayLabel}, l'opzione "riparti" non è disponibile.)`}
-                </div>
-              </button>
-              <button
-                onClick={() => setRegenPickerOpen(false)}
-                style={{
-                  alignSelf: "flex-start", padding: "8px 14px",
-                  background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: "10px", color: "#94A3B8", fontSize: "12px", fontWeight: 600, cursor: "pointer",
-                }}
-              >Annulla</button>
-            </div>
-          );
-        })()}
-        {adaptOpen && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-            <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>Dimmi cosa vuoi cambiare. Il coach rispetterà comunque le regole di sicurezza.</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {ADAPT_QUICK_PROMPTS.map(p => (<button key={p} onClick={() => setAdaptRequest(p)} disabled={adapting} style={{ padding: "10px 14px", minHeight: "40px", fontSize: "12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "999px", color: "#CBD5E1", cursor: "pointer" }}>{p}</button>))}
-            </div>
-            <textarea value={adaptRequest} onChange={e => setAdaptRequest(e.target.value)} placeholder="es. 'settimana più leggera perché ho un viaggio' o 'aumenta le ripetute'" disabled={adapting} rows={2} style={{ width: "100%", padding: "10px 12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#E2E8F0", fontSize: "14px", fontFamily: "inherit", resize: "vertical", minHeight: "60px", outline: "none", boxSizing: "border-box" }} />
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button onClick={() => handleAdapt()} disabled={adapting || !adaptRequest.trim()} aria-busy={adapting || undefined} role={adapting ? "status" : undefined} aria-label={adapting ? "Adattamento piano in corso" : undefined} style={{ flex: 1, padding: "10px", background: adapting ? "#1E293B" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: adapting ? "wait" : "pointer", opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1 }}>
-                {adapting ? `⏳ Adatto il piano… ${llmElapsedSec}s` : "Applica modifica"}
-              </button>
-              <button onClick={() => { setAdaptOpen(false); setAdaptRequest(""); setAdaptError(null); }} disabled={adapting} style={{ padding: "10px 14px", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#94A3B8", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>Annulla</button>
-            </div>
-            {adaptError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{adaptError}</div>}
-          </div>
-        )}
-        {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
+                {/* UX redesign #3 — terza opzione nel picker: "Adatta alle
+                    deviazioni". Mostrata solo se hasDeviations, scorciatoia
+                    al flusso adapt con buildDeviationRequest. Coerente con il
+                    pattern degli altri item (titolo amber + dettaglio sub).
+                    Non passa per il day picker (le deviazioni hanno già scope
+                    di settimana corrente). */}
+                {hasDeviations && (
+                  <button
+                    onClick={() => { setRegenPickerOpen(false); void handleAdapt(buildDeviationRequest()); }}
+                    disabled={adapting || regenerating}
+                    style={{
+                      textAlign: "left", padding: "12px 14px",
+                      background: "#1A1A2E", border: "1px solid rgba(245, 158, 11, 0.35)",
+                      borderRadius: "10px", color: "#E2E8F0",
+                      cursor: (adapting || regenerating) ? "wait" : "pointer",
+                      opacity: (adapting || regenerating) ? 0.5 : 1,
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: "13px", color: "#F59E0B", marginBottom: "3px" }}>
+                      ▶ Adatta alle deviazioni
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
+                      Riallinea le sessioni future a quello che hai realmente fatto: {[
+                        deviationCount.skipped > 0 ? `${deviationCount.skipped} saltate` : "",
+                        deviationCount.partial > 0 ? `${deviationCount.partial} variate` : "",
+                        deviationCount.extras > 0 ? `${deviationCount.extras} autonomi` : "",
+                      ].filter(Boolean).join(" · ")}.
+                    </div>
+                  </button>
+                )}
+                <button
+                  onClick={() => setRegenPickerOpen(false)}
+                  style={{
+                    alignSelf: "flex-start", padding: "8px 14px",
+                    background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: "10px", color: "#94A3B8", fontSize: "12px", fontWeight: 600, cursor: "pointer",
+                  }}
+                >Annulla</button>
+              </div>
+            );
+          })()}
+          {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
         </div>
-      </details>
+      )}
+
+      {/* UX redesign #3 — Opzioni avanzate: "Adatta con richiesta" free-text
+          spostato qui in <details> chiuso di default. L'utente principale
+          orienta a picker primario; questo resta accessibile come escape
+          hatch per modifiche puntuali (es. "settimana di deload"). */}
+      {!isExpired && (
+        <details style={{ background: "#16213E", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+          <summary
+            style={{
+              cursor: "pointer", listStyle: "none",
+              padding: "14px 18px", minHeight: "44px",
+              fontSize: "12px", color: "#94A3B8",
+              letterSpacing: "0.1em", textTransform: "uppercase",
+              fontWeight: 700,
+              display: "flex", alignItems: "center", gap: "8px",
+              userSelect: "none",
+            }}
+          >
+            <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "14px" }}>▸</span>
+            Opzioni avanzate (adatta con richiesta)
+          </summary>
+          <div style={{ padding: "0 18px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+            <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); }} disabled={adapting || regenerating} style={{ padding: "10px 14px", background: adaptOpen ? "#E8553A22" : "#1A1A2E", border: adaptOpen ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#E8553A" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
+              ✏ Adatta con richiesta
+            </button>
+            {adaptOpen && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>Dimmi cosa vuoi cambiare. Il coach rispetterà comunque le regole di sicurezza.</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {ADAPT_QUICK_PROMPTS.map(p => (<button key={p} onClick={() => setAdaptRequest(p)} disabled={adapting} style={{ padding: "10px 14px", minHeight: "40px", fontSize: "12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "999px", color: "#CBD5E1", cursor: "pointer" }}>{p}</button>))}
+                </div>
+                <textarea value={adaptRequest} onChange={e => setAdaptRequest(e.target.value)} placeholder="es. 'settimana più leggera perché ho un viaggio' o 'aumenta le ripetute'" disabled={adapting} rows={2} style={{ width: "100%", padding: "10px 12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#E2E8F0", fontSize: "14px", fontFamily: "inherit", resize: "vertical", minHeight: "60px", outline: "none", boxSizing: "border-box" }} />
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button onClick={() => handleAdapt()} disabled={adapting || !adaptRequest.trim()} aria-busy={adapting || undefined} role={adapting ? "status" : undefined} aria-label={adapting ? "Adattamento piano in corso" : undefined} style={{ flex: 1, padding: "10px", background: adapting ? "#1E293B" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: adapting ? "wait" : "pointer", opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1 }}>
+                    {adapting ? `⏳ Adatto il piano… ${llmElapsedSec}s` : "Applica modifica"}
+                  </button>
+                  <button onClick={() => { setAdaptOpen(false); setAdaptRequest(""); setAdaptError(null); }} disabled={adapting} style={{ padding: "10px 14px", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#94A3B8", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>Annulla</button>
+                </div>
+                {adaptError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{adaptError}</div>}
+              </div>
+            )}
+          </div>
+        </details>
+      )}
 
       {/* Fix 1 — Wrapper "grigio" delle sessioni della settimana quando il
           piano è stale (>7gg dal startDate). Visivamente chiaro che la
