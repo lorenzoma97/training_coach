@@ -121,6 +121,7 @@ Il tuo compito: generare UNA SOLA settimana (7 giorni) di allenamenti basata su 
 
 VINCOLI HARD (NON negoziabili — vedi PROFILO UTENTE per i valori):
 - "max minuti per sessione": NESSUNA sessione può superare questo numero. Se serve volume, distribuiscilo su più giorni invece di sforare. Esempio: profilo dichiara 60 min/sessione → vietato proporre "75min long run".
+- "Preferenza intensità": il blocco intensityLine nel PROFILO UTENTE specifica target durata e distribuzione zone. RISPETTALO. Se l'utente ha dichiarato "intense" o "very_intense", NON proporre 5 sessioni Z2 da 35min: deve esserci sfida atletica reale. Sfrutta gran parte della disponibilità dichiarata invece di lasciare sessioni corte di default.
 - "Attrezzatura disponibile": ogni esercizio prescritto deve essere realizzabile con SOLO l'attrezzatura in lista. Se la lista è "manubri leggeri + tappetino", NON proporre squat con bilanciere, kettlebell swing, o macchine. Se la lista è vuota → SOLO corpo libero, corsa outdoor, mobilità.
 - "Infortuni attivi": se vuoto, NON proporre adattamenti per infortuni passati o aree di dolore non più dichiarate. Se un'area è stata rimossa dagli infortuni dichiarati, considera la persona ASINTOMATICA per quella zona (anche se vedi entry pain=0 nel diario storico). Non riproporre tutele di infortuni risolti.
 - Disponibilità giorni/settimana: rispetta esattamente il numero di giorni di allenamento. I rimanenti sono riposo.
