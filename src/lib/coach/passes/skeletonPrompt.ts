@@ -52,6 +52,12 @@ export interface SkeletonContext {
   remainingThisWeek?: ReadonlyArray<string>;
   /** Testo riassuntivo ultimi 14 giorni (mode regen/adapt). */
   recentDaysText?: string;
+  /**
+   * 2026-05-13: prescription block (testo gia' formattato da
+   * formatPrescriptionForPrompt). Iniettato in cima al prompt come "non
+   * negoziabile". Backward compat: undefined → niente blocco.
+   */
+  prescriptionBlock?: string;
 }
 
 /**
@@ -179,13 +185,24 @@ function buildModeInstruction(mode: SkeletonContext["mode"], userRequest?: strin
 export function buildPass1SkeletonPrompt(ctx: SkeletonContext): string {
   const sections: string[] = [
     "TASK: produci lo SCHELETRO settimanale del piano (Pass-1 di un orchestratore multi-pass). NON dettagliare esercizi/intervalli — Pass-2 lo fara'.",
+  ];
+
+  // 2026-05-13: prescription block iniettato in cima — numeri concreti dal
+  // pre-pass deterministico. L'LLM e' istruito a rispettarli come "non
+  // negoziabili" (vedi formatPrescriptionForPrompt).
+  if (ctx.prescriptionBlock && ctx.prescriptionBlock.trim().length > 0) {
+    sections.push("");
+    sections.push(ctx.prescriptionBlock.trim());
+  }
+
+  sections.push(
     "",
     "PROFILO UTENTE:",
     profileAsPrompt(ctx.profile),
     "",
     "OBIETTIVI:",
     goalsAsPrompt(ctx.goals),
-  ];
+  );
 
   if (ctx.goals.length >= 2) {
     sections.push("");

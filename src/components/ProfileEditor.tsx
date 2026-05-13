@@ -15,11 +15,15 @@
 //  - Aree dolore: collapsed con count "N monitorate", elimina UI custom add
 //    quando chiuso (resta accessibile dentro).
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getJSON, setJSON } from "../lib/storage";
 import type { UserProfile } from "../lib/types";
 import { events } from "../lib/events";
 import EmptyState from "./EmptyState";
+// 2026-05-13: layer Training Prescription. Mostra all'utente i numeri concreti
+// (volume, zone, forza) che il pre-pass calcola dal profilo. Re-compute live
+// quando il profile cambia. Pure function, no I/O.
+import { computePrescription } from "../lib/coach/trainingPrescription";
 
 const SUGGESTED_AREAS = [
   "polpaccio", "ginocchio", "tendine d'achille", "schiena lombare",
@@ -221,6 +225,17 @@ export default function ProfileEditor() {
   const medsPresent = (profile.meds || "").trim().length > 0;
   const areasCount = areas.length;
 
+  // 2026-05-13: prescrizione corrente — live re-compute on profile change.
+  // useMemo: la pure function e' veloce ma il deep-equal evita re-render
+  // gratuiti su update non rilevanti.
+  const prescription = useMemo(
+    () => computePrescription({
+      profile,
+      intensity: profile.intensityPreference,
+    }),
+    [profile],
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       {/* ─── Disponibilità: 1 riga compatta giorni/ore/min ────────────── */}
@@ -322,6 +337,85 @@ export default function ProfileEditor() {
           })}
         </div>
       </div>
+
+      {/* ─── Prescrizione corrente (read-only, live re-compute) ────────── */}
+      {/* 2026-05-13 architect-specialist: mostra all'utente i target numerici
+          (volume/zone/forza) che il coach userà per generare il piano. Live
+          re-compute on profile change (useMemo). Tutto inline-style (codebase
+          pattern: NO Tailwind). aria-live=polite per screen reader. */}
+      <details style={detailsStyle}>
+        <summary style={summaryStyle} aria-label="Prescrizione corrente: target di volume, zone, forza calcolati dal profilo">
+          <span style={{ flex: 1 }}>Prescrizione corrente</span>
+          <span style={{ fontSize: "11px", color: "#22C55E", fontWeight: 700 }}>
+            {prescription.weeklyVolumeTargetMin} min/sett
+          </span>
+        </summary>
+        <div style={detailsBodyStyle} aria-live="polite">
+          <div style={{ fontSize: "11px", color: "#64748B", lineHeight: 1.5, marginBottom: "6px" }}>
+            Target numerici calcolati dal tuo profilo (esperienza, età, disponibilità, intensità).
+            Iniettati nel prompt del coach come "prescrizione non negoziabile".
+            Aggiorna profilo/intensità per vederli ricalcolare.
+          </div>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "8px",
+            fontSize: "12px",
+            color: "#CBD5E1",
+          }}>
+            <div style={{ background: "#0F172A", padding: "8px 10px", borderRadius: "8px" }}>
+              <div style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, marginBottom: "2px" }}>VOLUME SETT.</div>
+              <div style={{ fontWeight: 700 }}>{prescription.weeklyVolumeTargetMin} min</div>
+              <div style={{ fontSize: "10px", color: "#94A3B8" }}>range {prescription.weeklyVolumeRangeMin.min}-{prescription.weeklyVolumeRangeMin.max}</div>
+            </div>
+            <div style={{ background: "#0F172A", padding: "8px 10px", borderRadius: "8px" }}>
+              <div style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, marginBottom: "2px" }}>DURATA SESS.</div>
+              <div style={{ fontWeight: 700 }}>{prescription.avgSessionMin} min</div>
+              <div style={{ fontSize: "10px", color: "#94A3B8" }}>range {prescription.sessionRangeMin.min}-{prescription.sessionRangeMin.max}</div>
+            </div>
+            <div style={{ background: "#0F172A", padding: "8px 10px", borderRadius: "8px" }}>
+              <div style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, marginBottom: "2px" }}>ZONE FC</div>
+              <div style={{ fontWeight: 700 }}>{prescription.zoneDistributionPct.z1z2Pct}/{prescription.zoneDistributionPct.z3Pct}/{prescription.zoneDistributionPct.z4z5Pct}</div>
+              <div style={{ fontSize: "10px", color: "#94A3B8" }}>Z1-Z2 · Z3 · Z4-Z5 %</div>
+            </div>
+            <div style={{ background: "#0F172A", padding: "8px 10px", borderRadius: "8px" }}>
+              <div style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, marginBottom: "2px" }}>FORZA</div>
+              <div style={{ fontWeight: 700 }}>{prescription.strength.sessionsPerWeek}× / sett</div>
+              <div style={{ fontSize: "10px", color: "#94A3B8" }}>RPE {prescription.strength.rpeRange.min}-{prescription.strength.rpeRange.max} · {prescription.strength.pct1RMRange.min}-{prescription.strength.pct1RMRange.max}% 1RM</div>
+            </div>
+            <div style={{ gridColumn: "1 / -1", background: "#0F172A", padding: "8px 10px", borderRadius: "8px" }}>
+              <div style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, marginBottom: "2px" }}>RIPOSO</div>
+              <div style={{ fontWeight: 700 }}>{prescription.minRestDaysPerWeek} gg/sett</div>
+              <div style={{ fontSize: "10px", color: "#94A3B8" }}>≥{prescription.minHoursBetweenStrengthSameGroup}h tra forza stesso gruppo muscolare</div>
+            </div>
+          </div>
+
+          {prescription.overrides.length > 0 && (
+            <div style={{ marginTop: "8px" }}>
+              <div style={{ fontSize: "10px", color: "#F59E0B", fontWeight: 700, marginBottom: "4px" }}>
+                OVERRIDE APPLICATI ({prescription.overrides.length})
+              </div>
+              <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "11px", color: "#CBD5E1", lineHeight: 1.5 }}>
+                {prescription.overrides.map((o, i) => (
+                  <li key={i}>{o}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <details style={{ marginTop: "8px", background: "#0F172A", borderRadius: "8px", overflow: "hidden" }}>
+            <summary style={{ ...summaryStyle, fontSize: "11px", padding: "8px 10px", minHeight: "32px" }} aria-label="Basi scientifiche">
+              <span style={{ flex: 1 }}>Basi scientifiche</span>
+              <span style={{ fontSize: "10px", color: "#64748B" }}>{prescription.bases.length} paper</span>
+            </summary>
+            <ul style={{ margin: 0, padding: "6px 10px 10px 26px", fontSize: "10px", color: "#94A3B8", lineHeight: 1.5 }}>
+              {prescription.bases.map((b, i) => (
+                <li key={i}>{b}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      </details>
 
       {/* ─── Attrezzatura: collapsibile ───────────────────────────────── */}
       <details style={detailsStyle}>

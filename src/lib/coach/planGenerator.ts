@@ -14,6 +14,41 @@ import { sanitizePII } from "../promptSanitizer";
 // e' false (override locale per debug), si ricade sul codice single-pass legacy
 // che resta integralmente sotto.
 import { runMultiPass, MULTI_PASS_ENABLED } from "./passes/passOrchestrator";
+// 2026-05-13 (architect-specialist): layer Training Prescription data-driven.
+// Sostituisce gli hint vaghi di intensityPreference (diaryContext.ts) con
+// numeri concreti calcolati da formule peer-reviewed. L'LLM riceve target di
+// volume/zone/forza in unita' misurabili invece di "soft hint" descrittivi.
+// Pre-fix Lorenzo (2026-05-13): "very_intense + 1.5h" produceva sessioni 40min
+// Z2 perche' le label erano hint descrittivi non prescrittivi.
+import {
+  computePrescription,
+  formatPrescriptionForPrompt,
+  type GoalTypeHint,
+} from "./trainingPrescription";
+import type { MacroPhase } from "../types";
+
+/**
+ * Inferisce il `goalType` per la prescrizione dal payload goals.
+ * Heuristic semplice — match keyword. Default "general".
+ * NB: l'inferenza serve SOLO al layer prescription (calcolo numeri).
+ * L'LLM riceve comunque i goal originali nel userPrompt via goalsAsPrompt.
+ */
+function inferGoalType(goals: UserGoal[]): GoalTypeHint {
+  if (goals.length === 0) return "general";
+  const blob = goals.map(g => `${g.smartDescription} ${g.kpi?.metric ?? ""}`).join(" ").toLowerCase();
+  if (RUNNING_GOAL_RE.test(blob)) return "endurance";
+  if (/forza|strength|muscolar|ipertrofia|panca|squat|stacco|deadlift|massa/.test(blob)) return "strength";
+  if (/calcio|tennis|padel|basket|volley|football|soccer/.test(blob)) return "sport";
+  return "general";
+}
+
+/**
+ * Estrae la fase macro corrente dal macroContext (se popolato).
+ * Backward compat: null se l'utente non ha race "A" configurata.
+ */
+function extractMacroPhase(macroContext: { phase?: MacroPhase } | null | undefined): MacroPhase | null {
+  return macroContext?.phase ?? null;
+}
 
 // WHY: appiattisce i giorni del diario nella shape attesa dal validator per
 // lo spike check Johansen (14gg). Senza questo i call-site passavano [] e lo
@@ -356,18 +391,31 @@ export async function generateInitialPlan(
   // Wave 4.1 — multi-pass path (default). Fallback graceful: se l'orchestrator
   // fallisce (Pass-1 LLM down o JSON malformato), ricadiamo sul piano di
   // emergenza hard-coded — stessa garanzia del path legacy.
+  // ── Training Prescription layer (2026-05-13): iniettato in single-pass e
+  //    multi-pass per garantire numeri concreti vs hint vaghi.
+  const readinessInit = await getCurrentReadiness();
+  const prescriptionInit = computePrescription({
+    profile,
+    intensity: profile.intensityPreference,
+    goalType: inferGoalType(goals),
+    macroPhase: extractMacroPhase(macroLookupInit?.macroContext),
+    readinessBand: readinessInit?.band,
+  });
+  const prescriptionBlockInit = formatPrescriptionForPrompt(prescriptionInit);
+
   if (MULTI_PASS_ENABLED) {
     try {
-      const readiness = await getCurrentReadiness();
       const result = await runMultiPass({
         profile,
         goals,
         recentDays: recentDaysForZones,
         macroContext: macroLookupInit?.macroContext ?? null,
-        readiness,
+        readiness: readinessInit,
         zones: zonesCtxInit?.zones ?? null,
         mode: "initial",
         availableDays: effectiveDays,
+        prescriptionBlock: prescriptionBlockInit,
+        prescription: prescriptionInit,
       });
       return result.plan;
     } catch (e) {
@@ -377,6 +425,8 @@ export async function generateInitialPlan(
   }
 
   const userPrompt = `
+${prescriptionBlockInit}
+
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
 
@@ -436,8 +486,8 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
   // Validator deterministico post-LLM: logga violazioni safety anche se il modello
   // le ha ignorate. Non ri-generiamo automaticamente (caro in token) — segnaliamo.
   // G7 readiness: se band="low" oggi, validatePlan downgrade Z4-5→Z3 su correctedPlan.
-  const readiness = await getCurrentReadiness();
-  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZones), { readiness });
+  // 2026-05-13: readiness gia' caricato sopra come readinessInit.
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZones), { readiness: readinessInit, prescription: prescriptionInit });
   plan = validation.correctedPlan;
   if (!validation.ok) {
     console.warn("[planGenerator] Violazioni safety nel piano generato:",
@@ -569,6 +619,14 @@ non includere sessioni per essi.${minimalWindowGuard}
     const expectedDayLabelsMP: string[] | undefined = mode === "rest-of-week"
       ? [...(effectiveDaysRegenMP ?? remainingLabels)]
       : effectiveDaysRegenMP ? [...effectiveDaysRegenMP] : undefined;
+    // Prescription layer (2026-05-13): inject numeri concreti nel prompt MP.
+    const prescriptionRegenMP = computePrescription({
+      profile,
+      intensity: profile.intensityPreference,
+      goalType: inferGoalType(goals),
+      macroPhase: extractMacroPhase(macroLookupRegenMP?.macroContext),
+      readinessBand: readiness?.band,
+    });
     const result = await runMultiPass(
       {
         profile,
@@ -582,6 +640,8 @@ non includere sessioni per essi.${minimalWindowGuard}
         recentDaysText,
         availableDays: effectiveDaysRegenMP,
         remainingThisWeek: mode === "rest-of-week" ? remainingLabels : undefined,
+        prescriptionBlock: formatPrescriptionForPrompt(prescriptionRegenMP),
+        prescription: prescriptionRegenMP,
       },
       { expectedDayLabels: expectedDayLabelsMP },
     );
@@ -605,7 +665,26 @@ non includere sessioni per essi.${minimalWindowGuard}
     mode === "rest-of-week" ? remainingLabels : undefined,
   );
   const availableDaysBlockRegen = buildAvailableDaysBlock(effectiveDaysRegen, "GIORNI ALLENABILI");
+
+  // 2026-05-13 prescription layer: caricamento deps spostato sopra userPrompt
+  // per poter iniettare il blocco PRESCRIZIONE TARGET.
+  const recentDaysForZonesRegen = await getLastNDays(60).catch(() => []);
+  const zonesCtxRegen = computeZonesContext(profile, recentDaysForZonesRegen);
+  // Wave 3.3: macro context per fase corrente (se profile ha race "A" attiva).
+  const macroLookupRegen = await loadActiveMacroContext(profile).catch(() => null);
+  const readinessRegen = await getCurrentReadiness();
+  const prescriptionRegen = computePrescription({
+    profile,
+    intensity: profile.intensityPreference,
+    goalType: inferGoalType(goals),
+    macroPhase: extractMacroPhase(macroLookupRegen?.macroContext),
+    readinessBand: readinessRegen?.band,
+  });
+  const prescriptionBlockRegen = formatPrescriptionForPrompt(prescriptionRegen);
+
   const userPrompt = `
+${prescriptionBlockRegen}
+
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
 
@@ -620,11 +699,6 @@ ${recentDaysText}
 ${restOfWeekBlock}
 ${modeInstruction}
 `.trim();
-
-  const recentDaysForZonesRegen = await getLastNDays(60).catch(() => []);
-  const zonesCtxRegen = computeZonesContext(profile, recentDaysForZonesRegen);
-  // Wave 3.3: macro context per fase corrente (se profile ha race "A" attiva).
-  const macroLookupRegen = await loadActiveMacroContext(profile).catch(() => null);
   const bCtx: BuildContext = {
     profile,
     hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
@@ -685,8 +759,8 @@ ${modeInstruction}
   } else if (effectiveDaysRegen) {
     expectedDayLabels = effectiveDaysRegen;
   }
-  const readiness = await getCurrentReadiness();
-  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesRegen), { expectedDayLabels, readiness });
+  // readiness gia' caricato sopra come readinessRegen.
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesRegen), { expectedDayLabels, readiness: readinessRegen, prescription: prescriptionRegen });
   plan = validation.correctedPlan;
   if (!validation.ok) {
     console.warn("[regenerateNextWeek] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
@@ -713,31 +787,46 @@ export async function adaptPlan(
   const effectiveDaysAdapt = effectiveAvailableDays(opts?.availableDaysOverride, profile.availableDays);
   const availableDaysBlockAdapt = buildAvailableDaysBlock(effectiveDaysAdapt, "GIORNI ALLENABILI");
 
+  // 2026-05-13 prescription layer: deps caricate sopra per iniezione prompt.
+  const recentDaysForZonesAdapt = await getLastNDays(60).catch(() => []);
+  const zonesCtxAdapt = computeZonesContext(profile, recentDaysForZonesAdapt);
+  // Wave 3.3: macro context per fase corrente.
+  const macroLookupAdapt = await loadActiveMacroContext(profile).catch(() => null);
+  const readinessAdapt = await getCurrentReadiness();
+  const prescriptionAdapt = computePrescription({
+    profile,
+    intensity: profile.intensityPreference,
+    goalType: inferGoalType(goals),
+    macroPhase: extractMacroPhase(macroLookupAdapt?.macroContext),
+    readinessBand: readinessAdapt?.band,
+  });
+  const prescriptionBlockAdapt = formatPrescriptionForPrompt(prescriptionAdapt);
+
   // Wave 4.1 — multi-pass path (default). Errore propagato al caller (parita'
   // con legacy throw "Il coach non e' riuscito...").
   if (MULTI_PASS_ENABLED) {
-    const recentDaysForZonesAdaptMP = await getLastNDays(60).catch(() => []);
-    const zonesCtxAdaptMP = computeZonesContext(profile, recentDaysForZonesAdaptMP);
-    const macroLookupAdaptMP = await loadActiveMacroContext(profile).catch(() => null);
-    const readiness = await getCurrentReadiness();
     const result = await runMultiPass(
       {
         profile,
         goals,
-        recentDays: recentDaysForZonesAdaptMP,
-        macroContext: macroLookupAdaptMP?.macroContext ?? null,
-        readiness,
-        zones: zonesCtxAdaptMP?.zones ?? null,
+        recentDays: recentDaysForZonesAdapt,
+        macroContext: macroLookupAdapt?.macroContext ?? null,
+        readiness: readinessAdapt,
+        zones: zonesCtxAdapt?.zones ?? null,
         mode: "adapt",
         currentPlan,
         recentDaysText,
         availableDays: effectiveDaysAdapt,
+        prescriptionBlock: prescriptionBlockAdapt,
+        prescription: prescriptionAdapt,
       },
       { userRequest: sanitizePII(userRequest) },
     );
     return result.plan;
   }
   const userPrompt = `
+${prescriptionBlockAdapt}
+
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
 
@@ -769,11 +858,6 @@ REGOLE NON VIOLABILI:
 
 Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le sessioni). Il "rationale" DEVE menzionare esplicitamente cosa è cambiato rispetto al piano precedente e perché.
 `.trim();
-
-  const recentDaysForZonesAdapt = await getLastNDays(60).catch(() => []);
-  const zonesCtxAdapt = computeZonesContext(profile, recentDaysForZonesAdapt);
-  // Wave 3.3: macro context per fase corrente.
-  const macroLookupAdapt = await loadActiveMacroContext(profile).catch(() => null);
   const bCtx: BuildContext = {
     profile,
     hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
@@ -808,8 +892,8 @@ Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le
     weeks: coerceWeeks(parsed.weeks),
     rationale: parsed.rationale,
   };
-  const readiness = await getCurrentReadiness();
-  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesAdapt), { readiness });
+  // readiness gia' caricato sopra come readinessAdapt.
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesAdapt), { readiness: readinessAdapt, prescription: prescriptionAdapt });
   plan = validation.correctedPlan;
   if (!validation.ok) {
     console.warn("[adaptPlan] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));

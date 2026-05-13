@@ -294,20 +294,17 @@ export function profileAsPrompt(p: UserProfile | null): string {
   const availableDaysLine = p.availableDays && p.availableDays.length > 0
     ? `Giorni allenabili (vincolo HARD: prescrivi sessioni SOLO in questi giorni): ${p.availableDays.join(", ")}.`
     : "";
-  // intensityPreference: prescrittivo, non descrittivo. Pre-fix Lorenzo
-  // (2026-05-13): "very_intense" produceva sessioni 40min Z2 perché le label
-  // erano solo hint debole. Ora ogni livello specifica EXPLICIT target di
-  // durata media e distribuzione zone. Safety rules (FC age-tiered, dolore,
-  // recovery 48h) sovrascrivono comunque su violazioni hard.
+  // intensityPreference: ridotto a label semplice (2026-05-13 architect-specialist).
+  // I dettagli prescrittivi (volume, zone, forza) sono ora calcolati pre-LLM
+  // dalla pure function `computePrescription` (trainingPrescription.ts) e
+  // iniettati nel prompt dal planGenerator come blocco "PRESCRIZIONE TARGET".
+  // Mantenere qui label brevi evita duplicazione e mantiene "single source of
+  // truth" sui numeri.
   const intensityLabels: Record<NonNullable<UserProfile["intensityPreference"]>, string> = {
-    soft:
-      "soft. Target: sessioni 30-45 min, prevalentemente Z1-Z2. Volume basso, focus recovery/mantenimento. Forza solo bodyweight o leggera. NESSUNA Z4-Z5.",
-    balanced:
-      "balanced. Target: sessioni 40-60 min in media. Distribuzione: 70% Z1-Z2 + 30% Z3 con qualche Z4 settimanale. Forza 1-2x/sett a RPE 7-8.",
-    intense:
-      "intense. Target: sessioni 50-75 min in media (sfrutta gran parte della disponibilità dichiarata). Distribuzione polarizzata 60% Z1-Z2 + 40% Z3-Z5 (incl. soglia/ripetute). Forza 2-3x/sett a RPE 8. NON proporre sessioni rilassate Z2 brevi tipo 30-40 min se l'utente ha dichiarato disponibilità maggiore.",
-    very_intense:
-      "very_intense. Target: sessioni 60-90 min — SFRUTTA TUTTA O QUASI la disponibilità dichiarata (max minuti/sessione). Distribuzione polarizzata 50% Z1-Z2 + 50% Z3-Z5 (HIIT, soglia lunga, ripetute). Forza 3x/sett a RPE 8-9 con carichi pesanti. Monitora overtraining e proponi deload ogni 3-4 settimane. VIETATO proporre sessioni cardio sub-45min in Z2: se l'utente vuole molto_intenso, le sessioni devono essere ALTE in intensità E lunghe per stimolo allenante.",
+    soft: "soft",
+    balanced: "balanced",
+    intense: "intense",
+    very_intense: "very_intense",
   };
   const intensityLine = p.intensityPreference
     ? `Preferenza intensità: ${intensityLabels[p.intensityPreference]}.`

@@ -56,6 +56,7 @@ import type { Workout } from "../../diaryContext";
 import { buildPass1SkeletonPrompt, type SkeletonContext } from "./skeletonPrompt";
 import { buildStrengthPassPrompt } from "./strengthSessionPrompt";
 import { buildCardioIntervalPrompt } from "./cardioIntervalPrompt";
+import type { TrainingPrescription } from "../trainingPrescription";
 import {
   retrieveRelevantChunks,
   chunksAsPromptBlock,
@@ -200,6 +201,20 @@ export interface OrchestratorContext {
   availableDays?: ReadonlyArray<string>;
   /** Solo per mode=regen "rest-of-week": giorni rimanenti. */
   remainingThisWeek?: ReadonlyArray<string>;
+  /**
+   * 2026-05-13: prescription block (testo gia' formattato da
+   * formatPrescriptionForPrompt). Iniettato in cima al Pass-1 skeleton prompt.
+   * Numeri concreti calcolati pre-LLM dalla pure function computePrescription.
+   * Backward compat: undefined → niente blocco prescription nel prompt.
+   */
+  prescriptionBlock?: string;
+  /**
+   * 2026-05-13: struct TrainingPrescription (unformatted) iniettata nel
+   * validator Pass-3 per check adherence (volume/zone/forza). Tipicamente
+   * coincide semanticamente con prescriptionBlock — qui passata anche come
+   * struct per evitare reparsing.
+   */
+  prescription?: TrainingPrescription;
 }
 
 /** Opzioni runtime opzionali. */
@@ -412,6 +427,7 @@ async function runPass1(
     userRequest: opts.userRequest,
     remainingThisWeek: ctx.remainingThisWeek,
     recentDaysText: ctx.recentDaysText,
+    prescriptionBlock: ctx.prescriptionBlock,
   };
 
   const userPrompt = buildPass1SkeletonPrompt(skeletonCtx);
@@ -831,6 +847,7 @@ function runPass3(
   return validatePlan(plan, ctx.profile, flattened, {
     expectedDayLabels: opts.expectedDayLabels,
     readiness: ctx.readiness,
+    prescription: ctx.prescription,
   });
 }
 

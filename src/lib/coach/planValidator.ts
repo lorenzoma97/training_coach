@@ -11,6 +11,8 @@ import {
   validateEquipmentMismatch,
 } from "./validators/strengthValidators";
 import { validateReadiness } from "./validators/readinessValidator";
+import { validatePrescription } from "./validators/prescriptionValidator";
+import type { TrainingPrescription } from "./trainingPrescription";
 
 export interface PlanValidationIssue {
   weekNumber: number;
@@ -35,7 +37,17 @@ export interface PlanValidationIssue {
     // - equipment_substituted: hop > 0 nella chain alternatives (info-level,
     //   non blocca il piano — render-time mostrerà SubstitutionBadge).
     | "equipment_mismatch"
-    | "equipment_substituted";
+    | "equipment_substituted"
+    // 2026-05-13 — prescription adherence (Training Prescription layer).
+    // Warn-level: segnala drift del piano vs targets prescritti dalla pure
+    // function `computePrescription`. Mai blocca il piano (l'LLM puo' avere
+    // ragioni legittime per deviare). Tre flavor:
+    // - prescription_volume_off: volume totale fuori range ±15%.
+    // - prescription_zone_off: distribuzione zone fuori tolleranza ±10%.
+    // - prescription_strength_off: numero sessioni forza fuori tolleranza ±1.
+    | "prescription_volume_off"
+    | "prescription_zone_off"
+    | "prescription_strength_off";
   message: string;
   /**
    * Severity dell'issue. Tre livelli:
@@ -111,6 +123,10 @@ const VALIDATORS: PlanValidator[] = [
   // NON muta plan. La sostituzione effettiva avviene render-time
   // (effectiveExerciseId) o in Pass-2 prompt.
   validateEquipmentMismatch,
+  // 2026-05-13 — prescription adherence.
+  // Confronta plan vs TrainingPrescription pre-LLM (formule scientifiche).
+  // Backward compat: se options.prescription = undefined → no-op.
+  validatePrescription,
 ];
 
 export interface PlanValidationResult {
@@ -227,6 +243,12 @@ function historyMediansByType(
 export interface ValidatePlanOptions {
   expectedDayLabels?: string[];
   readiness?: ReadinessSnapshot | null;
+  /**
+   * 2026-05-13: TrainingPrescription pre-LLM iniettata via planGenerator.
+   * Se presente, `validatePrescription` confronta plan vs targets prescritti
+   * (volume, zone, forza). Backward compat: omettere → no-op.
+   */
+  prescription?: TrainingPrescription | null;
 }
 
 export function validatePlan(
