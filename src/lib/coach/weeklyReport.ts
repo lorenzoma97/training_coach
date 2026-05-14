@@ -47,7 +47,7 @@ ${planAsPrompt(ctx.plan)}
 SETTIMANA APPENA CONCLUSA (ultimi 7 giorni):
 ${ctx.recentDaysText}
 
-Produci il report settimanale. Calcola tu i volumi sommando i minuti per tipo di sessione (corsa, forza_gambe, forza_upper, sport, mobilita).
+Produci il report settimanale. Calcola tu i volumi sommando i minuti per tipo di sessione (corsa, forza_gambe, forza_upper, sport).
 Se il piano non copre una disciplina, planned_min = 0.
 `.trim();
 

@@ -33,7 +33,8 @@ TIPI DI SESSIONE DISPONIBILI NEL DIARIO (il coach deve proporre questi tipi):
 - forza_gambe (HIIT, forza esplosiva, forza massimale, circuito)
 - forza_upper (upper body, core anti-rotazione, combo)
 - sport (tennis, padel, calcio)
-- mobilita (stretching, mobilità dinamica, propriocezione, camminata, foam rolling, piscina)
+
+Il recovery attivo NON è una sessione: per giorni di scarico/riposo lascia il giorno vuoto o suggerisci semplice riposo (no sessione dedicata "mobilità" nel piano).
 
 ${resolved.extraContext || ""}`.trim();
 }
@@ -129,10 +130,10 @@ VINCOLI HARD (NON negoziabili — vedi PROFILO UTENTE per i valori):
 Altre regole:
 - Output: array "weeks" con esattamente UN elemento (weekNumber=1).
 - Rispetta il minimo giorni di riposo indicato nel blocco REGOLE DI SICUREZZA (age-tiered: può essere 2, 3, o più).
-- Se l'utente è sedentario: partire piano, introdurre solo corsa o camminata+mobilità.
+- Se l'utente è sedentario: partire piano, introdurre solo corsa o camminata.
 - Ogni sessione deve avere un "rationale" che spiega perché è lì.
 - La proprietà "day" è una stringa tra: "lun","mar","mer","gio","ven","sab","dom". Non assegnare date assolute.
-- "type" deve essere uno tra: corsa, forza_gambe, forza_upper, sport, mobilita.
+- "type" deve essere uno tra: corsa, forza_gambe, forza_upper, sport.
 
 Fornisci un "rationale" generale del piano come lista di 3-4 bullet points concisi (formato "- punto"). UNO dei bullet DEVE confermare esplicitamente i vincoli rispettati nel formato:
 "- Vincoli: max X min/sessione, Y giorni attivi, attrezzatura disponibile (Z) o nessuna, infortuni attivi: A oppure assenti."

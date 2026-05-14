@@ -156,12 +156,12 @@ const schemaHint = `
       "sessions": [
         {
           "day": "lun"|"mar"|"mer"|"gio"|"ven"|"sab"|"dom",
-          "type": "corsa"|"forza_gambe"|"forza_upper"|"sport"|"mobilita",
+          "type": "corsa"|"forza_gambe"|"forza_upper"|"sport",
           "subtype": "DEVE essere uno dei valori canonici per il tipo (lista sotto) — NON inventare nomi",
           "duration_min": number,
           "details": "descrizione breve senza numeri FC (es. 'conversazionale, passo libero'). NON scrivere range bpm — il frontend li calcola.",
           "rationale": "perché questa sessione qui",
-          "zone": 1|2|3|4|5 (OBBLIGATORIO per corsa e sport; OMETTI per forza_gambe/forza_upper/mobilita)
+          "zone": 1|2|3|4|5 (OBBLIGATORIO per corsa e sport; OMETTI per forza_gambe/forza_upper)
         }
       ]
     }
@@ -225,7 +225,6 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
   // Durate conservative per i vari tipi
   const runDur = Math.min(maxDurMin, isSenior ? 20 : isBeginner ? 25 : 35);
   const strDur = Math.min(maxDurMin, 30);
-  const mobDur = Math.min(maxDurMin, 20);
 
   // Injuries detection: scan generico per qualsiasi area lower-body (calf,
   // knee, achilles, ankle, hamstring) o back. Niente più hardcode polpaccio-
@@ -238,35 +237,15 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
   const hasLowerBodyInjury = /polpaccio|calf|ginocchio|knee|achille|achilles|caviglia|ankle|hamstring|ischiocrur|fascia plantare|plantar/i.test(injuriesBlob);
   const hasBackIssue = /schiena|lombare|back|ernia|disco/i.test(injuriesBlob);
 
-  // Template base 7 giorni: 3 corse Z2 + 1 forza + 1 mobilità + 2 riposi.
+  // Template base 7 giorni: 3 corse Z2 + 1 forza + 3 riposi.
   // I giorni non scelti restano senza sessione (= riposo).
   type DayKey = "lun" | "mar" | "mer" | "gio" | "ven" | "sab" | "dom";
 
-  // Cardio session factory: se c'è infortunio lower-body, sostituisce con
-  // mobility/camminata. Generico — nessun riferimento a area specifica.
-  const cardioSession = (day: DayKey, slot: "lun" | "gio" | "sab"): PlanWeek["sessions"][number] => {
-    if (hasLowerBodyInjury) {
-      // Mantieni 1 sessione cardio leggera (camminata) + 2 mobility per tutela.
-      // Slot lun = camminata. Slot gio/sab = mobility/foam rolling.
-      if (slot === "lun") {
-        return {
-          day,
-          type: "mobilita",
-          subtype: "Camminata",
-          duration_min: Math.min(maxDurMin, 30),
-          details: "Camminata a passo sostenuto su superficie regolare. Evita salite/discese ripide e impatti finché l'area infortunata non è asintomatica.",
-          rationale: "Aerobico a basso impatto: carico articolare minimo durante la fase di tutela infortunio.",
-        };
-      }
-      return {
-        day,
-        type: "mobilita",
-        subtype: "Foam Rolling",
-        duration_min: Math.min(maxDurMin, 20),
-        details: "Foam rolling, mobilità articolare, stretching dolce delle aree non infortunate. Evita di mobilizzare aggressivamente l'area in tutela.",
-        rationale: "Recovery + mantenimento ROM senza stress sull'area infortunata.",
-      };
-    }
+  // Cardio session factory: se c'è infortunio lower-body → null (= riposo).
+  // Il recovery attivo non è più una sessione dedicata; l'utente con infortunio
+  // accede alla libreria Warm-up dal tab Coach se vuole mobility manuale.
+  const cardioSession = (day: DayKey): PlanWeek["sessions"][number] | null => {
+    if (hasLowerBodyInjury) return null;
     return {
       day,
       type: "corsa",
@@ -279,7 +258,7 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
   };
 
   const template: Array<{ day: DayKey; session: PlanWeek["sessions"][number] | null }> = [
-    { day: "lun", session: cardioSession("lun", "lun") },
+    { day: "lun", session: cardioSession("lun") },
     {
       day: "mar",
       session: {
@@ -294,19 +273,9 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
       },
     },
     { day: "mer", session: null }, // riposo
-    { day: "gio", session: cardioSession("gio", "gio") },
-    {
-      day: "ven",
-      session: {
-        day: "ven",
-        type: "mobilita",
-        subtype: "Mobilità Dinamica",
-        duration_min: mobDur,
-        details: "Mobilità anche/caviglie + stretching dinamico gambe + core leggero. Movimenti lenti e controllati.",
-        rationale: "Recovery attivo: mantiene range di movimento e riduce il rischio infortuni.",
-      },
-    },
-    { day: "sab", session: cardioSession("sab", "sab") },
+    { day: "gio", session: cardioSession("gio") },
+    { day: "ven", session: null }, // riposo (era mobility, ora non più prescritta come categoria)
+    { day: "sab", session: cardioSession("sab") },
     { day: "dom", session: null }, // riposo
   ];
 
@@ -316,15 +285,13 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
   //   2) forza (mar)
   //   3) seconda corsa (gio)
   //   4) terza corsa (sab)
-  //   5) mobilità (ven)
   // Così con 2 giorni disponibili otteniamo 1 corsa + 1 forza (non 2 corse),
-  // con 3 → 2 corse + 1 forza, con 4+ → include anche mobilità.
+  // con 3 → 2 corse + 1 forza, con 4+ → 3 corse + 1 forza.
   const priorityByDay: Record<string, number> = {
     lun: 1,
     mar: 2,
     gio: 3,
     sab: 4,
-    ven: 5,
   };
   const activeDays = template.filter(t => t.session !== null);
   const sortedByPriority = [...activeDays].sort(
@@ -342,7 +309,7 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
   const ageNote = isSenior ? " Durate ridotte per fascia età ≥65." : "";
   const begNote = isBeginner ? " Volume e intensità conservativi (beginner cap)." : "";
   const injuryNote = hasLowerBodyInjury
-    ? " Cardio sostituito con camminata + mobility per tutela infortuni dichiarati."
+    ? " Cardio sospeso per tutela infortuni dichiarati: solo forza upper + riposo."
     : hasBackIssue
       ? " Forza pesante limitata per tutela schiena."
       : "";
@@ -364,9 +331,8 @@ function buildFallbackPlan(profile: UserProfile, goals: UserGoal[]): TrainingPla
     ],
     rationale:
       `[Piano di emergenza — LLM non disponibile] Settimana introduttiva con ` +
-      `${sessions.filter(s => s.type === "corsa").length} corse in Z2, ` +
-      `${sessions.filter(s => s.type === "forza_gambe").length} sessione forza e ` +
-      `${sessions.filter(s => s.type === "mobilita").length} mobilità.` +
+      `${sessions.filter(s => s.type === "corsa").length} corse in Z2 e ` +
+      `${sessions.filter(s => s.type === "forza_gambe").length} sessione forza.` +
       ageNote + begNote + injuryNote + goalNote +
       " Puoi rigenerare un piano personalizzato dal pannello Coach appena il servizio risponde.",
   };

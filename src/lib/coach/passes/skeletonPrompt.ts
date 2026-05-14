@@ -79,11 +79,11 @@ SCHEMA OUTPUT Pass-1 (un solo JSON, niente markdown wrapper):
       "sessions": [
         {
           "day": "lun"|"mar"|"mer"|"gio"|"ven"|"sab"|"dom",
-          "type": "corsa"|"forza_gambe"|"forza_upper"|"sport"|"mobilita",
+          "type": "corsa"|"forza_gambe"|"forza_upper"|"sport",
           "subtype": "DEVE essere uno dei valori canonici per il tipo (lista sotto)",
           "duration_min": number,
-          "focus": "string breve (3-8 parole) — focus della sessione (es. 'upper push pesante', 'long run Z2', 'VO2max 6x800m', 'mobilita anche')",
-          "zone": 1|2|3|4|5 (OBBLIGATORIO per corsa/sport; OMETTI per forza/mobilita)
+          "focus": "string breve (3-8 parole) — focus della sessione (es. 'upper push pesante', 'long run Z2', 'VO2max 6x800m')",
+          "zone": 1|2|3|4|5 (OBBLIGATORIO per corsa/sport; OMETTI per forza)
         }
       ]
     }

@@ -26,9 +26,16 @@ export function isCanonicalSubtype(type: string, subtype: string | undefined): b
   return allowed.some(a => a.toLowerCase().trim() === norm);
 }
 
-/** Formato compatto per iniettare nei prompt LLM. */
+/** Tipi NON proposti dal coach nei nuovi piani.
+ *  `mobilita` resta nel catalog per backward compat (diary user-input, validator
+ *  su workout vecchi loggati), ma il coach non lo prescrive più (recovery =
+ *  riposo, warm-up = libreria dedicata nel tab Coach). */
+const COACH_HIDDEN_TYPES = new Set(["mobilita"]);
+
+/** Formato compatto per iniettare nei prompt LLM. Esclude tipi non prescritti. */
 export function workoutSubtypesForPrompt(): string {
   return Object.entries(WORKOUT_SUBTYPES)
+    .filter(([type]) => !COACH_HIDDEN_TYPES.has(type))
     .map(([type, subs]) => `  - ${type}: ${subs.map(s => `"${s}"`).join(", ")}`)
     .join("\n");
 }
