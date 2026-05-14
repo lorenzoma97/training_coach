@@ -114,6 +114,16 @@ export default function ProfileEditor() {
     })();
   }, []);
 
+  // 2026-05-13: prescrizione corrente — live re-compute on profile change.
+  // useMemo DEVE stare prima dell'early-return `!profile` per non violare
+  // Rules of Hooks (React error #310 — fix di b1e951e era posizionato dopo).
+  const prescription = useMemo(
+    () => profile
+      ? computePrescription({ profile, intensity: profile.intensityPreference })
+      : null,
+    [profile],
+  );
+
   if (!profile) {
     return (
       <EmptyState
@@ -225,17 +235,6 @@ export default function ProfileEditor() {
   const medsPresent = (profile.meds || "").trim().length > 0;
   const areasCount = areas.length;
 
-  // 2026-05-13: prescrizione corrente — live re-compute on profile change.
-  // useMemo: la pure function e' veloce ma il deep-equal evita re-render
-  // gratuiti su update non rilevanti.
-  const prescription = useMemo(
-    () => computePrescription({
-      profile,
-      intensity: profile.intensityPreference,
-    }),
-    [profile],
-  );
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       {/* ─── Disponibilità: 1 riga compatta giorni/ore/min ────────────── */}
@@ -342,7 +341,11 @@ export default function ProfileEditor() {
       {/* 2026-05-13 architect-specialist: mostra all'utente i target numerici
           (volume/zone/forza) che il coach userà per generare il piano. Live
           re-compute on profile change (useMemo). Tutto inline-style (codebase
-          pattern: NO Tailwind). aria-live=polite per screen reader. */}
+          pattern: NO Tailwind). aria-live=polite per screen reader.
+          NOTA: prescription può essere null solo durante il primo render
+          prima del load profilo; arrivati qui (post early-return) è sempre
+          definito, ma il guard rende l'accesso type-safe. */}
+      {prescription && (
       <details style={detailsStyle}>
         <summary style={summaryStyle} aria-label="Prescrizione corrente: target di volume, zone, forza calcolati dal profilo">
           <span style={{ flex: 1 }}>Prescrizione corrente</span>
@@ -416,6 +419,7 @@ export default function ProfileEditor() {
           </details>
         </div>
       </details>
+      )}
 
       {/* ─── Attrezzatura: collapsibile ───────────────────────────────── */}
       <details style={detailsStyle}>
