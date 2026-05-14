@@ -509,7 +509,7 @@ export default function TrendsPage() {
           <div style={{ fontSize: "11px", color: "#64748B", textAlign: "center", padding: "8px 0 20px" }}>
             Trend calcolati localmente dal diario. Periodo: ultimi {period} giorni.
             <br />
-            Le tue Zone FC sono nel tab <b>Coach → Zone FC</b>.
+            Le tue Zone FC sono nel tab <b>Coach → Zone</b>.
           </div>
         </div>
       )}

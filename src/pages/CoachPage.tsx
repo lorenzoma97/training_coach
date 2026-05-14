@@ -195,15 +195,12 @@ export default function CoachPage() {
         overflowX: "auto",
         WebkitOverflowScrolling: "touch",
       }}>
-        {/* Tab bar coach: 5 tab principali (rimosso Mobility — fit mobile <400px).
-            Mobility library resta accessibile via deep-link e sezione "Recovery"
-            interna a Plan. Vedi tab "mobility" condizionale sotto per backward
-            compat con deep-link esterni (es. notifications). */}
         {([
           { id: "plan" as const, label: "Piano" },
           { id: "chat" as const, label: "Chat" },
           { id: "feed" as const, label: feedUnread > 0 ? `Feed (${feedUnread})` : "Feed" },
-          { id: "zones" as const, label: "Zone FC" },
+          { id: "mobility" as const, label: "Warm-up" },
+          { id: "zones" as const, label: "Zone" },
           { id: "goals" as const, label: "Obiettivi" },
         ]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
