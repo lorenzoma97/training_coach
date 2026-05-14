@@ -3,6 +3,10 @@ import { setJSON, getJSON } from "../lib/storage";
 import type { UserProfile, UserGoal, TrainingPlan, FeasibilityCheck, Experience } from "../lib/types";
 import { hasApiKey } from "../lib/gemini";
 import { ADAPTERS, getLLMConfig, setLLMConfig, type LLMConfig, type LLMModel, type ProviderId } from "../lib/llm";
+
+// Flag UI: vedi src/pages/SettingsPage.tsx per il pattern. Riabilitazione
+// multi-provider richiede flip in entrambi i file.
+const MULTI_PROVIDER_UI = false;
 import { checkGoalFeasibility } from "../lib/coach/feasibility";
 import { generateInitialPlan } from "../lib/coach/planGenerator";
 import { events } from "../lib/events";
@@ -675,33 +679,36 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
             <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 1 · Coach AI</div>
-            <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Scegli il tuo provider</h2>
+            <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Configura il coach AI</h2>
             <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0, lineHeight: 1.5 }}>
-              Il coach funziona con <b>Google Gemini</b> (consigliato, gratis), <b>OpenAI</b> o <b>Anthropic</b>. Puoi cambiare dopo in Impostazioni.
+              Il coach usa <b>Google Gemini</b> (gratis con tua chiave API). La chiave resta sul tuo dispositivo.
             </p>
           </div>
 
           <div style={cardStyle}>
-            <label htmlFor={fid("provider")} style={labelStyle}>Provider LLM</label>
-            <select id={fid("provider")} style={{ ...inputStyle, fontFamily: "inherit" }} value={provider} onChange={e => onProviderChange(e.target.value as ProviderId)}>
-              {(Object.keys(PROVIDER_LABELS) as ProviderId[]).map(p => (
-                <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
-              ))}
-            </select>
+            {MULTI_PROVIDER_UI ? (
+              <>
+                <label htmlFor={fid("provider")} style={labelStyle}>Provider LLM</label>
+                <select id={fid("provider")} style={{ ...inputStyle, fontFamily: "inherit" }} value={provider} onChange={e => onProviderChange(e.target.value as ProviderId)}>
+                  {(Object.keys(PROVIDER_LABELS) as ProviderId[]).map(p => (
+                    <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+                  ))}
+                </select>
+                {provider === "anthropic" && (
+                  <div role="note" style={{
+                    marginTop: "10px", padding: "10px 12px",
+                    background: "#78350F25", border: "1px solid #F59E0B66",
+                    borderRadius: "8px", fontSize: "12px", color: "#FDE68A", lineHeight: 1.5,
+                  }}>
+                    ⚠ Anthropic non fornisce embeddings nativi: la knowledge base scientifica (RAG) sarà <b>disabilitata</b> con questo provider. Per le risposte del coach, considera Gemini o OpenAI.
+                  </div>
+                )}
+              </>
+            ) : null}
 
-            <div style={{ marginTop: "12px", fontSize: "12px", color: "#94A3B8", lineHeight: 1.5 }}>
+            <div style={{ marginTop: MULTI_PROVIDER_UI ? "12px" : "0", fontSize: "12px", color: "#94A3B8", lineHeight: 1.5 }}>
               Ottieni la chiave gratis su <a href={PROVIDER_HELP[provider].url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{PROVIDER_HELP[provider].label}</a>
             </div>
-
-            {provider === "anthropic" && (
-              <div role="note" style={{
-                marginTop: "10px", padding: "10px 12px",
-                background: "#78350F25", border: "1px solid #F59E0B66",
-                borderRadius: "8px", fontSize: "12px", color: "#FDE68A", lineHeight: 1.5,
-              }}>
-                ⚠ Anthropic non fornisce embeddings nativi: la knowledge base scientifica (RAG) sarà <b>disabilitata</b> con questo provider. Per le risposte del coach, considera Gemini o OpenAI.
-              </div>
-            )}
 
             <div style={{ marginTop: "12px" }}>
               <label htmlFor={fid("apiKey")} style={labelStyle}>

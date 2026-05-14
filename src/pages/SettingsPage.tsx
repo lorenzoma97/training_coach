@@ -22,6 +22,12 @@ import {
   DEFAULT_IMPORT_WINDOW_DAYS as SAMSUNG_DEFAULT_WINDOW,
 } from "../lib/integrations/samsungHealth";
 
+// Flag UI: nasconde il selettore provider e mostra solo Gemini.
+// L'infrastruttura multi-provider (ADAPTERS, ProviderId, openai/anthropic/ollama
+// adapter) resta nel codebase per riabilitazione futura. Per riattivare:
+// metti `MULTI_PROVIDER_UI = true` e rimuovi il banner "Provider: Gemini".
+const MULTI_PROVIDER_UI = false;
+
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   gemini: "Google Gemini (consigliato)",
   openai: "OpenAI",
@@ -541,12 +547,26 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       <div style={cardStyle}>
         <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "12px" }}>Provider LLM</div>
 
-        <label style={labelStyle}>Provider</label>
-        <select style={selectStyle} value={provider} onChange={e => onProviderChange(e.target.value as ProviderId)}>
-          {(Object.keys(PROVIDER_LABELS) as ProviderId[]).map(p => (
-            <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
-          ))}
-        </select>
+        {MULTI_PROVIDER_UI ? (
+          <>
+            <label style={labelStyle}>Provider</label>
+            <select style={selectStyle} value={provider} onChange={e => onProviderChange(e.target.value as ProviderId)}>
+              {(Object.keys(PROVIDER_LABELS) as ProviderId[]).map(p => (
+                <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+              ))}
+            </select>
+          </>
+        ) : (
+          <div style={{
+            padding: "10px 12px",
+            background: "#1A1A2E",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: "10px",
+            fontSize: "12px", color: "#94A3B8",
+          }}>
+            Provider: <b style={{ color: "#E2E8F0" }}>Google Gemini</b>
+          </div>
+        )}
 
         {provider === "ollama" && (
           <div style={{
