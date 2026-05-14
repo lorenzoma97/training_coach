@@ -311,7 +311,7 @@ describe("formatPrescriptionForPrompt", () => {
     const text = formatPrescriptionForPrompt(p);
     expect(text).toContain("PRESCRIZIONE TARGET");
     expect(text).toContain("Volume settimanale: 450 min");
-    expect(text).toContain("Distribuzione zone: 70% Z1-Z2");
+    expect(text).toContain("Distribuzione zone: 75% Z1-Z2");
     expect(text).toContain("Forza: 3 sess/sett");
     expect(text).toContain("REGOLE D'USO");
   });
