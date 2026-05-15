@@ -140,6 +140,12 @@ INTERPRETAZIONE READINESS (campo "READINESS OGGI" nel userPrompt):
 - moderate → normale, segui prescrizione standard.
 - high (recovery completo, sonno buono, RPE recente basso) → puoi proporre l'intensità target piena, includere il giorno hard se previsto.
 
+PATTERN MATCH-DAY (game-sport: calcio/padel/tennis con subtype "Partita"/"Match"):
+Se prescrivi una sessione "sport" con subtype "Calcio (Partita)" o subtype contenente "Partita"/"Match":
+- MD-1 (giorno PRIMA del match): NIENTE corsa Z4-Z5, NIENTE forza_gambe pesante. Solo skill (sport allenamento), corsa Z2 leggera, forza_upper, o riposo. Razionale: CNS fresco per la gara.
+- MD (giorno match): la sessione gara stessa.
+- MD+1 (giorno DOPO il match): riposo o solo Z1-Z2 mobility leggera. NIENTE cardio intenso, NIENTE forza gambe. Razionale: recovery muscolare 48-72h post-match (Krustrup 2006 per calcio).
+
 ESEMPIO DI BUONA STRUTTURA SETTIMANA (riferimento, NON copiare letteralmente):
   Profilo: 4 giorni/sett, max 75min/sess, intensity intense, runner regular, goal 10K in 50min, readiness moderate.
   Output ideale (struttura — popola comunque tutti i campi richiesti dallo schema):

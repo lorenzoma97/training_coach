@@ -12,6 +12,7 @@ import {
 } from "./validators/strengthValidators";
 import { validateReadiness } from "./validators/readinessValidator";
 import { validatePrescription } from "./validators/prescriptionValidator";
+import { validateMatchDayPattern } from "./validators/matchDayValidator";
 import type { TrainingPrescription } from "./trainingPrescription";
 
 export interface PlanValidationIssue {
@@ -47,7 +48,11 @@ export interface PlanValidationIssue {
     // - prescription_strength_off: numero sessioni forza fuori tolleranza ±1.
     | "prescription_volume_off"
     | "prescription_zone_off"
-    | "prescription_strength_off";
+    | "prescription_strength_off"
+    // Wave A1 audit 2 — match-day pattern multi-sport (MD-1/MD/MD+1).
+    // Warn-level: alta intensità o forza gambe il giorno prima/dopo un match
+    // (sport con subtype "Partita"/"Match"). Coach pro game-sport.
+    | "match_day_conflict";
   message: string;
   /**
    * Severity dell'issue. Tre livelli:
@@ -127,6 +132,10 @@ const VALIDATORS: PlanValidator[] = [
   // Confronta plan vs TrainingPrescription pre-LLM (formule scientifiche).
   // Backward compat: se options.prescription = undefined → no-op.
   validatePrescription,
+  // Wave A1 audit 2 — match-day pattern multi-sport (MD-1/MD/MD+1).
+  // Detecta cardio Z4-5 / forza gambe il giorno prima/dopo un match
+  // (sport con subtype "Partita"/"Match"). Coach pro game-sport.
+  validateMatchDayPattern,
 ];
 
 export interface PlanValidationResult {
