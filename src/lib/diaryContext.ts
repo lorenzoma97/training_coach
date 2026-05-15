@@ -408,6 +408,56 @@ export function goalsAsPrompt(goals: UserGoal[]): string {
 }
 
 /**
+ * Sport-specific S&C auto-prescriber (Wave B2 audit 2).
+ *
+ * Coach pro game-sport prescrive routine OBBLIGATORIE in base allo sport
+ * praticato (evidence-based injury prevention):
+ *  - Calcio → FIFA 11+ 2-3x/sett (Soligard 2008 BMJ: -35% infortuni RCT su
+ *    1892 calciatrici 13-17y, validato anche maschi adulti Silvers-Granelli
+ *    2017 JSCR).
+ *  - Calcio con ≥2 sessioni/sett → Nordic hamstring eccentrico 1x/sett
+ *    (Al Attar 2017 Sports Med meta-analysis: -51% strain ischiocrurale).
+ *  - Tennis/Padel ≥1x/sett → rotatori cuffia + core anti-rotazione 1x/sett
+ *    (Kovacs 2007 J Strength Cond Res).
+ *
+ * Helper analizza recentDays per individuare sport praticati frequentemente
+ * negli ultimi 21gg e restituisce blocco prompt con raccomandazioni
+ * hardcoded. Stringa vuota se nessuno sport ricorrente.
+ */
+export function sportSpecificPrescriptions(
+  recentDays: Array<{ date: string; daily: unknown; workouts: unknown[] }>,
+): string {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cutoff21 = today.getTime() - 21 * 86400000;
+  type Workout = { type?: string; fields?: { tipo?: string; sport?: string } };
+  let calcioCount = 0;
+  let tennisPadelCount = 0;
+  for (const d of recentDays) {
+    const dt = new Date(d.date).getTime();
+    if (Number.isNaN(dt) || dt < cutoff21) continue;
+    for (const w of d.workouts || []) {
+      const ww = w as Workout;
+      if (ww.type !== "sport") continue;
+      const sub = ((ww.fields?.tipo || ww.fields?.sport) || "").toLowerCase();
+      if (sub.includes("calcio") || sub.includes("football") || sub.includes("soccer")) calcioCount++;
+      else if (sub.includes("tennis") || sub.includes("padel") || sub.includes("paddle")) tennisPadelCount++;
+    }
+  }
+  const lines: string[] = [];
+  if (calcioCount >= 1) {
+    lines.push(`- CALCIO rilevato (${calcioCount} sessioni 21gg) → prescrivere FIFA 11+ 2-3x/sett come warm-up obbligatorio prima di sessioni cardio/sport (Soligard 2008 BMJ: -35% infortuni). Iniettare come "subtype" in sessione sport allenamento o nel rationale dell'esercizio mobility.`);
+    if (calcioCount >= 2) {
+      lines.push(`- CALCIO ≥2/sett → aggiungere Nordic Hamstring 1x/sett 3×5 reps eccentriche in sessione forza_gambe (Al Attar 2017: -51% strain ischiocrurale).`);
+    }
+  }
+  if (tennisPadelCount >= 1) {
+    lines.push(`- TENNIS/PADEL rilevati (${tennisPadelCount} sessioni 21gg) → in sessione forza_upper includi 1× rotatori cuffia (band external rotation 3×12 lato) + core anti-rotazione (Pallof press 3×10 lato). Kovacs 2007.`);
+  }
+  if (lines.length === 0) return "";
+  return `PROTOCOLLI SPORT-SPECIFICI OBBLIGATORI (evidence-based injury prevention, regole hardcoded):\n${lines.join("\n")}`;
+}
+
+/**
  * Goal convergence tracking (Wave 2.2 audit): calcola lo STATO ATTUALE di
  * ogni goal rispetto al diario recente, così il modello capisce se l'utente
  * è on-track e può prescrivere accelerazione/scarico/correzione.
