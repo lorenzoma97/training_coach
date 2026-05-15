@@ -82,6 +82,15 @@ export interface UserProfile {
   fcMaxTested?: number;
   /** ISO date del test FCmax (per scadenza/refresh dopo 6+ mesi). */
   fcMaxTestedAt?: string;
+  /**
+   * Lactate Threshold HR (LTHR) — bpm a cui inizia accumulo lattato. Gold
+   * standard per zone running (Friel). Test field consigliato: 30-min time
+   * trial all-out solo, FC media degli ultimi 20 min ≈ LTHR (Friel approx).
+   * Se presente, zone Z3-Z5 derivate da %LTHR (più precise di %FCmax).
+   */
+  ltThreshold_bpm?: number;
+  /** ISO date del test LT (per refresh ogni 6-12 mesi). */
+  ltThresholdTestedAt?: string;
   // ──────────────────────────────────────────────────────────────────────────
   // Estensioni v2 "Personal Trainer Pro" — tutti opzionali (no breaking).
   // Vedi ARCHITECTURE.md §2.2.

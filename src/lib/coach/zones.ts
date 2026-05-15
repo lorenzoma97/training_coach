@@ -12,7 +12,18 @@
 import type { UserProfile } from "../types";
 
 export type ZoneIndex = 1 | 2 | 3 | 4 | 5;
-export type ZoneMethod = "tanaka" | "karvonen" | "tested";
+export type ZoneMethod = "tanaka" | "karvonen" | "tested" | "lthr";
+
+// Friel running zones LTHR-based (Friel "Triathlete's Training Bible" + "Total
+// Heart Rate Training"). Più precise di %FCmax per Z3-Z5 in atleti con LTHR
+// testato (atleti experienced/competitive).
+const LTHR_BOUNDS_PCT: Array<{ lo: number; hi: number }> = [
+  { lo: 0.65, hi: 0.85 }, // Z1 Recovery
+  { lo: 0.85, hi: 0.89 }, // Z2 Aerobic Endurance
+  { lo: 0.90, hi: 0.94 }, // Z3 Tempo
+  { lo: 0.95, hi: 0.99 }, // Z4 LT (sotto-soglia)
+  { lo: 1.00, hi: 1.06 }, // Z5 VO2max (sopra-soglia)
+];
 
 export interface Zone {
   index: ZoneIndex;
@@ -200,12 +211,21 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
     ? easyPacesSec[Math.floor(easyPacesSec.length / 2)]
     : undefined;
 
+  // LTHR (Friel) — gold standard per Z3-Z5 in atleti con test LT field-based.
+  // Se presente, sovrascrive le percentuali %FCmax/HRR per ottenere zone più
+  // precise in zone alta (tempo/threshold/VO2max).
+  const ltThr = typeof profile.ltThreshold_bpm === "number" && profile.ltThreshold_bpm >= 100 && profile.ltThreshold_bpm <= 220
+    ? profile.ltThreshold_bpm
+    : undefined;
+
   // Decide metodo principale (in ordine di affidabilità):
-  // - "tested": FCmax da test sul campo (gold standard)
+  // - "lthr": LTHR field test (Friel) — gold per Z3-Z5
+  // - "tested": FCmax da test sul campo
   // - "karvonen": HRR con FC riposo + FCmax Tanaka
   // - "tanaka": solo % FCmax Tanaka (fallback)
   let method: ZoneMethod;
-  if (fcMaxFromTest) method = "tested";
+  if (ltThr) method = "lthr";
+  else if (fcMaxFromTest) method = "tested";
   else if (fcRestLatest != null && fcRestLatest >= 35 && fcRestLatest <= 100) method = "karvonen";
   else method = "tanaka";
 
@@ -217,16 +237,23 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
   // fondi lenti troppo veloci NON è evidenza di FCmax più alta, ma di allenamento
   // fuori zona. Gonfiare la FCmax sarebbe un fit matematico, non scientifico.
   const zones: Zone[] = ZONE_META.map((meta, i) => {
-    const { lo, hi } = ZONE_BOUNDS_PCT[i];
     let hrLow: number, hrHigh: number;
 
-    if (useKarvonen && fcRestLatest) {
-      const band = karvonenBand(fcMax, fcRestLatest, lo, hi);
-      hrLow = band.low;
-      hrHigh = band.high;
+    if (ltThr) {
+      // LTHR-based (Friel) — gold per Z3-Z5
+      const { lo, hi } = LTHR_BOUNDS_PCT[i];
+      hrLow = Math.round(lo * ltThr);
+      hrHigh = Math.round(hi * ltThr);
     } else {
-      hrLow = Math.round(lo * fcMax);
-      hrHigh = Math.round(hi * fcMax);
+      const { lo, hi } = ZONE_BOUNDS_PCT[i];
+      if (useKarvonen && fcRestLatest) {
+        const band = karvonenBand(fcMax, fcRestLatest, lo, hi);
+        hrLow = band.low;
+        hrHigh = band.high;
+      } else {
+        hrLow = Math.round(lo * fcMax);
+        hrHigh = Math.round(hi * fcMax);
+      }
     }
 
     return {
@@ -264,7 +291,9 @@ export function computeZones(input: ComputeZonesInput): ZonesResult {
 
   // Spiegazione user-facing del metodo
   let methodExplanation: string;
-  if (method === "tested") {
+  if (method === "lthr") {
+    methodExplanation = `Zone calcolate da LTHR field test (${ltThr} bpm${profile.ltThresholdTestedAt ? `, test del ${profile.ltThresholdTestedAt}` : ""}) con percentuali Friel (Z3=90-94%, Z4=95-99%, Z5=100-106%). Gold standard per sotto-soglia/threshold/VO2max. Ripeti test ogni 6-12 mesi o dopo cambi significativi di forma. Test Friel: 30-min time trial all-out solo, FC media degli ultimi 20 min ≈ LTHR.`;
+  } else if (method === "tested") {
     methodExplanation = `Zone calcolate dalla tua FCmax testata sul campo (${fcMax} bpm${profile.fcMaxTestedAt ? `, test del ${profile.fcMaxTestedAt}` : ""})${useKarvonen ? ` + Karvonen con FC riposo ${fcRestLatest} bpm` : ""}. Metodo più affidabile: nessuna formula, solo il tuo dato reale. Ripeti il test ogni 6 mesi o dopo cambi significativi di forma.`;
   } else if (method === "karvonen") {
     methodExplanation = `Metodo Karvonen con FC a riposo mattutina (${fcRestLatest} bpm) + FCmax Tanaka (${fcMaxTanaka} bpm, errore individuale ±10-15 bpm — Tanaka 2001). Per precisione massima, fai il test FCmax sul campo e inseriscilo nel profilo.`;
