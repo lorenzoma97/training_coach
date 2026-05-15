@@ -660,6 +660,243 @@ export function goalProgressContext(
   return `STATO GOAL (per pianificare sapendo dove sei vs. dove vuoi arrivare):\n${lines.join("\n")}`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Helpers esportati (Wave audit 2 — UI Goal Progress, opzione A).
+// Estraggono parsing pace + classificazione goal per riusare logica tra
+// goalProgressContext (prompt) e GoalProgressCard (UI).
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Parse stringa pace "5:25" → 325 sec/km. Null se non parsabile. */
+export function parsePaceSec(s: number | string | undefined): number | null {
+  if (s == null) return null;
+  if (typeof s === "number") return s > 0 ? s : null;
+  const m = String(s).match(/^(\d+):(\d{1,2})$/);
+  if (!m) return null;
+  const sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  return sec > 0 ? sec : null;
+}
+
+/** Format secondi → "5:25" pace. */
+export function formatPaceSec(sec: number): string {
+  return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`;
+}
+
+export type GoalKind = "corsa" | "forza" | "peso" | "frequenza" | "generic";
+
+/** Classificazione goal kind via keyword match su metric + smartDescription. */
+export function inferGoalKind(g: UserGoal): GoalKind {
+  const text = (g.kpi.metric + " " + g.smartDescription).toLowerCase();
+  if (/passo|tempo|km|10k|5k|maratona|mezza|corsa|run|trail/.test(text)) return "corsa";
+  if (/1rm|panca|squat|stacco|forza|carico|kg.*lift|massa|ipertrof/.test(text)) return "forza";
+  if (/peso|kg.*corp|dimagri|body.*fat|grasso|composiz/.test(text)) return "peso";
+  if (/sessioni|frequenz|allenamenti.*sett|consist/.test(text)) return "frequenza";
+  return "generic";
+}
+
+export type GoalSignal = "ahead" | "aligned" | "behind" | "very_behind" | "unknown";
+
+export interface GoalProgressData {
+  goalId: string;
+  kind: GoalKind;
+  /** Valore corrente (media o ultimo) — formato dipende da kind. */
+  currentValue: number | null;
+  /** Valore target parsato dal kpi.target. */
+  targetValue: number | null;
+  /** Unità label per UI ("min/km" pace, "kg" peso/forza, "sess/sett" freq). */
+  unit: string;
+  /** Sparkline 8 punti settimanali (week 0 = più vecchia, week 7 = corrente). */
+  sparklinePoints: Array<{ date: string; value: number | null }>;
+  /** Segnale qualitativo (per badge UI). */
+  signal: GoalSignal;
+  /** Delta corrente vs target con segno (negativo = sotto target per pace, sopra per peso). */
+  deltaToTarget: number | null;
+  /** Giorni alla deadline (negativo = scaduta). Null se deadline non parsabile. */
+  daysToDeadline: number | null;
+  /** Settimane alla deadline (ceil). */
+  weeksToDeadline: number | null;
+  /** Per pace running: invertY=true (valore minore = migliore per il grafico). */
+  invertY: boolean;
+}
+
+/** Calcola progress per un goal usando recentDays (60gg consigliati). */
+export function computeGoalProgress(
+  g: UserGoal,
+  recentDays: Array<{ date: string; daily: unknown; workouts: unknown[] }>,
+): GoalProgressData {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const kind = inferGoalKind(g);
+
+  // Parse deadline
+  let daysToDeadline: number | null = null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(g.kpi.deadline)) {
+    const dlDate = new Date(`${g.kpi.deadline}T00:00:00`).getTime();
+    if (!Number.isNaN(dlDate)) daysToDeadline = Math.floor((dlDate - today.getTime()) / 86400000);
+  }
+  const weeksToDeadline = daysToDeadline != null ? Math.ceil(daysToDeadline / 7) : null;
+
+  type Wk = { type?: string; fields?: { passo_medio?: number | string; carico?: number | string; durata_totale?: number | string } };
+  type Daily = { peso?: number | string; weight?: number | string };
+
+  // Costruisci 8 settimane (oggi indietro): week 7 = ultima settimana finita, week 0 = 8 settimane fa
+  const weekStartTimes: number[] = [];
+  for (let i = 7; i >= 0; i--) {
+    const ws = today.getTime() - (i + 1) * 7 * 86400000;
+    weekStartTimes.push(ws);
+  }
+  const weekEndTimes = weekStartTimes.map(s => s + 7 * 86400000);
+
+  const sparklinePoints: Array<{ date: string; value: number | null }> = weekStartTimes.map(ws => ({
+    date: new Date(ws).toISOString().slice(0, 10),
+    value: null,
+  }));
+
+  // Helper per assegnare valore alla settimana giusta
+  const assignWeek = (dateISO: string, fn: (i: number) => void) => {
+    const t = new Date(`${dateISO}T00:00:00`).getTime();
+    if (Number.isNaN(t)) return;
+    for (let i = 0; i < weekStartTimes.length; i++) {
+      if (t >= weekStartTimes[i] && t < weekEndTimes[i]) { fn(i); return; }
+    }
+  };
+
+  // Aggregatori per kind
+  let currentValue: number | null = null;
+  let targetValue: number | null = null;
+  let unit = "";
+  let invertY = false;
+  let signal: GoalSignal = "unknown";
+  let deltaToTarget: number | null = null;
+
+  if (kind === "corsa") {
+    unit = "min/km";
+    invertY = true; // pace più basso = migliore
+    targetValue = parsePaceSec(g.kpi.target);
+    // Per ogni settimana: media pace delle corse di quella settimana
+    const weeklyPaces: number[][] = weekStartTimes.map(() => []);
+    for (const d of recentDays) {
+      assignWeek(d.date, i => {
+        for (const w of d.workouts || []) {
+          const ww = w as Wk;
+          if (ww.type !== "corsa") continue;
+          const p = parsePaceSec(ww.fields?.passo_medio);
+          if (p != null) weeklyPaces[i].push(p);
+        }
+      });
+    }
+    weeklyPaces.forEach((arr, i) => {
+      if (arr.length > 0) sparklinePoints[i].value = arr.reduce((a, b) => a + b, 0) / arr.length;
+    });
+    // currentValue = media ultime 2 settimane (ultime 14gg approx)
+    const lastTwo = sparklinePoints.slice(-2).map(p => p.value).filter((v): v is number => v != null);
+    currentValue = lastTwo.length > 0 ? lastTwo.reduce((a, b) => a + b, 0) / lastTwo.length : null;
+    if (currentValue != null && targetValue != null) {
+      deltaToTarget = currentValue - targetValue; // pace: positivo = sei più lento del target
+      if (deltaToTarget < -10) signal = "ahead";
+      else if (deltaToTarget < 10) signal = "aligned";
+      else if (deltaToTarget < 30) signal = "behind";
+      else signal = "very_behind";
+    }
+  } else if (kind === "forza") {
+    unit = "kg";
+    invertY = false; // più alto = migliore
+    const numMatch = String(g.kpi.target).match(/(\d+(?:\.\d+)?)/);
+    targetValue = numMatch ? parseFloat(numMatch[1]) : null;
+    // Per ogni settimana: max carico forza
+    const weeklyMaxLoad: number[] = weekStartTimes.map(() => 0);
+    for (const d of recentDays) {
+      assignWeek(d.date, i => {
+        for (const w of d.workouts || []) {
+          const ww = w as Wk;
+          if (!ww.type?.startsWith("forza")) continue;
+          const c = Number(ww.fields?.carico);
+          if (Number.isFinite(c) && c > weeklyMaxLoad[i]) weeklyMaxLoad[i] = c;
+        }
+      });
+    }
+    weeklyMaxLoad.forEach((v, i) => { if (v > 0) sparklinePoints[i].value = v; });
+    // currentValue = max carico ultime 4 settimane
+    const lastFour = sparklinePoints.slice(-4).map(p => p.value).filter((v): v is number => v != null);
+    currentValue = lastFour.length > 0 ? Math.max(...lastFour) : null;
+    if (currentValue != null && targetValue != null && targetValue > 0) {
+      const ratio = currentValue / targetValue;
+      deltaToTarget = currentValue - targetValue;
+      if (ratio >= 1.0) signal = "ahead";
+      else if (ratio >= 0.93) signal = "aligned";
+      else if (ratio >= 0.85) signal = "behind";
+      else signal = "very_behind";
+    }
+  } else if (kind === "peso") {
+    unit = "kg";
+    invertY = false; // dipende dal goal (dimagrimento → minore=meglio); semplificazione: sempre normale
+    const numMatch = String(g.kpi.target).match(/(\d+(?:\.\d+)?)/);
+    targetValue = numMatch ? parseFloat(numMatch[1]) : null;
+    // Per settimana: ultimo peso registrato in daily
+    const weeklyWeight: Array<number | null> = weekStartTimes.map(() => null);
+    for (const d of recentDays) {
+      assignWeek(d.date, i => {
+        const daily = d.daily as Daily | null;
+        if (!daily) return;
+        const w = Number(daily.peso ?? daily.weight);
+        if (Number.isFinite(w) && w > 0) weeklyWeight[i] = w; // sovrascrive: tieni l'ultimo della settimana
+      });
+    }
+    weeklyWeight.forEach((v, i) => { sparklinePoints[i].value = v; });
+    const lastVal = [...sparklinePoints].reverse().find(p => p.value != null)?.value ?? null;
+    currentValue = lastVal;
+    if (currentValue != null && targetValue != null) {
+      deltaToTarget = currentValue - targetValue;
+      const absDelta = Math.abs(deltaToTarget);
+      if (absDelta < 0.5) signal = "ahead";
+      else if (absDelta < 2) signal = "aligned";
+      else if (absDelta < 5) signal = "behind";
+      else signal = "very_behind";
+    }
+  } else if (kind === "frequenza") {
+    unit = "sess/sett";
+    invertY = false;
+    const numMatch = String(g.kpi.target).match(/(\d+(?:\.\d+)?)/);
+    targetValue = numMatch ? parseFloat(numMatch[1]) : null;
+    const weeklyCount: number[] = weekStartTimes.map(() => 0);
+    for (const d of recentDays) {
+      assignWeek(d.date, i => { weeklyCount[i] += (d.workouts || []).length; });
+    }
+    weeklyCount.forEach((c, i) => { sparklinePoints[i].value = c; });
+    // currentValue = media ultime 4 settimane
+    const lastFour = weeklyCount.slice(-4);
+    currentValue = lastFour.reduce((a, b) => a + b, 0) / lastFour.length;
+    if (currentValue != null && targetValue != null && targetValue > 0) {
+      const ratio = currentValue / targetValue;
+      deltaToTarget = currentValue - targetValue;
+      if (ratio >= 1.0) signal = "ahead";
+      else if (ratio >= 0.85) signal = "aligned";
+      else if (ratio >= 0.6) signal = "behind";
+      else signal = "very_behind";
+    }
+  } else {
+    // generic: workout count come proxy
+    unit = "sess";
+    const weeklyCount: number[] = weekStartTimes.map(() => 0);
+    for (const d of recentDays) {
+      assignWeek(d.date, i => { weeklyCount[i] += (d.workouts || []).length; });
+    }
+    weeklyCount.forEach((c, i) => { sparklinePoints[i].value = c; });
+  }
+
+  return {
+    goalId: g.id,
+    kind,
+    currentValue,
+    targetValue,
+    unit,
+    sparklinePoints,
+    signal,
+    deltaToTarget,
+    daysToDeadline,
+    weeksToDeadline,
+    invertY,
+  };
+}
+
 export function planAsPrompt(plan: TrainingPlan | null): string {
   if (!plan) return "(nessun piano attivo)";
   const header = `Piano generato ${plan.generatedAt}, valido fino a ${plan.validUntil}. Razionale: ${plan.rationale}`;

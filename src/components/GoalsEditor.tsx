@@ -11,7 +11,8 @@ import type { UserProfile, UserGoal, TrainingPlan, FeasibilityCheck, GoalPriorit
 import { checkGoalFeasibility } from "../lib/coach/feasibility";
 import { regenerateNextWeek, generateInitialPlan } from "../lib/coach/planGenerator";
 import { savePlanWithHistory } from "../lib/coach/planHistory";
-import { buildCoachContext } from "../lib/diaryContext";
+import { buildCoachContext, getLastNDays, computeGoalProgress } from "../lib/diaryContext";
+import GoalProgressCard from "./GoalProgressCard";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { hasApiKey } from "../lib/gemini";
 import { events } from "../lib/events";
@@ -67,16 +68,27 @@ export default function GoalsEditor() {
   const [regenMsg, setRegenMsg] = useState<string | null>(null);
   const [goalsChanged, setGoalsChanged] = useState(false);
 
+  // Wave audit 2 — Goal Progress UI: serve recentDays per computeGoalProgress.
+  const [recentDays, setRecentDays] = useState<Awaited<ReturnType<typeof getLastNDays>>>([]);
+
   const load = async () => {
-    const [p, g] = await Promise.all([
+    const [p, g, rd] = await Promise.all([
       getJSON<UserProfile | null>("user-profile", null),
       getJSON<UserGoal[]>("user-goals", []),
+      getLastNDays(60).catch(() => []),
     ]);
     setProfile(p);
     setGoals(g);
+    setRecentDays(rd);
   };
 
   useEffect(() => { load(); }, []);
+
+  // Reload recentDays su update piano/diario (mantiene progress aggiornato).
+  useEffect(() => {
+    const offPlan = events.on("plan:updated", () => { void load(); });
+    return () => { offPlan(); };
+  }, []);
 
   const handleRegenPlan = async () => {
     if (regenerating || !profile) return;
@@ -342,6 +354,12 @@ export default function GoalsEditor() {
                   <button onClick={() => startEdit(g)} style={{ ...ghostBtn, padding: "10px 14px", minHeight: "40px", fontSize: "12px" }}>Modifica</button>
                   <button onClick={() => removeGoal(g.id)} style={{ ...ghostBtn, padding: "10px 14px", minHeight: "40px", fontSize: "12px", borderColor: "#EF444444", color: "#EF4444" }}>Rimuovi</button>
                 </div>
+                {/* Wave audit 2 — Progress Card: solo per goal active.
+                    Mostra KPI corrente vs target, sparkline 8 sett, segnale, ETA.
+                    Logica in computeGoalProgress (diaryContext.ts). */}
+                {g.status === "active" && (
+                  <GoalProgressCard goal={g} progress={computeGoalProgress(g, recentDays)} />
+                )}
                 {/* Avanzato: cambio priorità, riordino, stato. Collapsed di default. */}
                 <details style={{ marginTop: "6px" }}>
                   <summary
