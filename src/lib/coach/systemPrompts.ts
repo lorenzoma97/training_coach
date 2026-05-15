@@ -135,6 +135,20 @@ Altre regole:
 - La proprietà "day" è una stringa tra: "lun","mar","mer","gio","ven","sab","dom". Non assegnare date assolute.
 - "type" deve essere uno tra: corsa, forza_gambe, forza_upper, sport.
 
+INTERPRETAZIONE READINESS (campo "READINESS OGGI" nel userPrompt):
+- low (sonno scarso, fatigue alta, dolore in crescita) → preferisci Z1-Z2, NIENTE Z4-Z5, riduci volume del 10-20% rispetto al target prescritto, includi 1 giorno in più di riposo.
+- moderate → normale, segui prescrizione standard.
+- high (recovery completo, sonno buono, RPE recente basso) → puoi proporre l'intensità target piena, includere il giorno hard se previsto.
+
+ESEMPIO DI BUONA STRUTTURA SETTIMANA (riferimento, NON copiare letteralmente):
+  Profilo: 4 giorni/sett, max 75min/sess, intensity intense, runner regular, goal 10K in 50min, readiness moderate.
+  Output ideale (struttura — popola comunque tutti i campi richiesti dallo schema):
+    - lun: forza_gambe (Circuito Misto), 45min — supporto forza per running
+    - mer: corsa (Fartlek), 60min Z3-Z4 — stress threshold
+    - gio: forza_upper (Upper + Core Combo), 30min — bilanciamento, NO impatto gambe
+    - sab: corsa (Fondo Lento), 75min Z2 — long aerobico settimanale
+  Note: 3/4 sessioni running-related (goal endurance); 48h+ tra cardio intensi e tra forza gambe e long run.
+
 Fornisci un "rationale" generale del piano come lista di 3-4 bullet points concisi (formato "- punto"). UNO dei bullet DEVE confermare esplicitamente i vincoli rispettati nel formato:
 "- Vincoli: max X min/sessione, Y giorni attivi, attrezzatura disponibile (Z) o nessuna, infortuni attivi: A oppure assenti."
 Gli altri bullet spiegano scelte (intensità, varietà, progressione, adattamenti goal-driven).

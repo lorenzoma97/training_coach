@@ -426,8 +426,11 @@ export async function generateInitialPlan(
     }
   }
 
+  const readinessLineInit = readinessInit?.band ? `READINESS OGGI: ${readinessInit.band}.` : "";
   const userPrompt = `
 ${prescriptionBlockInit}
+
+${readinessLineInit}
 
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
@@ -692,8 +695,11 @@ non includere sessioni per essi.${minimalWindowGuard}
   });
   const prescriptionBlockRegen = formatPrescriptionForPrompt(prescriptionRegen);
 
+  const readinessLineRegen = readinessRegen?.band ? `READINESS OGGI: ${readinessRegen.band}.` : "";
   const userPrompt = `
 ${prescriptionBlockRegen}
+
+${readinessLineRegen}
 
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
@@ -839,8 +845,11 @@ export async function adaptPlan(
     );
     return result.plan;
   }
+  const readinessLineAdapt = readinessAdapt?.band ? `READINESS OGGI: ${readinessAdapt.band}.` : "";
   const userPrompt = `
 ${prescriptionBlockAdapt}
+
+${readinessLineAdapt}
 
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
