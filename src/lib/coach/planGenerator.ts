@@ -2,6 +2,7 @@ import { z } from "zod";
 import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, planAsPrompt, getLastNDays, goalProgressContext } from "../diaryContext";
+import { aggregateDailyLoad, computeTrainingLoad, formatTrainingLoadForPrompt } from "./trainingLoad";
 import type { UserProfile, UserGoal, TrainingPlan, PlanWeek } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 import { validatePlan, planStateHash, computePlanStartDate } from "./planValidator";
@@ -48,6 +49,29 @@ function inferGoalType(goals: UserGoal[]): GoalTypeHint {
  */
 function extractMacroPhase(macroContext: { phase?: MacroPhase } | null | undefined): MacroPhase | null {
   return macroContext?.phase ?? null;
+}
+
+/**
+ * Estrae workout in shape compatibile con aggregateDailyLoad da recentDays.
+ * Match keyword campi: durata_totale | durata; rpe (sRPE Foster).
+ */
+function extractWorkoutsForLoad(
+  days: Array<{ date: string; daily: unknown; workouts: unknown[] }>,
+): Array<{ date: string; sRPE?: number; durationMin?: number }> {
+  const out: Array<{ date: string; sRPE?: number; durationMin?: number }> = [];
+  for (const d of days) {
+    for (const w of d.workouts || []) {
+      const f = (w as { fields?: { rpe?: number | string; durata_totale?: number | string; durata?: number | string } })?.fields ?? {};
+      const rpeNum = Number(f.rpe);
+      const durNum = Number(f.durata_totale ?? f.durata);
+      out.push({
+        date: d.date,
+        sRPE: Number.isFinite(rpeNum) && rpeNum > 0 ? rpeNum : undefined,
+        durationMin: Number.isFinite(durNum) && durNum > 0 ? durNum : undefined,
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -427,8 +451,12 @@ export async function generateInitialPlan(
   }
 
   const readinessLineInit = readinessInit?.band ? `READINESS OGGI: ${readinessInit.band}.` : "";
+  const loadSnapInit = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDaysForZones)));
+  const loadBlockInit = formatTrainingLoadForPrompt(loadSnapInit);
   const userPrompt = `
 ${prescriptionBlockInit}
+
+${loadBlockInit}
 
 ${readinessLineInit}
 
@@ -696,8 +724,12 @@ non includere sessioni per essi.${minimalWindowGuard}
   const prescriptionBlockRegen = formatPrescriptionForPrompt(prescriptionRegen);
 
   const readinessLineRegen = readinessRegen?.band ? `READINESS OGGI: ${readinessRegen.band}.` : "";
+  const loadSnapRegen = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDaysForZonesRegen)));
+  const loadBlockRegen = formatTrainingLoadForPrompt(loadSnapRegen);
   const userPrompt = `
 ${prescriptionBlockRegen}
+
+${loadBlockRegen}
 
 ${readinessLineRegen}
 
@@ -846,8 +878,12 @@ export async function adaptPlan(
     return result.plan;
   }
   const readinessLineAdapt = readinessAdapt?.band ? `READINESS OGGI: ${readinessAdapt.band}.` : "";
+  const loadSnapAdapt = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDaysForZonesAdapt)));
+  const loadBlockAdapt = formatTrainingLoadForPrompt(loadSnapAdapt);
   const userPrompt = `
 ${prescriptionBlockAdapt}
+
+${loadBlockAdapt}
 
 ${readinessLineAdapt}
 
