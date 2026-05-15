@@ -275,6 +275,69 @@ export async function buildCoachContext(opts: { daysBack?: number } = {}): Promi
   return { profile, goals, plan, recentDaysText, recentDaysRaw };
 }
 
+/**
+ * Mappa aree dolore/infortunio comuni a sostituzioni concrete (cardio +
+ * forza) che il coach DEVE proporre al posto di esercizi controindicati.
+ * Senza questo, il prompt segnalava "infortunio polpaccio" ma il modello
+ * proponeva comunque corsa intensa, lasciando all'utente l'adattamento.
+ *
+ * Match keyword case-insensitive contro `painTrackingAreas` + `injuries`.
+ * Restituisce stringa pronta per il prompt; "" se nessun match.
+ */
+const PAIN_SUBSTITUTIONS: Array<{ keywords: string[]; avoid: string; substitute: string }> = [
+  {
+    keywords: ["polpaccio", "calf", "soleo", "gastrocnemio"],
+    avoid: "corsa Z3-Z5, ripetute, salite, plyometric, salti",
+    substitute: "bici (easy/Z2), nuoto, ellittica, vogatore. Corsa Z2 leggera ammessa solo se dolore ≤2 e trend stabile o in calo",
+  },
+  {
+    keywords: ["ginocchio", "knee", "patella", "rotuleo"],
+    avoid: "squat profondi pesanti, corsa downhill, salti, lunges profondi",
+    substitute: "bici (sella alta, no salita pesante), nuoto, leg press parziale, leg curl",
+  },
+  {
+    keywords: ["caviglia", "ankle"],
+    avoid: "corsa, salti, agility, cambi direzione",
+    substitute: "bici, nuoto upper-body, vogatore, pulley/curl/press in stazione",
+  },
+  {
+    keywords: ["achille", "tendine d'achille", "achilles"],
+    avoid: "corsa, salti, eccentriche calf, sprint",
+    substitute: "bici (cadenza alta, basso sforzo), nuoto, eccentriche calf ISOMETRICHE solo se dolore ≤1",
+  },
+  {
+    keywords: ["schiena", "lombare", "lower back", "sciatica"],
+    avoid: "deadlift, squat pesanti, addominali con flessione (sit-up, crunch), iperestensioni",
+    substitute: "nuoto (NO rana), camminata, McGill big-3 (bird-dog, side-plank, curl-up), cinghia/cavi senza flessione spinale",
+  },
+  {
+    keywords: ["spalla", "shoulder", "cuffia"],
+    avoid: "panca, military press, pull-up, lat machine pesante, push-up profondi",
+    substitute: "corsa, bici, esercizi cuffia rotatori (resistance band external rotation), face-pull leggero",
+  },
+  {
+    keywords: ["anca", "hip", "psoas"],
+    avoid: "corsa intensa, lunges profondi, salti, abductor pesanti",
+    substitute: "bici (easy), nuoto, glute bridge, clamshell, mobilità anca dinamica",
+  },
+];
+
+function painSubstitutionsHint(p: UserProfile): string {
+  const haystack = [
+    ...(p.painTrackingAreas || []),
+    ...(p.injuries || []),
+  ].join(" ").toLowerCase();
+  if (!haystack.trim()) return "";
+  const matched = PAIN_SUBSTITUTIONS.filter(s =>
+    s.keywords.some(k => haystack.includes(k.toLowerCase())),
+  );
+  if (matched.length === 0) return "";
+  const lines = matched.map(s =>
+    `  - ${s.keywords[0]}: EVITA ${s.avoid}. SOSTITUISCI con ${s.substitute}.`,
+  );
+  return `SOSTITUZIONI ATTIVE per aree con dolore/infortunio dichiarato (regole hardcoded, non negoziabili):\n${lines.join("\n")}`;
+}
+
 export function profileAsPrompt(p: UserProfile | null): string {
   if (!p) return "(profilo utente non ancora configurato)";
   // Disponibilità: stringify esplicito di entrambi i numeri + commento "MAX
@@ -321,6 +384,7 @@ export function profileAsPrompt(p: UserProfile | null): string {
     availableDaysLine,
     p.injuries.length ? `Infortuni attivi: ${sanitizePIIList(p.injuries).join("; ")}.` : "Nessun infortunio attivo riportato.",
     trackingLine,
+    painSubstitutionsHint(p),
     p.meds ? `Farmaci: ${sanitizePII(p.meds)}.` : "",
     p.equipment.length
       ? `Attrezzatura disponibile: ${p.equipment.join(", ")}.`
