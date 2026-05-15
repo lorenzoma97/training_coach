@@ -76,29 +76,28 @@ function extractWorkoutsForLoad(
 }
 
 /**
- * Aggrega i signal di convergence dei goal active in un singolo signal per
- * il prescription auto-adapt (Wave audit 2 step 2).
+ * Aggrega i recommendedVolumeMultiplier dei goal active in un singolo
+ * multiplier per il prescription auto-adapt (Wave audit 2 commit 2/3).
  *
- * Priority: very_behind > behind > ahead > aligned > undefined.
- * - very_behind se almeno un goal è very_behind
- * - behind se almeno un goal è behind (e nessuno very_behind)
- * - ahead solo se TUTTI i goal noti sono ahead (no behind/very_behind)
- * - aligned default se almeno un goal noto e nessuno fuori target
- * - undefined se nessun goal active o tutti unknown
+ * Strategia max-wins: se un goal è infeasible (multiplier 1.10) e un altro
+ * ok (1.0), vince il push aggressivo. Cap implicito al safety ceiling
+ * (Lydiard +10%, Gabbett 2016 ACWR) gestito dal predictor stesso.
+ *
+ * Restituisce undefined se nessun goal active o tutti hanno feasibility
+ * unknown (no-op a valle).
  */
-function aggregateGoalSignal(
+function aggregateGoalVolumeMultiplier(
   goals: UserGoal[],
   recentDays: Array<{ date: string; daily: unknown; workouts: unknown[] }>,
-): "ahead" | "aligned" | "behind" | "very_behind" | undefined {
-  const activeWithSignal = goals
+  profile: UserProfile,
+): number | undefined {
+  const multipliers = goals
     .filter(g => g.status === "active")
-    .map(g => computeGoalProgress(g, recentDays).signal)
-    .filter(s => s !== "unknown");
-  if (activeWithSignal.length === 0) return undefined;
-  if (activeWithSignal.includes("very_behind")) return "very_behind";
-  if (activeWithSignal.includes("behind")) return "behind";
-  if (activeWithSignal.every(s => s === "ahead")) return "ahead";
-  return "aligned";
+    .map(g => computeGoalProgress(g, recentDays, profile))
+    .filter(p => p.feasibility !== "unknown")
+    .map(p => p.recommendedVolumeMultiplier);
+  if (multipliers.length === 0) return undefined;
+  return Math.max(...multipliers);
 }
 
 /**
@@ -445,7 +444,7 @@ export async function generateInitialPlan(
   //    multi-pass per garantire numeri concreti vs hint vaghi.
   const readinessInit = await getCurrentReadiness();
   const acwrInit = computeAcwrFromRecentDays(recentDaysForZones);
-  const goalSignalInit = aggregateGoalSignal(goals, recentDaysForZones);
+  const goalMultInit = aggregateGoalVolumeMultiplier(goals, recentDaysForZones, profile);
   const prescriptionInit = computePrescription({
     profile,
     intensity: profile.intensityPreference,
@@ -454,7 +453,7 @@ export async function generateInitialPlan(
     readinessBand: readinessInit?.band,
     weeklyVolumeRecentMin: acwrInit?.acuteMin,
     weeklyVolumeChronicMin: acwrInit?.chronicMin,
-    goalProgressSignal: goalSignalInit,
+    goalVolumeMultiplier: goalMultInit,
   });
   const prescriptionBlockInit = formatPrescriptionForPrompt(prescriptionInit);
   const volumeLandmarksBlockInit = formatVolumeLandmarksForPrompt(inferGoalType(goals));
@@ -694,7 +693,7 @@ non includere sessioni per essi.${minimalWindowGuard}
       : effectiveDaysRegenMP ? [...effectiveDaysRegenMP] : undefined;
     // Prescription layer (2026-05-13): inject numeri concreti nel prompt MP.
     const acwrRegenMP = computeAcwrFromRecentDays(recentDaysForZonesRegenMP);
-    const goalSignalRegenMP = aggregateGoalSignal(goals, recentDaysForZonesRegenMP);
+    const goalMultRegenMP = aggregateGoalVolumeMultiplier(goals, recentDaysForZonesRegenMP, profile);
     const prescriptionRegenMP = computePrescription({
       profile,
       intensity: profile.intensityPreference,
@@ -703,7 +702,7 @@ non includere sessioni per essi.${minimalWindowGuard}
       readinessBand: readiness?.band,
       weeklyVolumeRecentMin: acwrRegenMP?.acuteMin,
       weeklyVolumeChronicMin: acwrRegenMP?.chronicMin,
-      goalProgressSignal: goalSignalRegenMP,
+      goalVolumeMultiplier: goalMultRegenMP,
     });
     const result = await runMultiPass(
       {
@@ -752,7 +751,7 @@ non includere sessioni per essi.${minimalWindowGuard}
   const macroLookupRegen = await loadActiveMacroContext(profile).catch(() => null);
   const readinessRegen = await getCurrentReadiness();
   const acwrRegen = computeAcwrFromRecentDays(recentDaysForZonesRegen);
-  const goalSignalRegen = aggregateGoalSignal(goals, recentDaysForZonesRegen);
+  const goalMultRegen = aggregateGoalVolumeMultiplier(goals, recentDaysForZonesRegen, profile);
   const prescriptionRegen = computePrescription({
     profile,
     intensity: profile.intensityPreference,
@@ -761,7 +760,7 @@ non includere sessioni per essi.${minimalWindowGuard}
     readinessBand: readinessRegen?.band,
     weeklyVolumeRecentMin: acwrRegen?.acuteMin,
     weeklyVolumeChronicMin: acwrRegen?.chronicMin,
-    goalProgressSignal: goalSignalRegen,
+    goalVolumeMultiplier: goalMultRegen,
   });
   const prescriptionBlockRegen = formatPrescriptionForPrompt(prescriptionRegen);
   const volumeLandmarksBlockRegen = formatVolumeLandmarksForPrompt(inferGoalType(goals));
@@ -895,7 +894,7 @@ export async function adaptPlan(
   const macroLookupAdapt = await loadActiveMacroContext(profile).catch(() => null);
   const readinessAdapt = await getCurrentReadiness();
   const acwrAdapt = computeAcwrFromRecentDays(recentDaysForZonesAdapt);
-  const goalSignalAdapt = aggregateGoalSignal(goals, recentDaysForZonesAdapt);
+  const goalMultAdapt = aggregateGoalVolumeMultiplier(goals, recentDaysForZonesAdapt, profile);
   const prescriptionAdapt = computePrescription({
     profile,
     intensity: profile.intensityPreference,
@@ -904,7 +903,7 @@ export async function adaptPlan(
     weeklyVolumeChronicMin: acwrAdapt?.chronicMin,
     macroPhase: extractMacroPhase(macroLookupAdapt?.macroContext),
     readinessBand: readinessAdapt?.band,
-    goalProgressSignal: goalSignalAdapt,
+    goalVolumeMultiplier: goalMultAdapt,
   });
   const prescriptionBlockAdapt = formatPrescriptionForPrompt(prescriptionAdapt);
   const volumeLandmarksBlockAdapt = formatVolumeLandmarksForPrompt(inferGoalType(goals));

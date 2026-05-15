@@ -138,15 +138,18 @@ export interface ComputePrescriptionInput {
    */
   weeklyVolumeChronicMin?: number;
   /**
-   * Signal aggregato di convergence dei goal verso il target (Wave audit 2
-   * step 2 — auto-adattamento carichi). Caller condensa i goal active in:
-   *  - "very_behind": almeno un goal molto indietro → +15% volume + boost Z4-Z5
-   *  - "behind": almeno un goal indietro → +8% volume
-   *  - "ahead": TUTTI i goal avanti e nessuno behind → -5% volume (preventivo)
-   *  - "aligned" / undefined: nessuna modifica
-   * L'override è registrato in `overrides` per trasparenza utente.
+   * Signal aggregato (legacy, mantenuto per backward compat). Se
+   * `goalVolumeMultiplier` è presente, ha precedenza.
    */
   goalProgressSignal?: "ahead" | "aligned" | "behind" | "very_behind";
+  /**
+   * Multiplier volume continuo raccomandato dal goalPredictor (Wave audit 2
+   * commit 2/3). Range tipico [1.0, 1.10]. Calcolato dal caller aggregando
+   * i `recommendedVolumeMultiplier` dei goal active (max-wins): se un goal
+   * è infeasible serve push aggressivo, capped al safety ceiling Lydiard/
+   * Gabbett (+10%/sett). Sostituisce la logica categorica del signal.
+   */
+  goalVolumeMultiplier?: number;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -515,53 +518,39 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
     }
   }
 
-  // ─── 10. Goal convergence auto-adapt (Wave audit 2 step 2) ───────────────
-  // Adatta carichi in base alla convergenza dei goal verso il target.
-  // Trade-off: piccolo nudge volume (5-15%), preserva safety (ACWR cap rimane).
-  if (input.goalProgressSignal) {
+  // ─── 10. Goal convergence auto-adapt (Wave audit 2 commit 2/3) ──────────
+  // Adatta carichi via multiplier continuo dal goalPredictor (Daniels VDOT,
+  // ACSM, Krustrup, Schoenfeld, Pfitzinger). Sostituisce mapping categorico
+  // hardcoded. Cap +10% (Lydiard rule + Gabbett 2016 ACWR safety ceiling).
+  // ACWR check resta sopra come safety net supremo.
+  let multiplier: number | undefined;
+  if (typeof input.goalVolumeMultiplier === "number" && input.goalVolumeMultiplier > 0) {
+    multiplier = Math.min(input.goalVolumeMultiplier, 1.10); // cap Lydiard/Gabbett
+  } else if (input.goalProgressSignal) {
+    // Backward compat: legacy signal categorico se multiplier non fornito.
     const sig = input.goalProgressSignal;
-    let multiplier = 1.0;
-    let z45Boost = 0;
-    let label = "";
-    if (sig === "very_behind") {
-      multiplier = 1.15;
-      z45Boost = 5;
-      label = "Goal MOLTO INDIETRO → +15% volume + +5% Z4-Z5";
-    } else if (sig === "behind") {
-      multiplier = 1.08;
-      label = "Goal INDIETRO → +8% volume";
-    } else if (sig === "ahead") {
-      multiplier = 0.95;
-      label = "Goal AVANTI → -5% volume (deload preventivo, evita overreach inutile)";
-    }
-    if (multiplier !== 1.0) {
-      const before = weeklyVolume;
-      weeklyVolume = weeklyVolume * multiplier;
-      // Re-applica ACWR cap se attivo (safety > goal push).
-      if (
-        typeof input.weeklyVolumeChronicMin === "number" &&
-        input.weeklyVolumeChronicMin > 0
-      ) {
-        const acwrCap = input.weeklyVolumeChronicMin * 1.3;
-        if (weeklyVolume > acwrCap) {
-          weeklyVolume = acwrCap;
-          label += ` (capped a ACWR ceiling ${Math.round(acwrCap)}min per safety)`;
-        }
+    if (sig === "very_behind") multiplier = 1.10;
+    else if (sig === "behind") multiplier = 1.05;
+    else if (sig === "ahead") multiplier = 1.0; // No deload preventivo (era hardcoded errato).
+  }
+  if (multiplier !== undefined && multiplier !== 1.0) {
+    const before = weeklyVolume;
+    weeklyVolume = weeklyVolume * multiplier;
+    let label = `Goal-driven volume adapt: ×${multiplier.toFixed(3)} (predictor-derived)`;
+    // Re-applica ACWR cap se attivo (safety > goal push).
+    if (
+      typeof input.weeklyVolumeChronicMin === "number" &&
+      input.weeklyVolumeChronicMin > 0
+    ) {
+      const acwrCap = input.weeklyVolumeChronicMin * 1.3;
+      if (weeklyVolume > acwrCap) {
+        weeklyVolume = acwrCap;
+        label += ` (capped a ACWR ceiling ${Math.round(acwrCap)}min per safety)`;
       }
-      avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
-      if (z45Boost > 0) {
-        // Boost Z4-Z5 spostando da Z1-Z2 (mantieni Z3 invariato).
-        const newZ45 = Math.min(zoneDist.z4z5Pct + z45Boost, 25);
-        const actualBoost = newZ45 - zoneDist.z4z5Pct;
-        zoneDist = {
-          z1z2Pct: Math.max(zoneDist.z1z2Pct - actualBoost, 50),
-          z3Pct: zoneDist.z3Pct,
-          z4z5Pct: newZ45,
-        };
-      }
-      overrides.push(`${label} (volume: ${Math.round(before)}min → ${Math.round(weeklyVolume)}min).`);
-      bases.push("Goal convergence auto-adapt: adattamento carico in base al gap goal vs realtà osservata (Wave audit 2 step 2).");
     }
+    avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
+    overrides.push(`${label} (volume: ${Math.round(before)}min → ${Math.round(weeklyVolume)}min).`);
+    bases.push("Goal-driven volume adapt: multiplier continuo da goalPredictor (Daniels/ACSM/Krustrup/Schoenfeld/Pfitzinger), capped Lydiard/Gabbett 2016.");
   }
 
   // ─── Output finale: banda ±15% sui range. ──────────────────────────────
