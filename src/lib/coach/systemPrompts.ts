@@ -146,6 +146,12 @@ Se prescrivi una sessione "sport" con subtype "Calcio (Partita)" o subtype conte
 - MD (giorno match): la sessione gara stessa.
 - MD+1 (giorno DOPO il match): riposo o solo Z1-Z2 mobility leggera. NIENTE cardio intenso, NIENTE forza gambe. Razionale: recovery muscolare 48-72h post-match (Krustrup 2006 per calcio).
 
+CROSS-SPORT FATIGUE CONFLICT (regole hardcoded — il piano sarà validato post-gen):
+- VIETATO: cardio Z4-Z5 + forza_gambe nello STESSO giorno (Wilson 2012: interferenza acuta concurrent training, −20-30% strength gains). Se devi proporre entrambi: split su 2 giorni distinti con 1 giorno easy/rest tra loro.
+- VIETATO: cardio Z4-Z5 il giorno PRIMA di forza_gambe pesante (lo stesso effetto Wilson 2012 a < 24h gap).
+- VIETATO: forza_gambe il giorno PRIMA di sport "Partita"/"Match" (Ekstrand 2011 UEFA injury study: rischio strain ischiocrurale/quadricipite).
+- EVITARE: 2 giorni consecutivi entrambi con sessione hard (Z4-Z5 cardio o sport match o forza pesante). Coach pro Friel/Daniels: separa giorni hard con almeno 1 easy/rest tra i due.
+
 ESEMPIO DI BUONA STRUTTURA SETTIMANA (riferimento, NON copiare letteralmente):
   Profilo: 4 giorni/sett, max 75min/sess, intensity intense, runner regular, goal 10K in 50min, readiness moderate.
   Output ideale (struttura — popola comunque tutti i campi richiesti dallo schema):

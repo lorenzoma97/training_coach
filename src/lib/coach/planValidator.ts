@@ -13,6 +13,7 @@ import {
 import { validateReadiness } from "./validators/readinessValidator";
 import { validatePrescription } from "./validators/prescriptionValidator";
 import { validateMatchDayPattern } from "./validators/matchDayValidator";
+import { validateCrossSportConflict } from "./validators/crossSportConflictValidator";
 import type { TrainingPrescription } from "./trainingPrescription";
 
 export interface PlanValidationIssue {
@@ -52,7 +53,10 @@ export interface PlanValidationIssue {
     // Wave A1 audit 2 — match-day pattern multi-sport (MD-1/MD/MD+1).
     // Warn-level: alta intensità o forza gambe il giorno prima/dopo un match
     // (sport con subtype "Partita"/"Match"). Coach pro game-sport.
-    | "match_day_conflict";
+    | "match_day_conflict"
+    // Wave A3 audit 2 — cross-sport fatigue conflict (Wilson 2012 interference,
+    // Ekstrand 2011 strength-pre-match injury risk, hard back-to-back).
+    | "cross_sport_conflict";
   message: string;
   /**
    * Severity dell'issue. Tre livelli:
@@ -136,6 +140,10 @@ const VALIDATORS: PlanValidator[] = [
   // Detecta cardio Z4-5 / forza gambe il giorno prima/dopo un match
   // (sport con subtype "Partita"/"Match"). Coach pro game-sport.
   validateMatchDayPattern,
+  // Wave A3 audit 2 — cross-sport fatigue conflict (Wilson 2012 interference
+  // same-day o consecutive cardio Z4-5 + forza gambe; Ekstrand 2011 forza-pre-
+  // match; hard back-to-back senza easy/rest tra giorni intensi).
+  validateCrossSportConflict,
 ];
 
 export interface PlanValidationResult {
