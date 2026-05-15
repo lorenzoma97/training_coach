@@ -223,6 +223,31 @@ describe("computePrescription — golden cases", () => {
     expect(p.overrides.some(o => o.toLowerCase().includes("acwr"))).toBe(true);
   });
 
+  // ─── 13b. ACWR canonico alto (acute/chronic > 1.5) → override + cap ──
+  it("ACWR canonico alto: acute 400 vs chronic 200 → override + cap chronic*1.3", () => {
+    const p = computePrescription({
+      profile: makeProfile({ age: 28, experience: "regular" }),
+      intensity: "very_intense",
+      weeklyVolumeRecentMin: 400,
+      weeklyVolumeChronicMin: 200,
+    });
+    // ratio acute/chronic = 2.0 > 1.5 → override registrato + cap a 200*1.3 = 260
+    expect(p.weeklyVolumeTargetMin).toBeLessThanOrEqual(260);
+    expect(p.overrides.some(o => o.toLowerCase().includes("acwr alto"))).toBe(true);
+  });
+
+  // ─── 13c. ACWR canonico basso (acute/chronic < 0.8) → solo override info ─
+  it("ACWR canonico basso: acute 80 vs chronic 200 → override info, no cap", () => {
+    const p = computePrescription({
+      profile: makeProfile({ age: 28, experience: "regular" }),
+      intensity: "balanced",
+      weeklyVolumeRecentMin: 80,
+      weeklyVolumeChronicMin: 200,
+    });
+    // ratio = 0.4 < 0.8 → override "ACWR basso" senza cap (riprogressione graduale)
+    expect(p.overrides.some(o => o.toLowerCase().includes("acwr basso"))).toBe(true);
+  });
+
   // ─── 14. Goal strength bumpa forza ───────────────────────────────────
   it("regular balanced + goal strength → forza +1", () => {
     const p = computePrescription({

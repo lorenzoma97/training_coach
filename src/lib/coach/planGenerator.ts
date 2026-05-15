@@ -50,6 +50,39 @@ function extractMacroPhase(macroContext: { phase?: MacroPhase } | null | undefin
   return macroContext?.phase ?? null;
 }
 
+/**
+ * Calcola ACWR (Gabbett 2016) acute=7gg / chronic=media-settimanale-28gg
+ * dalle ultime giornate di diario. Restituisce null se manca storico
+ * sufficiente (<14gg di dati o chronic <30 min/sett — non significativo).
+ *
+ * Output: minuti acute, chronic-weekly e ratio. Iniettato in
+ * computePrescription per attivare il check 9b (ACWR canonico).
+ */
+function computeAcwrFromRecentDays(
+  days: Array<{ date: string; daily: unknown; workouts: unknown[] }>,
+): { acuteMin: number; chronicMin: number } | null {
+  if (days.length < 14) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cutoff7 = today.getTime() - 7 * 86400000;
+  const cutoff28 = today.getTime() - 28 * 86400000;
+  let acute = 0, chronic = 0;
+  for (const d of days) {
+    const dt = new Date(d.date).getTime();
+    if (Number.isNaN(dt) || dt < cutoff28) continue;
+    let dayMin = 0;
+    for (const w of d.workouts || []) {
+      const f = (w as { fields?: { durata_totale?: number | string; durata?: number | string } })?.fields ?? {};
+      const min = Number(f.durata_totale ?? f.durata ?? 0);
+      if (Number.isFinite(min) && min > 0) dayMin += min;
+    }
+    if (dt >= cutoff7) acute += dayMin;
+    chronic += dayMin;
+  }
+  const chronicWeekly = chronic / 4;
+  if (chronicWeekly < 30) return null;
+  return { acuteMin: Math.round(acute), chronicMin: Math.round(chronicWeekly) };
+}
+
 // WHY: appiattisce i giorni del diario nella shape attesa dal validator per
 // lo spike check Johansen (14gg). Senza questo i call-site passavano [] e lo
 // spike check era inerte.
@@ -360,12 +393,15 @@ export async function generateInitialPlan(
   // ── Training Prescription layer (2026-05-13): iniettato in single-pass e
   //    multi-pass per garantire numeri concreti vs hint vaghi.
   const readinessInit = await getCurrentReadiness();
+  const acwrInit = computeAcwrFromRecentDays(recentDaysForZones);
   const prescriptionInit = computePrescription({
     profile,
     intensity: profile.intensityPreference,
     goalType: inferGoalType(goals),
     macroPhase: extractMacroPhase(macroLookupInit?.macroContext),
     readinessBand: readinessInit?.band,
+    weeklyVolumeRecentMin: acwrInit?.acuteMin,
+    weeklyVolumeChronicMin: acwrInit?.chronicMin,
   });
   const prescriptionBlockInit = formatPrescriptionForPrompt(prescriptionInit);
 
@@ -586,12 +622,15 @@ non includere sessioni per essi.${minimalWindowGuard}
       ? [...(effectiveDaysRegenMP ?? remainingLabels)]
       : effectiveDaysRegenMP ? [...effectiveDaysRegenMP] : undefined;
     // Prescription layer (2026-05-13): inject numeri concreti nel prompt MP.
+    const acwrRegenMP = computeAcwrFromRecentDays(recentDaysForZonesRegenMP);
     const prescriptionRegenMP = computePrescription({
       profile,
       intensity: profile.intensityPreference,
       goalType: inferGoalType(goals),
       macroPhase: extractMacroPhase(macroLookupRegenMP?.macroContext),
       readinessBand: readiness?.band,
+      weeklyVolumeRecentMin: acwrRegenMP?.acuteMin,
+      weeklyVolumeChronicMin: acwrRegenMP?.chronicMin,
     });
     const result = await runMultiPass(
       {
@@ -639,12 +678,15 @@ non includere sessioni per essi.${minimalWindowGuard}
   // Wave 3.3: macro context per fase corrente (se profile ha race "A" attiva).
   const macroLookupRegen = await loadActiveMacroContext(profile).catch(() => null);
   const readinessRegen = await getCurrentReadiness();
+  const acwrRegen = computeAcwrFromRecentDays(recentDaysForZonesRegen);
   const prescriptionRegen = computePrescription({
     profile,
     intensity: profile.intensityPreference,
     goalType: inferGoalType(goals),
     macroPhase: extractMacroPhase(macroLookupRegen?.macroContext),
     readinessBand: readinessRegen?.band,
+    weeklyVolumeRecentMin: acwrRegen?.acuteMin,
+    weeklyVolumeChronicMin: acwrRegen?.chronicMin,
   });
   const prescriptionBlockRegen = formatPrescriptionForPrompt(prescriptionRegen);
 
@@ -759,10 +801,13 @@ export async function adaptPlan(
   // Wave 3.3: macro context per fase corrente.
   const macroLookupAdapt = await loadActiveMacroContext(profile).catch(() => null);
   const readinessAdapt = await getCurrentReadiness();
+  const acwrAdapt = computeAcwrFromRecentDays(recentDaysForZonesAdapt);
   const prescriptionAdapt = computePrescription({
     profile,
     intensity: profile.intensityPreference,
     goalType: inferGoalType(goals),
+    weeklyVolumeRecentMin: acwrAdapt?.acuteMin,
+    weeklyVolumeChronicMin: acwrAdapt?.chronicMin,
     macroPhase: extractMacroPhase(macroLookupAdapt?.macroContext),
     readinessBand: readinessAdapt?.band,
   });

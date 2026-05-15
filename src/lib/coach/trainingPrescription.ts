@@ -124,11 +124,19 @@ export interface ComputePrescriptionInput {
   /** Default: "moderate" (no readiness adjustment). */
   readinessBand?: ReadinessBand;
   /**
-   * Volume cardio degli ultimi 7gg (minuti). Usato per check ACWR conservativo:
-   * se il volume target supera del 50%+ il volume recente, registriamo un
-   * override "ramp limit" e flaggiamo il rischio. Opzionale.
+   * Volume cardio degli ultimi 7gg (minuti, "acute load").
+   * Usato per due check distinti:
+   *  - target/recente >1.5 → cap target (anti-ramp, vedi check #9 esistente)
+   *  - acute/chronic ratio (vedi `weeklyVolumeChronicMin`) → ACWR canonico
    */
   weeklyVolumeRecentMin?: number;
+  /**
+   * Volume cardio medio settimanale degli ultimi 28gg (minuti, "chronic load").
+   * Se fornito insieme a `weeklyVolumeRecentMin`, attiva il check ACWR
+   * canonico Gabbett 2016: ratio acute/chronic dev'essere in 0.8-1.3
+   * ("sweet spot"); >1.5 = rischio overuse, <0.8 = detraining.
+   */
+  weeklyVolumeChronicMin?: number;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -405,6 +413,8 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
   }
 
   // ─── 9. ACWR ramp check (Gabbett 2016) ──────────────────────────────────
+  // 9a. Check semplificato target/recente: il volume target non puo' eccedere
+  //     del 50% il volume effettivo dell'ultima settimana (anti-ramp prescritto).
   if (typeof input.weeklyVolumeRecentMin === "number" && input.weeklyVolumeRecentMin > 0) {
     const ratio = weeklyVolume / input.weeklyVolumeRecentMin;
     if (ratio > 1.5) {
@@ -415,6 +425,35 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
       );
       weeklyVolume = cappedVolume;
       avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
+      bases.push("Gabbett 2016: ACWR (acute:chronic workload ratio) sweet spot 0.8-1.3, rischio overuse oltre 1.5.");
+    }
+  }
+  // 9b. ACWR canonico acute(7gg)/chronic(28gg media settimanale) — diagnostica
+  //     pattern reale dell'utente, indipendente dal target generato.
+  //     Spike >1.5 = rischio infortunio; <0.8 = detraining/ripresa graduale.
+  if (
+    typeof input.weeklyVolumeRecentMin === "number" &&
+    typeof input.weeklyVolumeChronicMin === "number" &&
+    input.weeklyVolumeChronicMin > 0
+  ) {
+    const acwr = input.weeklyVolumeRecentMin / input.weeklyVolumeChronicMin;
+    if (acwr > 1.5) {
+      overrides.push(
+        `ACWR alto: ultimi 7gg ${input.weeklyVolumeRecentMin}min vs media 28gg ${input.weeklyVolumeChronicMin}min/sett (ratio ${acwr.toFixed(2)}). Sweet spot 0.8-1.3 (Gabbett 2016). NON aumentare volume questa sett — preferisci scarico o consolidamento.`,
+      );
+      // Cap aggiuntivo: target non puo' eccedere chronic*1.3 (top sweet spot).
+      const cap = Math.round(input.weeklyVolumeChronicMin * 1.3);
+      if (cap < weeklyVolume) {
+        weeklyVolume = cap;
+        avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
+      }
+    } else if (acwr < 0.8) {
+      overrides.push(
+        `ACWR basso: ultimi 7gg ${input.weeklyVolumeRecentMin}min vs media 28gg ${input.weeklyVolumeChronicMin}min/sett (ratio ${acwr.toFixed(2)}). Probabile ripresa post-stop/scarico — riprogressione graduale, no spike acuti.`,
+      );
+    }
+    // bases gia' inclusa al check 9a; se 9a non e' scattato, aggiungila qui.
+    if (!bases.some(b => b.includes("Gabbett 2016"))) {
       bases.push("Gabbett 2016: ACWR (acute:chronic workload ratio) sweet spot 0.8-1.3, rischio overuse oltre 1.5.");
     }
   }
