@@ -407,6 +407,104 @@ export function goalsAsPrompt(goals: UserGoal[]): string {
     .join("\n");
 }
 
+/**
+ * Goal convergence tracking (Wave 2.2 audit): calcola lo STATO ATTUALE di
+ * ogni goal rispetto al diario recente, così il modello capisce se l'utente
+ * è on-track e può prescrivere accelerazione/scarico/correzione.
+ *
+ * Output: blocco multi-line per ogni goal active. Per ogni goal:
+ *   - giorni alla deadline (se parsabile come ISO)
+ *   - se goal-corsa: numero corse + media passo ultimi 14gg
+ *   - se goal-forza: frequenza sessioni forza ultime 14gg
+ *   - segnale qualitativo on-track/da-accelerare se confronto possibile
+ *
+ * No machine learning, solo numeri grezzi: il modello fa la sintesi.
+ */
+export function goalProgressContext(
+  goals: UserGoal[],
+  recentDays: Array<{ date: string; daily: unknown; workouts: unknown[] }>,
+): string {
+  const active = goals.filter(g => g.status === "active");
+  if (active.length === 0) return "";
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cutoff14 = today.getTime() - 14 * 86400000;
+
+  // Estrazione metriche dal diario degli ultimi 14gg.
+  type Workout = { type?: string; fields?: { passo_medio?: number | string; durata_totale?: number | string; carico?: number | string } };
+  const recent14: Array<{ date: string; w: Workout }> = [];
+  for (const d of recentDays) {
+    const dt = new Date(d.date).getTime();
+    if (Number.isNaN(dt) || dt < cutoff14) continue;
+    for (const w of d.workouts || []) recent14.push({ date: d.date, w: w as Workout });
+  }
+
+  const corseRecent = recent14.filter(r => r.w.type === "corsa");
+  const forzaRecent = recent14.filter(r => r.w.type === "forza_gambe" || r.w.type === "forza_upper");
+
+  // Parse passo "5:25" → 325 sec
+  const parsePace = (s: number | string | undefined): number | null => {
+    if (s == null) return null;
+    if (typeof s === "number") return s > 0 ? s : null;
+    const m = String(s).match(/^(\d+):(\d{1,2})$/);
+    if (!m) return null;
+    const sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    return sec > 0 ? sec : null;
+  };
+  const formatPace = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`;
+
+  const corsaPaces = corseRecent.map(r => parsePace(r.w.fields?.passo_medio)).filter((n): n is number => n != null);
+  const corsaPaceAvg = corsaPaces.length > 0 ? corsaPaces.reduce((a, b) => a + b, 0) / corsaPaces.length : null;
+
+  const lines: string[] = [];
+  for (const g of active) {
+    const dl = g.kpi.deadline;
+    let daysToDeadline: number | null = null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(dl)) {
+      const dlDate = new Date(`${dl}T00:00:00`).getTime();
+      if (!Number.isNaN(dlDate)) daysToDeadline = Math.floor((dlDate - today.getTime()) / 86400000);
+    }
+    const deadlinePart = daysToDeadline != null
+      ? (daysToDeadline > 0 ? `${daysToDeadline}gg alla deadline (${Math.ceil(daysToDeadline / 7)} sett)` : `deadline scaduta da ${-daysToDeadline}gg`)
+      : `deadline ${dl}`;
+
+    const metric = g.kpi.metric.toLowerCase();
+    const target = g.kpi.target;
+    let stateLine = "";
+
+    // Goal corsa-related
+    if (/passo|tempo|km|10k|5k|maratona|mezza|corsa|run/i.test(metric + " " + g.smartDescription)) {
+      if (corseRecent.length === 0) {
+        stateLine = `Stato: 0 corse negli ultimi 14gg → no baseline. Avvia subito allenamento.`;
+      } else if (corsaPaceAvg) {
+        const targetSec = parsePace(target);
+        let trend = "";
+        if (targetSec) {
+          const delta = corsaPaceAvg - targetSec;
+          if (delta < -10) trend = ` → AVANTI sul target (più veloce di ${Math.round(-delta)}s/km)`;
+          else if (delta < 10) trend = ` → ALLINEATO al target`;
+          else if (delta < 30) trend = ` → DA ACCELERARE (${Math.round(delta)}s/km più lento del target)`;
+          else trend = ` → MOLTO INDIETRO sul target (+${Math.round(delta)}s/km). Valutare se realistico in ${daysToDeadline ?? "?"}gg.`;
+        }
+        stateLine = `Stato: ${corseRecent.length} corse 14gg, passo medio ${formatPace(corsaPaceAvg)}/km${trend}.`;
+      } else {
+        stateLine = `Stato: ${corseRecent.length} corse 14gg (passo medio non rilevato).`;
+      }
+    }
+    // Goal forza-related
+    else if (/forza|1rm|panca|squat|stacco|massa|ipertrof/i.test(metric + " " + g.smartDescription)) {
+      stateLine = `Stato: ${forzaRecent.length} sessioni forza 14gg.`;
+    }
+    // Goal generico
+    else {
+      stateLine = `Stato: ${recent14.length} workout 14gg totali.`;
+    }
+
+    lines.push(`- "${sanitizePII(g.smartDescription)}" → KPI ${g.kpi.metric} ${g.kpi.target} | ${deadlinePart}. ${stateLine}`);
+  }
+
+  return `STATO GOAL (per pianificare sapendo dove sei vs. dove vuoi arrivare):\n${lines.join("\n")}`;
+}
+
 export function planAsPrompt(plan: TrainingPlan | null): string {
   if (!plan) return "(nessun piano attivo)";
   const header = `Piano generato ${plan.generatedAt}, valido fino a ${plan.validUntil}. Razionale: ${plan.rationale}`;
