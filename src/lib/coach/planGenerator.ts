@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
-import { profileAsPrompt, goalsAsPrompt, planAsPrompt, getLastNDays, goalProgressContext, sportSpecificPrescriptions, raceDayExecutionContext } from "../diaryContext";
+import { profileAsPrompt, goalsAsPrompt, planAsPrompt, getLastNDays, goalProgressContext, sportSpecificPrescriptions, raceDayExecutionContext, tournamentClusterContext } from "../diaryContext";
 import { aggregateDailyLoad, computeTrainingLoad, formatTrainingLoadForPrompt } from "./trainingLoad";
 import type { UserProfile, UserGoal, TrainingPlan, PlanWeek } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
@@ -471,6 +471,8 @@ ${goalProgressContext(goals, recentDaysForZones)}
 ${sportSpecificPrescriptions(recentDaysForZones)}
 
 ${raceDayExecutionContext(profile)}
+
+${tournamentClusterContext(profile)}
 ${goalConflictHint}${availableDaysBlock}
 Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'utente verso gli obiettivi rispettando vincoli e sicurezza. La settimana successiva sarà rigenerata lunedì prossimo sulla base dei dati reali del diario, non anticiparla ora.
 `.trim();
@@ -748,6 +750,8 @@ ${goalProgressContext(goals, recentDaysForZonesRegen)}
 ${sportSpecificPrescriptions(recentDaysForZonesRegen)}
 
 ${raceDayExecutionContext(profile)}
+
+${tournamentClusterContext(profile)}
 ${goalConflictHintRegen}${availableDaysBlockRegen}
 PIANO CORRENTE:
 ${planAsPrompt(currentPlan)}
@@ -906,6 +910,8 @@ ${goalProgressContext(goals, recentDaysForZonesAdapt)}
 ${sportSpecificPrescriptions(recentDaysForZonesAdapt)}
 
 ${raceDayExecutionContext(profile)}
+
+${tournamentClusterContext(profile)}
 ${goalConflictHintAdapt}${availableDaysBlockAdapt}
 PIANO CORRENTE (da modificare):
 ${planAsPrompt(currentPlan)}

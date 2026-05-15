@@ -408,6 +408,46 @@ export function goalsAsPrompt(goals: UserGoal[]): string {
 }
 
 /**
+ * Tournament cluster context (Wave C2 audit 2).
+ *
+ * Tornei game-sport (padel/tennis weekend, 3-4 match in 2gg) richiedono
+ * periodizzazione diversa da race singola: deload pre-torneo identico, ma
+ * inter-match recovery + multi-day cluster strategy.
+ *
+ * Detection: race priority="A" nei prossimi 14gg con name contenente
+ * "torneo"/"tournament"/"tournoi"/"slam"/"open". Backward compat totale:
+ * niente cambi schema, solo keyword match su nome user-input.
+ *
+ * Output: blocco prompt con protocollo specifico tournament. Stringa
+ * vuota se nessun torneo imminente.
+ */
+export function tournamentClusterContext(profile: UserProfile | null): string {
+  if (!profile?.races || profile.races.length === 0) return "";
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const TOURNAMENT_KEYWORDS = ["torneo", "tournament", "tournoi", "slam", "open", "campionato", "championship"];
+  const tournamentRace = profile.races.find(r => {
+    if (r.priority !== "A") return false;
+    if (!r.date) return false;
+    const dt = new Date(`${r.date}T00:00:00`).getTime();
+    if (Number.isNaN(dt)) return false;
+    const days = Math.floor((dt - today.getTime()) / 86400000);
+    if (days < 0 || days > 14) return false;
+    const name = (r.name || "").toLowerCase();
+    return TOURNAMENT_KEYWORDS.some(k => name.includes(k));
+  });
+  if (!tournamentRace) return "";
+  const daysToStart = Math.floor((new Date(`${tournamentRace.date}T00:00:00`).getTime() - today.getTime()) / 86400000);
+  return [
+    `TOURNAMENT MODE (torneo "${tournamentRace.name}" inizia tra ${daysToStart}gg, ${tournamentRace.sport}):`,
+    `- I tornei game-sport richiedono periodizzazione cluster (multi-match in 2-3gg consecutivi). Diverso da race singola.`,
+    `- Settimana PRE-torneo: deload completo (-50% volume), preserva intensità tecnica/skill, NIENTE Z4-Z5, NIENTE forza pesante. Rifinitura skill 2-3 sessioni 30-45min RPE 3-5.`,
+    `- Inter-match SAME DAY (es. quarti 10:00 + semi 16:00): tra i match prevedere finestra recovery 4-6h con (a) snack 30-50g carbs entro 30min post-match, (b) idratazione attiva (300-500ml + elettroliti), (c) doccia tiepida + leggero camminato 10min, (d) NO stretching aggressivo prima del prossimo match.`,
+    `- Inter-day (es. sabato match + domenica match): la sera dopo il match → cena ricca carbs (1-1.5g/kg) + proteine (0.3g/kg). Mattina dopo → colazione 1-2h prima del match, warm-up specifico ridotto a 8-10min (no allunghi sprint, già attivato dal giorno prima).`,
+    `- Settimana POST-torneo: 5-7gg easy/recovery (Z1-Z2 solo, niente forza pesante, focus su mobility e sonno). Soligard 2016: rischio infortuno post-tournament alto se ripresa volume troppo rapida.`,
+  ].join("\n");
+}
+
+/**
  * Race-day execution plan (Wave C1 audit 2).
  *
  * Coach pro endurance fornisce nei 7-14gg pre-gara A: pacing strategy,
