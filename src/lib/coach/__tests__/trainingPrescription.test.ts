@@ -248,6 +248,38 @@ describe("computePrescription — golden cases", () => {
     expect(p.overrides.some(o => o.toLowerCase().includes("acwr basso"))).toBe(true);
   });
 
+  // ─── 13d. Goal auto-adapt: very_behind → +15% volume + Z4-Z5 boost ──
+  it("goal very_behind: volume +15%, override registrato", () => {
+    const baseline = computePrescription({
+      profile: makeProfile({ age: 28, experience: "regular" }),
+      intensity: "intense",
+    });
+    const adapted = computePrescription({
+      profile: makeProfile({ age: 28, experience: "regular" }),
+      intensity: "intense",
+      goalProgressSignal: "very_behind",
+    });
+    // Volume target +15% (entro 1 unità di rounding)
+    expect(adapted.weeklyVolumeTargetMin).toBeGreaterThan(baseline.weeklyVolumeTargetMin);
+    expect(adapted.weeklyVolumeTargetMin).toBeGreaterThanOrEqual(Math.round(baseline.weeklyVolumeTargetMin * 1.13));
+    expect(adapted.overrides.some(o => o.toLowerCase().includes("molto indietro"))).toBe(true);
+  });
+
+  // ─── 13e. Goal auto-adapt: ahead → -5% volume (deload preventivo) ────
+  it("goal ahead: volume -5%, override registrato", () => {
+    const baseline = computePrescription({
+      profile: makeProfile({ age: 28, experience: "regular" }),
+      intensity: "balanced",
+    });
+    const adapted = computePrescription({
+      profile: makeProfile({ age: 28, experience: "regular" }),
+      intensity: "balanced",
+      goalProgressSignal: "ahead",
+    });
+    expect(adapted.weeklyVolumeTargetMin).toBeLessThan(baseline.weeklyVolumeTargetMin);
+    expect(adapted.overrides.some(o => o.toLowerCase().includes("avanti"))).toBe(true);
+  });
+
   // ─── 14. Goal strength bumpa forza ───────────────────────────────────
   it("regular balanced + goal strength → forza +1", () => {
     const p = computePrescription({

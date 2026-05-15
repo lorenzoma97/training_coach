@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
-import { profileAsPrompt, goalsAsPrompt, planAsPrompt, getLastNDays, goalProgressContext, sportSpecificPrescriptions, raceDayExecutionContext, tournamentClusterContext } from "../diaryContext";
+import { profileAsPrompt, goalsAsPrompt, planAsPrompt, getLastNDays, goalProgressContext, sportSpecificPrescriptions, raceDayExecutionContext, tournamentClusterContext, computeGoalProgress } from "../diaryContext";
 import { aggregateDailyLoad, computeTrainingLoad, formatTrainingLoadForPrompt } from "./trainingLoad";
 import type { UserProfile, UserGoal, TrainingPlan, PlanWeek } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
@@ -73,6 +73,32 @@ function extractWorkoutsForLoad(
     }
   }
   return out;
+}
+
+/**
+ * Aggrega i signal di convergence dei goal active in un singolo signal per
+ * il prescription auto-adapt (Wave audit 2 step 2).
+ *
+ * Priority: very_behind > behind > ahead > aligned > undefined.
+ * - very_behind se almeno un goal è very_behind
+ * - behind se almeno un goal è behind (e nessuno very_behind)
+ * - ahead solo se TUTTI i goal noti sono ahead (no behind/very_behind)
+ * - aligned default se almeno un goal noto e nessuno fuori target
+ * - undefined se nessun goal active o tutti unknown
+ */
+function aggregateGoalSignal(
+  goals: UserGoal[],
+  recentDays: Array<{ date: string; daily: unknown; workouts: unknown[] }>,
+): "ahead" | "aligned" | "behind" | "very_behind" | undefined {
+  const activeWithSignal = goals
+    .filter(g => g.status === "active")
+    .map(g => computeGoalProgress(g, recentDays).signal)
+    .filter(s => s !== "unknown");
+  if (activeWithSignal.length === 0) return undefined;
+  if (activeWithSignal.includes("very_behind")) return "very_behind";
+  if (activeWithSignal.includes("behind")) return "behind";
+  if (activeWithSignal.every(s => s === "ahead")) return "ahead";
+  return "aligned";
 }
 
 /**
@@ -419,6 +445,7 @@ export async function generateInitialPlan(
   //    multi-pass per garantire numeri concreti vs hint vaghi.
   const readinessInit = await getCurrentReadiness();
   const acwrInit = computeAcwrFromRecentDays(recentDaysForZones);
+  const goalSignalInit = aggregateGoalSignal(goals, recentDaysForZones);
   const prescriptionInit = computePrescription({
     profile,
     intensity: profile.intensityPreference,
@@ -427,6 +454,7 @@ export async function generateInitialPlan(
     readinessBand: readinessInit?.band,
     weeklyVolumeRecentMin: acwrInit?.acuteMin,
     weeklyVolumeChronicMin: acwrInit?.chronicMin,
+    goalProgressSignal: goalSignalInit,
   });
   const prescriptionBlockInit = formatPrescriptionForPrompt(prescriptionInit);
   const volumeLandmarksBlockInit = formatVolumeLandmarksForPrompt(inferGoalType(goals));
@@ -666,6 +694,7 @@ non includere sessioni per essi.${minimalWindowGuard}
       : effectiveDaysRegenMP ? [...effectiveDaysRegenMP] : undefined;
     // Prescription layer (2026-05-13): inject numeri concreti nel prompt MP.
     const acwrRegenMP = computeAcwrFromRecentDays(recentDaysForZonesRegenMP);
+    const goalSignalRegenMP = aggregateGoalSignal(goals, recentDaysForZonesRegenMP);
     const prescriptionRegenMP = computePrescription({
       profile,
       intensity: profile.intensityPreference,
@@ -674,6 +703,7 @@ non includere sessioni per essi.${minimalWindowGuard}
       readinessBand: readiness?.band,
       weeklyVolumeRecentMin: acwrRegenMP?.acuteMin,
       weeklyVolumeChronicMin: acwrRegenMP?.chronicMin,
+      goalProgressSignal: goalSignalRegenMP,
     });
     const result = await runMultiPass(
       {
@@ -722,6 +752,7 @@ non includere sessioni per essi.${minimalWindowGuard}
   const macroLookupRegen = await loadActiveMacroContext(profile).catch(() => null);
   const readinessRegen = await getCurrentReadiness();
   const acwrRegen = computeAcwrFromRecentDays(recentDaysForZonesRegen);
+  const goalSignalRegen = aggregateGoalSignal(goals, recentDaysForZonesRegen);
   const prescriptionRegen = computePrescription({
     profile,
     intensity: profile.intensityPreference,
@@ -730,6 +761,7 @@ non includere sessioni per essi.${minimalWindowGuard}
     readinessBand: readinessRegen?.band,
     weeklyVolumeRecentMin: acwrRegen?.acuteMin,
     weeklyVolumeChronicMin: acwrRegen?.chronicMin,
+    goalProgressSignal: goalSignalRegen,
   });
   const prescriptionBlockRegen = formatPrescriptionForPrompt(prescriptionRegen);
   const volumeLandmarksBlockRegen = formatVolumeLandmarksForPrompt(inferGoalType(goals));
@@ -863,6 +895,7 @@ export async function adaptPlan(
   const macroLookupAdapt = await loadActiveMacroContext(profile).catch(() => null);
   const readinessAdapt = await getCurrentReadiness();
   const acwrAdapt = computeAcwrFromRecentDays(recentDaysForZonesAdapt);
+  const goalSignalAdapt = aggregateGoalSignal(goals, recentDaysForZonesAdapt);
   const prescriptionAdapt = computePrescription({
     profile,
     intensity: profile.intensityPreference,
@@ -871,6 +904,7 @@ export async function adaptPlan(
     weeklyVolumeChronicMin: acwrAdapt?.chronicMin,
     macroPhase: extractMacroPhase(macroLookupAdapt?.macroContext),
     readinessBand: readinessAdapt?.band,
+    goalProgressSignal: goalSignalAdapt,
   });
   const prescriptionBlockAdapt = formatPrescriptionForPrompt(prescriptionAdapt);
   const volumeLandmarksBlockAdapt = formatVolumeLandmarksForPrompt(inferGoalType(goals));

@@ -137,6 +137,16 @@ export interface ComputePrescriptionInput {
    * ("sweet spot"); >1.5 = rischio overuse, <0.8 = detraining.
    */
   weeklyVolumeChronicMin?: number;
+  /**
+   * Signal aggregato di convergence dei goal verso il target (Wave audit 2
+   * step 2 — auto-adattamento carichi). Caller condensa i goal active in:
+   *  - "very_behind": almeno un goal molto indietro → +15% volume + boost Z4-Z5
+   *  - "behind": almeno un goal indietro → +8% volume
+   *  - "ahead": TUTTI i goal avanti e nessuno behind → -5% volume (preventivo)
+   *  - "aligned" / undefined: nessuna modifica
+   * L'override è registrato in `overrides` per trasparenza utente.
+   */
+  goalProgressSignal?: "ahead" | "aligned" | "behind" | "very_behind";
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -502,6 +512,55 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
     // bases gia' inclusa al check 9a; se 9a non e' scattato, aggiungila qui.
     if (!bases.some(b => b.includes("Gabbett 2016"))) {
       bases.push("Gabbett 2016: ACWR (acute:chronic workload ratio) sweet spot 0.8-1.3, rischio overuse oltre 1.5.");
+    }
+  }
+
+  // ─── 10. Goal convergence auto-adapt (Wave audit 2 step 2) ───────────────
+  // Adatta carichi in base alla convergenza dei goal verso il target.
+  // Trade-off: piccolo nudge volume (5-15%), preserva safety (ACWR cap rimane).
+  if (input.goalProgressSignal) {
+    const sig = input.goalProgressSignal;
+    let multiplier = 1.0;
+    let z45Boost = 0;
+    let label = "";
+    if (sig === "very_behind") {
+      multiplier = 1.15;
+      z45Boost = 5;
+      label = "Goal MOLTO INDIETRO → +15% volume + +5% Z4-Z5";
+    } else if (sig === "behind") {
+      multiplier = 1.08;
+      label = "Goal INDIETRO → +8% volume";
+    } else if (sig === "ahead") {
+      multiplier = 0.95;
+      label = "Goal AVANTI → -5% volume (deload preventivo, evita overreach inutile)";
+    }
+    if (multiplier !== 1.0) {
+      const before = weeklyVolume;
+      weeklyVolume = weeklyVolume * multiplier;
+      // Re-applica ACWR cap se attivo (safety > goal push).
+      if (
+        typeof input.weeklyVolumeChronicMin === "number" &&
+        input.weeklyVolumeChronicMin > 0
+      ) {
+        const acwrCap = input.weeklyVolumeChronicMin * 1.3;
+        if (weeklyVolume > acwrCap) {
+          weeklyVolume = acwrCap;
+          label += ` (capped a ACWR ceiling ${Math.round(acwrCap)}min per safety)`;
+        }
+      }
+      avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
+      if (z45Boost > 0) {
+        // Boost Z4-Z5 spostando da Z1-Z2 (mantieni Z3 invariato).
+        const newZ45 = Math.min(zoneDist.z4z5Pct + z45Boost, 25);
+        const actualBoost = newZ45 - zoneDist.z4z5Pct;
+        zoneDist = {
+          z1z2Pct: Math.max(zoneDist.z1z2Pct - actualBoost, 50),
+          z3Pct: zoneDist.z3Pct,
+          z4z5Pct: newZ45,
+        };
+      }
+      overrides.push(`${label} (volume: ${Math.round(before)}min → ${Math.round(weeklyVolume)}min).`);
+      bases.push("Goal convergence auto-adapt: adattamento carico in base al gap goal vs realtà osservata (Wave audit 2 step 2).");
     }
   }
 
