@@ -117,7 +117,7 @@ REGOLA RECOVERY tra ripetute (kind=repetition):
  */
 function buildZonesBlock(zones: ZonesResult | null | undefined): string {
   if (!zones) return "";
-  const method = zones.method === "tested" ? "FCmax testata" : zones.method === "karvonen" ? "Karvonen" : "Tanaka";
+  const method = zones.method === "lthr" ? "LTHR Friel" : zones.method === "tested" ? "FCmax testata" : zones.method === "karvonen" ? "Karvonen" : "Tanaka";
   return `ZONE FC: metodo ${method}. Le 5 zone sono calcolate dal frontend; tu prescrivi la zona logica (Z1-Z5).`;
 }
 

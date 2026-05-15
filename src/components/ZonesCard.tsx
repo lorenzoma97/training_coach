@@ -92,6 +92,7 @@ export default function ZonesCard({ compact = false, highlightZone }: Props) {
   );
 
   const methodBadge = {
+    lthr:     { label: "LTHR FRIEL", color: colors.success },
     tested:   { label: "FCMAX TESTATA", color: colors.success },
     karvonen: { label: "KARVONEN (FC RIP)", color: colors.info },
     tanaka:   { label: "STIMA TANAKA (ETÀ)", color: colors.textMuted },

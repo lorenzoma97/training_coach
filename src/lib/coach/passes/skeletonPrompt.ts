@@ -136,7 +136,7 @@ function buildReadinessBlock(band: SkeletonContext["readinessBand"]): string {
  */
 function buildZonesBlock(zones: ZonesResult | null | undefined): string {
   if (!zones) return "";
-  const method = zones.method === "tested" ? "FCmax testata" : zones.method === "karvonen" ? "Karvonen (HR rest reale)" : "Tanaka (formula eta')";
+  const method = zones.method === "lthr" ? "LTHR Friel (gold per Z3-Z5)" : zones.method === "tested" ? "FCmax testata" : zones.method === "karvonen" ? "Karvonen (HR rest reale)" : "Tanaka (formula eta')";
   return `ZONE FC PERSONALIZZATE: metodo ${method}. Le 5 zone sono calcolate dal frontend; tu prescrivi la zona logica (Z1-Z5), il numero bpm appare in UI.`;
 }
 

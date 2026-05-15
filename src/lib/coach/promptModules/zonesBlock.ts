@@ -11,6 +11,7 @@ export function zonesBlock(
   totalSessions?: number,
 ): string {
   const methodLabel = {
+    lthr: "LTHR field test (Friel) — gold standard zone Z3-Z5",
     tested: "FCmax testata sul campo dall'utente (gold standard)",
     karvonen: "metodo Karvonen (FC riserva) + FCmax Tanaka",
     tanaka: "stima generica Tanaka (età, errore ±10-15 bpm)",
