@@ -1023,54 +1023,34 @@ export default function TrainingPlanView() {
 
       {/* UX redesign #4 (2026-05-14) — Bottone smart con dettaglio + link
           "Altre opzioni" che apre il picker tradizionale.
-          Smart default in base al giorno della settimana:
-            - lun-mer (idx 0-2)  → rest-of-week
-            - gio-dom (idx 3-6)  → next-week
-            - piano stale/expired → forza next-week
+          Principio: focalizza SEMPRE sulla settimana in corso. Il bottone
+          primario è sempre `rest-of-week` (anche al sabato/domenica con
+          pochi giorni rimasti). "Pianifica prossima settimana" sta solo
+          nelle "Altre opzioni" (tendina chiusa) — l'utente la cerca solo
+          in casi specifici, non vale la pena offrirla come default.
           Se rest-of-week + ci sono deviazioni → useAdapt=true, va via
-          handleAdapt(buildDeviationRequest) (vecchia "Adatta alle
-          deviazioni" diventa il default automatico, niente più scelta
-          separata da fare).
-          Picker invariato come escape hatch via "Altre opzioni →". */}
+          handleAdapt(buildDeviationRequest). 'Adatta alle deviazioni' non
+          è più una scelta separata, è integrata nel default smart. */}
       {!isExpired && (() => {
         const today = new Date(); today.setHours(0, 0, 0, 0);
         const todayIdx = (today.getDay() + 6) % 7;
         const labels = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
         const formatDay = (d: Date) => `${labels[(d.getDay() + 6) % 7]} ${d.getDate()}`;
         const totalDev = deviationCount.skipped + deviationCount.partial + deviationCount.extras;
-        const isStale = !!plan?.startDate && (() => {
-          const ps = new Date(`${plan.startDate}T00:00:00`);
-          return Math.floor((today.getTime() - ps.getTime()) / 86400000) > 7;
-        })();
-        const preferRest = !!plan && !isStale && todayIdx <= 2;
-        const smartRegen = preferRest
-          ? (() => {
-              const restEnd = new Date(today); restEnd.setDate(today.getDate() + (6 - todayIdx));
-              const remainLabels = labels.slice(todayIdx);
-              const remainSessions = plan!.weeks[0]?.sessions.filter(s => remainLabels.includes(s.day)) ?? [];
-              const useAdapt = totalDev > 0;
-              return {
-                mode: "rest-of-week" as const,
-                useAdapt,
-                icon: useAdapt ? "🔧" : "🔁",
-                label: useAdapt ? "Adatta piano alle deviazioni" : "Aggiorna giorni rimanenti",
-                sub1: `${formatDay(today)} → ${formatDay(restEnd)} (${remainSessions.length} session${remainSessions.length === 1 ? "e" : "i"})`,
-                sub2: useAdapt ? `integra ${totalDev} deviazion${totalDev === 1 ? "e" : "i"}` : null,
-              };
-            })()
-          : (() => {
-              const daysUntilNextMon = ((8 - today.getDay()) % 7) || 7;
-              const nextMon = new Date(today); nextMon.setDate(today.getDate() + daysUntilNextMon);
-              const nextSun = new Date(nextMon); nextSun.setDate(nextMon.getDate() + 6);
-              return {
-                mode: "next-week" as const,
-                useAdapt: false,
-                icon: "📅",
-                label: "Pianifica prossima settimana",
-                sub1: `${formatDay(nextMon)} → ${formatDay(nextSun)}`,
-                sub2: totalDev > 0 ? `il coach considererà ${totalDev} deviazion${totalDev === 1 ? "e" : "i"} di questa settimana` : null,
-              };
-            })();
+        const restEnd = new Date(today); restEnd.setDate(today.getDate() + (6 - todayIdx));
+        const remainLabels = labels.slice(todayIdx);
+        const remainSessions = plan.weeks[0]?.sessions.filter(s => remainLabels.includes(s.day)) ?? [];
+        const useAdapt = totalDev > 0;
+        const smartRegen = {
+          mode: "rest-of-week" as const,
+          useAdapt,
+          icon: useAdapt ? "🔧" : "🔁",
+          label: useAdapt ? "Adatta piano alle deviazioni" : "Aggiorna giorni rimanenti",
+          sub1: todayIdx === 6
+            ? `solo ${formatDay(today)} (settimana quasi conclusa)`
+            : `${formatDay(today)} → ${formatDay(restEnd)} (${remainSessions.length} session${remainSessions.length === 1 ? "e" : "i"})`,
+          sub2: useAdapt ? `integra ${totalDev} deviazion${totalDev === 1 ? "e" : "i"}` : null,
+        };
         const doSmartAction = () => {
           if (regenerating || adapting) return;
           setAdaptOpen(false);
