@@ -358,7 +358,7 @@ export default function GoalsEditor() {
                     Mostra KPI corrente vs target, sparkline 8 sett, segnale, ETA.
                     Logica in computeGoalProgress (diaryContext.ts). */}
                 {g.status === "active" && (
-                  <GoalProgressCard goal={g} progress={computeGoalProgress(g, recentDays)} />
+                  <GoalProgressCard goal={g} progress={computeGoalProgress(g, recentDays, profile)} />
                 )}
                 {/* Avanzato: cambio priorità, riordino, stato. Collapsed di default. */}
                 <details style={{ marginTop: "6px" }}>

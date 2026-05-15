@@ -2,6 +2,13 @@ import { getJSON } from "./storage";
 import type { UserProfile, UserGoal, TrainingPlan, ExercisePerformance } from "./types";
 import { stripInlineHRRange } from "./coach/zones";
 import { sanitizePII, sanitizePIIList } from "./promptSanitizer";
+import {
+  predictRunningPace,
+  predictWeightLoss,
+  predictSoccerReady,
+  predictStrength1RM,
+  predictEnduranceDuration,
+} from "./coach/goalPredictor";
 
 const WORKOUT_LABELS: Record<string, string> = {
   corsa: "Corsa",
@@ -681,14 +688,17 @@ export function formatPaceSec(sec: number): string {
   return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`;
 }
 
-export type GoalKind = "corsa" | "forza" | "peso" | "frequenza" | "generic";
+/** Re-export per backward compat — il source of truth è goalPredictor.GoalKind. */
+export type { GoalKind } from "./coach/goalPredictor";
 
 /** Classificazione goal kind via keyword match su metric + smartDescription. */
-export function inferGoalKind(g: UserGoal): GoalKind {
+export function inferGoalKind(g: UserGoal): import("./coach/goalPredictor").GoalKind {
   const text = (g.kpi.metric + " " + g.smartDescription).toLowerCase();
-  if (/passo|tempo|km|10k|5k|maratona|mezza|corsa|run|trail/.test(text)) return "corsa";
-  if (/1rm|panca|squat|stacco|forza|carico|kg.*lift|massa|ipertrof/.test(text)) return "forza";
+  if (/calcio.*partita|partita.*calcio|match.*calcio|football match|calcio 11|calcio amatoriale/.test(text)) return "calcio_match";
+  if (/passo|tempo|km|10k|5k|maratona|mezza|corsa|run|trail/.test(text)) return "corsa_pace";
+  if (/1rm|panca|squat|stacco|forza|carico|kg.*lift/.test(text)) return "forza_1rm";
   if (/peso|kg.*corp|dimagri|body.*fat|grasso|composiz/.test(text)) return "peso";
+  if (/correre.*continuo|durata|1h|60min|resistenza/.test(text)) return "resistenza_durata";
   if (/sessioni|frequenz|allenamenti.*sett|consist/.test(text)) return "frequenza";
   return "generic";
 }
@@ -697,7 +707,7 @@ export type GoalSignal = "ahead" | "aligned" | "behind" | "very_behind" | "unkno
 
 export interface GoalProgressData {
   goalId: string;
-  kind: GoalKind;
+  kind: import("./coach/goalPredictor").GoalKind;
   /** Valore corrente (media o ultimo) — formato dipende da kind. */
   currentValue: number | null;
   /** Valore target parsato dal kpi.target. */
@@ -706,7 +716,7 @@ export interface GoalProgressData {
   unit: string;
   /** Sparkline 8 punti settimanali (week 0 = più vecchia, week 7 = corrente). */
   sparklinePoints: Array<{ date: string; value: number | null }>;
-  /** Segnale qualitativo (per badge UI). */
+  /** Segnale qualitativo legacy (derivato da feasibility per backward compat). */
   signal: GoalSignal;
   /** Delta corrente vs target con segno (negativo = sotto target per pace, sopra per peso). */
   deltaToTarget: number | null;
@@ -716,12 +726,26 @@ export interface GoalProgressData {
   weeksToDeadline: number | null;
   /** Per pace running: invertY=true (valore minore = migliore per il grafico). */
   invertY: boolean;
+  /** Wave audit 2 — predictor scientifico (Daniels VDOT / ACSM / Krustrup / Schoenfeld / Pfitzinger). */
+  feasibility: import("./coach/goalPredictor").GoalFeasibility;
+  /** Valore predetto alla deadline a progressione safe (stessa unità di currentValue). */
+  predictedFinalValue: number | null;
+  /** Settimane minime per raggiungere il target a sustainable rate. */
+  realisticDeadlineWeeks: number | null;
+  /** Multiplier volume raccomandato per computePrescription (1.00-1.10). */
+  recommendedVolumeMultiplier: number;
+  /** Spiegazione predizione per UI tooltip + prompt LLM. */
+  reasoning: string;
+  /** Paper di riferimento. */
+  scienceCitation: string;
 }
 
-/** Calcola progress per un goal usando recentDays (60gg consigliati). */
+/** Calcola progress per un goal usando recentDays (60gg consigliati).
+ *  `profile` opzionale ma necessario per goal forza_1rm (caps per esperienza). */
 export function computeGoalProgress(
   g: UserGoal,
   recentDays: Array<{ date: string; daily: unknown; workouts: unknown[] }>,
+  profile?: UserProfile | null,
 ): GoalProgressData {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const kind = inferGoalKind(g);
@@ -767,7 +791,7 @@ export function computeGoalProgress(
   let signal: GoalSignal = "unknown";
   let deltaToTarget: number | null = null;
 
-  if (kind === "corsa") {
+  if (kind === "corsa_pace") {
     unit = "min/km";
     invertY = true; // pace più basso = migliore
     targetValue = parsePaceSec(g.kpi.target);
@@ -796,7 +820,7 @@ export function computeGoalProgress(
       else if (deltaToTarget < 30) signal = "behind";
       else signal = "very_behind";
     }
-  } else if (kind === "forza") {
+  } else if (kind === "forza_1rm") {
     unit = "kg";
     invertY = false; // più alto = migliore
     const numMatch = String(g.kpi.target).match(/(\d+(?:\.\d+)?)/);
@@ -872,6 +896,44 @@ export function computeGoalProgress(
       else if (ratio >= 0.6) signal = "behind";
       else signal = "very_behind";
     }
+  } else if (kind === "calcio_match") {
+    unit = "sess cardio/sett";
+    invertY = false;
+    // Per ogni settimana: count corse/sport cardio ≥30min
+    const weeklyAerobicCount: number[] = weekStartTimes.map(() => 0);
+    for (const d of recentDays) {
+      assignWeek(d.date, i => {
+        for (const w of d.workouts || []) {
+          const ww = w as Wk & { fields?: { durata_totale?: number | string } };
+          if (ww.type !== "corsa" && ww.type !== "sport") continue;
+          const dur = Number(ww.fields?.durata_totale);
+          if (Number.isFinite(dur) && dur >= 30) weeklyAerobicCount[i]++;
+        }
+      });
+    }
+    weeklyAerobicCount.forEach((c, i) => { sparklinePoints[i].value = c; });
+    currentValue = weeklyAerobicCount.reduce((a, b) => a + b, 0); // count totale 8 sett
+    targetValue = 12; // sentinel: ≥12 sessioni in 8 sett = base solida
+  } else if (kind === "resistenza_durata") {
+    unit = "min";
+    invertY = false;
+    const numMatch = String(g.kpi.target).match(/(\d+(?:\.\d+)?)/);
+    targetValue = numMatch ? parseFloat(numMatch[1]) : null;
+    // Per settimana: max durata workout cardio
+    const weeklyMaxDur: number[] = weekStartTimes.map(() => 0);
+    for (const d of recentDays) {
+      assignWeek(d.date, i => {
+        for (const w of d.workouts || []) {
+          const ww = w as Wk;
+          if (ww.type !== "corsa" && ww.type !== "sport") continue;
+          const dur = Number(ww.fields?.durata_totale);
+          if (Number.isFinite(dur) && dur > weeklyMaxDur[i]) weeklyMaxDur[i] = dur;
+        }
+      });
+    }
+    weeklyMaxDur.forEach((v, i) => { if (v > 0) sparklinePoints[i].value = v; });
+    const lastFour = sparklinePoints.slice(-4).map(p => p.value).filter((v): v is number => v != null);
+    currentValue = lastFour.length > 0 ? Math.max(...lastFour) : null;
   } else {
     // generic: workout count come proxy
     unit = "sess";
@@ -880,6 +942,42 @@ export function computeGoalProgress(
       assignWeek(d.date, i => { weeklyCount[i] += (d.workouts || []).length; });
     }
     weeklyCount.forEach((c, i) => { sparklinePoints[i].value = c; });
+  }
+
+  // Wave audit 2 — predictor scientifico (Daniels/ACSM/Krustrup/Schoenfeld/Pfitzinger).
+  const wks = weeksToDeadline ?? 0;
+  let prediction: import("./coach/goalPredictor").GoalPrediction;
+  if (kind === "corsa_pace" && currentValue != null && targetValue != null) {
+    const distMatch = String(g.kpi.metric + " " + g.smartDescription).match(/(\d+(?:\.\d+)?)\s*k/i);
+    const distKm = distMatch ? parseFloat(distMatch[1]) : 10;
+    prediction = predictRunningPace(currentValue, targetValue, distKm, Math.max(wks, 1));
+  } else if (kind === "peso" && currentValue != null && targetValue != null) {
+    prediction = predictWeightLoss(currentValue, targetValue, Math.max(wks, 1));
+  } else if (kind === "calcio_match" && currentValue != null) {
+    prediction = predictSoccerReady(currentValue, Math.max(wks, 1));
+  } else if (kind === "forza_1rm" && currentValue != null && targetValue != null) {
+    const exp = profile?.experience ?? "regular";
+    prediction = predictStrength1RM(currentValue, targetValue, Math.max(wks, 1), exp);
+  } else if (kind === "resistenza_durata" && targetValue != null) {
+    prediction = predictEnduranceDuration(currentValue ?? 0, targetValue, Math.max(wks, 1));
+  } else {
+    prediction = {
+      feasibility: "unknown",
+      predictedFinalValue: null,
+      realisticDeadlineWeeks: null,
+      realisticTargetAtDeadline: null,
+      recommendedVolumeMultiplier: 1.0,
+      reasoning: "Dati insufficienti o tipo goal non predittivo.",
+      scienceCitation: "—",
+    };
+  }
+
+  // Mantieni backward-compat: deriva signal categoriale dalla feasibility predittiva.
+  // ok → aligned (o ahead se predicted oltre target); stretch → behind; aggressive/infeasible → very_behind.
+  if (prediction.feasibility !== "unknown") {
+    if (prediction.feasibility === "ok") signal = "aligned";
+    else if (prediction.feasibility === "stretch") signal = "behind";
+    else signal = "very_behind"; // aggressive | infeasible
   }
 
   return {
@@ -894,6 +992,12 @@ export function computeGoalProgress(
     daysToDeadline,
     weeksToDeadline,
     invertY,
+    feasibility: prediction.feasibility,
+    predictedFinalValue: prediction.predictedFinalValue,
+    realisticDeadlineWeeks: prediction.realisticDeadlineWeeks,
+    recommendedVolumeMultiplier: prediction.recommendedVolumeMultiplier,
+    reasoning: prediction.reasoning,
+    scienceCitation: prediction.scienceCitation,
   };
 }
 
