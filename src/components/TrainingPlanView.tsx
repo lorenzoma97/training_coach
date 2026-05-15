@@ -1021,48 +1021,122 @@ export default function TrainingPlanView() {
         </div>
       )}
 
-      {/* UX redesign #3 — Bottone primario unico "Rigenera piano".
-          Visibile sempre (non più nascosto in <details>) come entry-point
-          principale. Apre il picker unificato sotto, che contiene:
-            - "Riparti da oggi" (rest-of-week)
-            - "Pianifica settimana prossima" (next-week)
-            - "Adatta alle deviazioni" (solo se hasDeviations, scorciatoia
-              al flusso adapt con buildDeviationRequest)
-          Il bottone "Adatta con richiesta" (free-text) resta accessibile
-          ma in <details> "Opzioni avanzate" più sotto.
-          StalePlanBanner e CTA "Piano scaduto" puntano allo stesso picker. */}
-      {!isExpired && (
+      {/* UX redesign #4 (2026-05-14) — Bottone smart con dettaglio + link
+          "Altre opzioni" che apre il picker tradizionale.
+          Smart default in base al giorno della settimana:
+            - lun-mer (idx 0-2)  → rest-of-week
+            - gio-dom (idx 3-6)  → next-week
+            - piano stale/expired → forza next-week
+          Se rest-of-week + ci sono deviazioni → useAdapt=true, va via
+          handleAdapt(buildDeviationRequest) (vecchia "Adatta alle
+          deviazioni" diventa il default automatico, niente più scelta
+          separata da fare).
+          Picker invariato come escape hatch via "Altre opzioni →". */}
+      {!isExpired && (() => {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const todayIdx = (today.getDay() + 6) % 7;
+        const labels = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+        const formatDay = (d: Date) => `${labels[(d.getDay() + 6) % 7]} ${d.getDate()}`;
+        const totalDev = deviationCount.skipped + deviationCount.partial + deviationCount.extras;
+        const isStale = !!plan?.startDate && (() => {
+          const ps = new Date(`${plan.startDate}T00:00:00`);
+          return Math.floor((today.getTime() - ps.getTime()) / 86400000) > 7;
+        })();
+        const preferRest = !!plan && !isStale && todayIdx <= 2;
+        const smartRegen = preferRest
+          ? (() => {
+              const restEnd = new Date(today); restEnd.setDate(today.getDate() + (6 - todayIdx));
+              const remainLabels = labels.slice(todayIdx);
+              const remainSessions = plan!.weeks[0]?.sessions.filter(s => remainLabels.includes(s.day)) ?? [];
+              const useAdapt = totalDev > 0;
+              return {
+                mode: "rest-of-week" as const,
+                useAdapt,
+                icon: useAdapt ? "🔧" : "🔁",
+                label: useAdapt ? "Adatta piano alle deviazioni" : "Aggiorna giorni rimanenti",
+                sub1: `${formatDay(today)} → ${formatDay(restEnd)} (${remainSessions.length} session${remainSessions.length === 1 ? "e" : "i"})`,
+                sub2: useAdapt ? `integra ${totalDev} deviazion${totalDev === 1 ? "e" : "i"}` : null,
+              };
+            })()
+          : (() => {
+              const daysUntilNextMon = ((8 - today.getDay()) % 7) || 7;
+              const nextMon = new Date(today); nextMon.setDate(today.getDate() + daysUntilNextMon);
+              const nextSun = new Date(nextMon); nextSun.setDate(nextMon.getDate() + 6);
+              return {
+                mode: "next-week" as const,
+                useAdapt: false,
+                icon: "📅",
+                label: "Pianifica prossima settimana",
+                sub1: `${formatDay(nextMon)} → ${formatDay(nextSun)}`,
+                sub2: totalDev > 0 ? `il coach considererà ${totalDev} deviazion${totalDev === 1 ? "e" : "i"} di questa settimana` : null,
+              };
+            })();
+        const doSmartAction = () => {
+          if (regenerating || adapting) return;
+          setAdaptOpen(false);
+          if (smartRegen.useAdapt) void handleAdapt(buildDeviationRequest());
+          else void handleRegenerate(smartRegen.mode);
+        };
+        return (
         <div style={{ background: "#16213E", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 18px", display: "flex", flexDirection: "column", gap: "10px" }}>
-          <button
-            onClick={() => { setRegenPickerOpen(o => !o); setAdaptOpen(false); }}
-            disabled={regenerating || adapting}
-            aria-busy={regenerating || undefined}
-            role={regenerating ? "status" : undefined}
-            aria-label={regenerating ? "Rigenerazione piano in corso" : "Rigenera piano"}
-            style={{
-              padding: "12px 16px", minHeight: "48px",
-              background: regenerating ? "#1E293B" : regenPickerOpen ? "#0891B222" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
-              border: regenPickerOpen ? "1px solid #0891B2" : "none",
-              borderRadius: "10px",
-              color: regenPickerOpen ? "#0891B2" : "#FFF",
-              fontSize: "14px", fontWeight: 700,
-              cursor: regenerating ? "wait" : "pointer",
-              opacity: regenerating ? 0.5 : 1,
-              width: "100%",
-            }}
-          >
-            {regenerating
-              ? <span role="progressbar" aria-label={`Rigenerazione in corso — ${llmElapsedSec} secondi`} aria-busy="true">⏳ Rigenerazione… {llmElapsedSec}s</span>
-              : (regenPickerOpen ? "✕ Chiudi" : "🔁 Rigenera piano")}
-          </button>
-          {hasDeviations && !regenPickerOpen && !regenerating && (
-            <div style={{ fontSize: "11px", color: "#F59E0B", lineHeight: 1.4, padding: "0 4px" }}>
-              ⚠ Piano discostato dalla realtà ({[
-                deviationCount.skipped > 0 ? `${deviationCount.skipped} saltate` : "",
-                deviationCount.partial > 0 ? `${deviationCount.partial} variate` : "",
-                deviationCount.extras > 0 ? `${deviationCount.extras} autonomi` : "",
-              ].filter(Boolean).join(" · ")}). Apri il picker per riallineare.
-            </div>
+          {!regenPickerOpen ? (
+            <>
+              <button
+                onClick={doSmartAction}
+                disabled={regenerating || adapting}
+                aria-busy={regenerating || adapting || undefined}
+                role={regenerating || adapting ? "status" : undefined}
+                aria-label={regenerating ? "Rigenerazione piano in corso" : adapting ? "Adattamento piano in corso" : `${smartRegen.label} — ${smartRegen.sub1}${smartRegen.sub2 ? ` · ${smartRegen.sub2}` : ""}`}
+                style={{
+                  padding: "14px 18px", minHeight: "48px",
+                  background: (regenerating || adapting) ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
+                  border: "none", borderRadius: "10px",
+                  color: "#FFF", fontSize: "14px", fontWeight: 700,
+                  cursor: (regenerating || adapting) ? "wait" : "pointer",
+                  opacity: (regenerating || adapting) ? 0.5 : 1,
+                  width: "100%", textAlign: "left",
+                  display: "flex", flexDirection: "column", gap: "2px",
+                }}
+              >
+                {(regenerating || adapting) ? (
+                  <span role="progressbar" aria-busy="true">⏳ {regenerating ? "Rigenerazione" : "Adatto piano"}… {llmElapsedSec}s</span>
+                ) : (
+                  <>
+                    <span style={{ fontSize: "14px", fontWeight: 700 }}>{smartRegen.icon} {smartRegen.label}</span>
+                    <span style={{ fontSize: "12px", fontWeight: 500, opacity: 0.92 }}>{smartRegen.sub1}</span>
+                    {smartRegen.sub2 && (
+                      <span style={{ fontSize: "11px", fontWeight: 500, opacity: 0.85 }}>{smartRegen.sub2}</span>
+                    )}
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => { setRegenPickerOpen(true); setAdaptOpen(false); }}
+                disabled={regenerating || adapting}
+                style={{
+                  alignSelf: "flex-end", padding: "6px 10px",
+                  background: "transparent", border: "none",
+                  color: "#94A3B8", fontSize: "12px", fontWeight: 600,
+                  cursor: (regenerating || adapting) ? "wait" : "pointer",
+                  textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: "3px",
+                }}
+                aria-label="Mostra altre opzioni di rigenerazione"
+              >
+                Altre opzioni →
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setRegenPickerOpen(false)}
+              disabled={regenerating || adapting}
+              style={{
+                padding: "10px 14px", minHeight: "44px",
+                background: "#0891B222", border: "1px solid #0891B2",
+                borderRadius: "10px", color: "#0891B2",
+                fontSize: "13px", fontWeight: 700, cursor: "pointer",
+                width: "100%",
+              }}
+            >✕ Chiudi opzioni</button>
           )}
 
           {regenPickerOpen && !regenerating && (() => {
@@ -1221,7 +1295,8 @@ export default function TrainingPlanView() {
           })()}
           {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
         </div>
-      )}
+        );
+      })()}
 
       {/* UX redesign #3 — Opzioni avanzate: "Adatta con richiesta" free-text
           spostato qui in <details> chiuso di default. L'utente principale
