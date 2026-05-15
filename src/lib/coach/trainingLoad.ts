@@ -94,7 +94,9 @@ function classifyTsb(tsb: number, ctl: number): TrainingLoadSnapshot["band"] {
  *  1. Costruisce serie giornaliera completa da firstDate a targetDate
  *     (zero-fill per giorni rest).
  *  2. EWMA progressivo per ATL (alpha=0.25) e CTL (alpha=0.0465).
- *  3. Inizializzazione: EWMA[0] = TRIMP[0].
+ *  3. Inizializzazione: ATL=0, CTL=0 (canonical TrainingPeaks). ATL converge
+ *     più rapidamente verso lo steady-state, CTL più lentamente — l'asimmetria
+ *     genera TSB significativo.
  *  4. TSB = CTL - ATL al targetDate.
  *
  * Se la finestra storica e' <14gg di dati significativi, restituisce
@@ -124,9 +126,12 @@ export function computeTrainingLoad(
     const idx = Math.floor((dt - start) / 86400000);
     if (idx >= 0 && idx < totalDays) trimpByIdx[idx] += d.trimp;
   }
-  let atl = trimpByIdx[0];
-  let ctl = trimpByIdx[0];
-  for (let i = 1; i < totalDays; i++) {
+  // Inizializzazione canonica TrainingPeaks: ATL/CTL partono da 0 e
+  // convergono. ATL (alpha=0.25) converge più rapidamente di CTL (alpha=0.0465)
+  // verso lo steady-state — questo asimmetria genera il TSB significativo.
+  let atl = 0;
+  let ctl = 0;
+  for (let i = 0; i < totalDays; i++) {
     atl = ATL_ALPHA * trimpByIdx[i] + (1 - ATL_ALPHA) * atl;
     ctl = CTL_ALPHA * trimpByIdx[i] + (1 - CTL_ALPHA) * ctl;
   }
