@@ -144,6 +144,53 @@ export interface ComputePrescriptionInput {
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Volume landmarks per gruppo muscolare (set/sett, working sets a RPE 6-9).
+ * Schoenfeld 2017 (NSCA), Israetel/Hoffmann RP Volume Landmarks 2018.
+ *
+ * MV (Maintenance Volume):     minimo per non regredire.
+ * MEV (Minimum Effective Volume): soglia ipertrofica minima.
+ * MAV (Maximum Adaptive Volume):  range ottimale crescita.
+ * MRV (Maximum Recoverable Volume): tetto, oltre = overreach.
+ *
+ * Iniettato nel prompt come guidance al modello quando prescrive forza,
+ * specie con goal "strength" o "ipertrofia".
+ */
+export const MUSCLE_VOLUME_LANDMARKS: Record<string, { mv: number; mev: number; mav: [number, number]; mrv: number }> = {
+  petto:          { mv: 6,  mev: 8,  mav: [12, 20], mrv: 22 },
+  schiena:        { mv: 8,  mev: 10, mav: [14, 22], mrv: 25 },
+  quadricipiti:   { mv: 6,  mev: 8,  mav: [12, 18], mrv: 20 },
+  femorali:       { mv: 4,  mev: 6,  mav: [10, 16], mrv: 20 },
+  glutei:         { mv: 4,  mev: 6,  mav: [10, 16], mrv: 20 },
+  spalle:         { mv: 8,  mev: 8,  mav: [16, 20], mrv: 26 },
+  bicipiti:       { mv: 4,  mev: 6,  mav: [12, 20], mrv: 26 },
+  tricipiti:      { mv: 4,  mev: 6,  mav: [10, 14], mrv: 18 },
+  polpacci:       { mv: 6,  mev: 8,  mav: [12, 16], mrv: 20 },
+  core:           { mv: 0,  mev: 0,  mav: [4, 12], mrv: 16 },
+};
+
+/**
+ * Format compatto per iniezione nel prompt LLM. Output blocco con
+ * guideline numerica per ogni gruppo principale, contestualizzato per goal.
+ */
+export function formatVolumeLandmarksForPrompt(goalType?: GoalTypeHint): string {
+  const target =
+    goalType === "strength" ? "MAV (zona ottimale crescita)" :
+    goalType === "endurance" ? "MEV (mantenimento + complemento endurance)" :
+    "MEV-MAV (range standard)";
+  const lines = Object.entries(MUSCLE_VOLUME_LANDMARKS).map(([muscle, l]) =>
+    `  - ${muscle}: MV ${l.mv} | MEV ${l.mev} | MAV ${l.mav[0]}-${l.mav[1]} | MRV ${l.mrv}`,
+  );
+  return [
+    `VOLUME LANDMARKS forza (set/sett per gruppo, Schoenfeld 2017 / Israetel RP):`,
+    `Target raccomandato per goal "${goalType ?? "general"}": ${target}.`,
+    `Distribuisci nelle sessioni forza_gambe + forza_upper rispettando questi landmark.`,
+    `Limiti per muscolo:`,
+    ...lines,
+    `NB: working set = serie a RPE >= 6. Non contare warm-up sets.`,
+  ].join("\n");
+}
+
+/**
  * Volume base settimanale (minuti) per livello di esperienza.
  * Riferimento: Piercy et al. 2018 ACSM Physical Activity Guidelines.
  *   - sedentary: 150 min/sett (minimo OMS+ACSM).

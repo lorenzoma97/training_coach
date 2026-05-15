@@ -24,6 +24,7 @@ import { runMultiPass, MULTI_PASS_ENABLED } from "./passes/passOrchestrator";
 import {
   computePrescription,
   formatPrescriptionForPrompt,
+  formatVolumeLandmarksForPrompt,
   type GoalTypeHint,
 } from "./trainingPrescription";
 import type { MacroPhase } from "../types";
@@ -428,6 +429,7 @@ export async function generateInitialPlan(
     weeklyVolumeChronicMin: acwrInit?.chronicMin,
   });
   const prescriptionBlockInit = formatPrescriptionForPrompt(prescriptionInit);
+  const volumeLandmarksBlockInit = formatVolumeLandmarksForPrompt(inferGoalType(goals));
 
   if (MULTI_PASS_ENABLED) {
     try {
@@ -455,6 +457,8 @@ export async function generateInitialPlan(
   const loadBlockInit = formatTrainingLoadForPrompt(loadSnapInit);
   const userPrompt = `
 ${prescriptionBlockInit}
+
+${volumeLandmarksBlockInit}
 
 ${loadBlockInit}
 
@@ -728,12 +732,15 @@ non includere sessioni per essi.${minimalWindowGuard}
     weeklyVolumeChronicMin: acwrRegen?.chronicMin,
   });
   const prescriptionBlockRegen = formatPrescriptionForPrompt(prescriptionRegen);
+  const volumeLandmarksBlockRegen = formatVolumeLandmarksForPrompt(inferGoalType(goals));
 
   const readinessLineRegen = readinessRegen?.band ? `READINESS OGGI: ${readinessRegen.band}.` : "";
   const loadSnapRegen = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDaysForZonesRegen)));
   const loadBlockRegen = formatTrainingLoadForPrompt(loadSnapRegen);
   const userPrompt = `
 ${prescriptionBlockRegen}
+
+${volumeLandmarksBlockRegen}
 
 ${loadBlockRegen}
 
@@ -866,6 +873,7 @@ export async function adaptPlan(
     readinessBand: readinessAdapt?.band,
   });
   const prescriptionBlockAdapt = formatPrescriptionForPrompt(prescriptionAdapt);
+  const volumeLandmarksBlockAdapt = formatVolumeLandmarksForPrompt(inferGoalType(goals));
 
   // Wave 4.1 — multi-pass path (default). Errore propagato al caller (parita'
   // con legacy throw "Il coach non e' riuscito...").
@@ -894,6 +902,8 @@ export async function adaptPlan(
   const loadBlockAdapt = formatTrainingLoadForPrompt(loadSnapAdapt);
   const userPrompt = `
 ${prescriptionBlockAdapt}
+
+${volumeLandmarksBlockAdapt}
 
 ${loadBlockAdapt}
 
