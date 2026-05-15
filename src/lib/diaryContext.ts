@@ -408,6 +408,71 @@ export function goalsAsPrompt(goals: UserGoal[]): string {
 }
 
 /**
+ * Race-day execution plan (Wave C1 audit 2).
+ *
+ * Coach pro endurance fornisce nei 7-14gg pre-gara A: pacing strategy,
+ * nutrition window, warm-up race-day execution. Tool oggi gestisce solo
+ * il taper (volume reduction Bosquet 2007) ma non l'esecuzione operativa.
+ *
+ * Helper: cerca race priority="A" nei prossimi 14gg dal profilo.
+ * Se trovata, genera blocco con:
+ *  - Pacing: target pace + indicazioni negative-split
+ *  - Nutrition: carb-loading 48h, pasto pre-gara, durante (se >75min)
+ *  - Warm-up race-day: 15-20 min protocollo standardizzato
+ *
+ * Iniettato nel prompt SOLO se race A imminente. Altrimenti stringa vuota.
+ */
+export function raceDayExecutionContext(profile: UserProfile | null): string {
+  if (!profile?.races || profile.races.length === 0) return "";
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const within14d = profile.races.filter(r => {
+    if (r.priority !== "A") return false;
+    if (!r.date) return false;
+    const dt = new Date(`${r.date}T00:00:00`).getTime();
+    if (Number.isNaN(dt)) return false;
+    const days = Math.floor((dt - today.getTime()) / 86400000);
+    return days >= 0 && days <= 14;
+  });
+  if (within14d.length === 0) return "";
+  const r = within14d.sort((a, b) => a.date.localeCompare(b.date))[0];
+  const daysToRace = Math.floor((new Date(`${r.date}T00:00:00`).getTime() - today.getTime()) / 86400000);
+  const lines: string[] = [
+    `RACE-DAY EXECUTION (gara A "${r.name}" tra ${daysToRace}gg, ${r.sport}${r.distance_km ? ` ${r.distance_km}km` : ""}${r.targetTime ? ` target ${r.targetTime}` : ""}):`,
+    `- Settimana race: il piano DEVE essere taper completo (volume -40-50% rispetto a CTL recente, intensità preservata Bosquet 2007).`,
+  ];
+  // Pacing
+  if (r.targetTimeSec && r.distance_km && r.sport === "corsa") {
+    const paceSec = r.targetTimeSec / r.distance_km;
+    const paceMin = Math.floor(paceSec / 60);
+    const paceRem = Math.round(paceSec % 60);
+    lines.push(
+      `- PACING strategy (negative split): primi 1/3 a ${paceMin}:${String(paceRem).padStart(2, "0")}/km +5-10s (controllo, NON tirare), secondo 1/3 a target ${paceMin}:${String(paceRem).padStart(2, "0")}/km, ultimo 1/3 a target -2-5s/km (push finale).`,
+    );
+  } else if (r.sport === "corsa") {
+    lines.push(`- PACING strategy: parti controllato (+5-10s/km vs target), accelera gradualmente, push finale ultimo 1/3.`);
+  }
+  // Nutrition (corsa endurance > 60 min tipicamente)
+  if (r.sport === "corsa" || r.sport === "triathlon" || r.sport === "trail") {
+    lines.push(`- NUTRITION race-day:`);
+    lines.push(`  · 48-24h prima: carb-loading 5-7g/kg/giorno (es. 70kg → 350-490g carbs/giorno).`);
+    lines.push(`  · 3-4h prima: pasto leggero ricco di carbs 1-2g/kg (es. 100-150g pasta/riso/avena), basso grassi/fibre.`);
+    lines.push(`  · 30-45min prima: snack 30g carbs facili (banana, gel, barretta, pane+miele) + 200-300ml acqua.`);
+    if (!r.distance_km || r.distance_km > 15) {
+      lines.push(`  · Durante (se >75min): 30-60g carbs/h (1-2 gel + acqua, oppure sport drink). Idratazione: 150-250ml ogni 15-20min.`);
+    }
+  }
+  // Warm-up race-day
+  if (r.sport === "corsa" || r.sport === "trail") {
+    lines.push(`- WARM-UP race-day (15-20 min, finire 10-15min prima del via):`);
+    lines.push(`  · 8-10 min easy Z1-Z2 (riscaldamento progressivo).`);
+    lines.push(`  · 4-6 allunghi 60-80m al 80-90% velocità con recupero camminato (attivazione neuromuscolare).`);
+    lines.push(`  · 1-2 sprint 100m al 95% per attivare CNS (ultimo finire ≥10min prima del via).`);
+    lines.push(`  · 2-3 min stretching dinamico (leg swings, mobilità anche), NO static stretching.`);
+  }
+  return lines.join("\n");
+}
+
+/**
  * Sport-specific S&C auto-prescriber (Wave B2 audit 2).
  *
  * Coach pro game-sport prescrive routine OBBLIGATORIE in base allo sport
