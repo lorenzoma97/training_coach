@@ -3,7 +3,7 @@ import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, planAsPrompt, getLastNDays, goalProgressContext, sportSpecificPrescriptions, raceDayExecutionContext, tournamentClusterContext, computeGoalProgress } from "../diaryContext";
 import { aggregateDailyLoad, computeTrainingLoad, formatTrainingLoadForPrompt } from "./trainingLoad";
-import { saveDiagnostic } from "./planDiagnostic";
+import { saveDiagnostic, type PlanDiagnostic } from "./planDiagnostic";
 import type { UserProfile, UserGoal, TrainingPlan, PlanWeek, WeeklyReportSummary } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 import { validatePlan, planStateHash, computePlanStartDate } from "./planValidator";
@@ -540,33 +540,9 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
   }
 
   // 2026-05-18 mobile-friendly diagnostic (Lorenzo: no DevTools su mobile).
-  const finalVolume = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
-  void saveDiagnostic({
-    timestamp: new Date().toISOString(),
+  recordPlanDiagnostic({
     mode: "initial",
-    prescription: {
-      weeklyVolumeTargetMin: prescription.weeklyVolumeTargetMin,
-      rangeMin: prescription.weeklyVolumeRangeMin.min,
-      rangeMax: prescription.weeklyVolumeRangeMin.max,
-      avgSessionMin: prescription.avgSessionMin,
-      sessionRangeMin: prescription.sessionRangeMin.min,
-      sessionRangeMax: prescription.sessionRangeMin.max,
-      overrides: prescription.overrides,
-    },
-    prompt: {
-      systemInstructionLength: systemInstruction.length,
-      userPromptLength: userPrompt.length,
-      maxTokens: 2400,
-    },
-    result: {
-      actualVolumeMin: finalVolume,
-      deltaPctVsTarget: Math.round(((finalVolume - prescription.weeklyVolumeTargetMin) / Math.max(1, prescription.weeklyVolumeTargetMin)) * 100),
-      sessionsCount: plan.weeks[0]?.sessions.length ?? 0,
-      sessionsBreakdown: (plan.weeks[0]?.sessions ?? []).map(s => ({
-        day: s.day, type: s.type, duration_min: s.duration_min || 0,
-      })),
-      rawResponseSnippet: JSON.stringify(raw).slice(0, 800),
-    },
+    prescription, systemInstruction, userPrompt, maxTokens: 2400, plan, raw,
     retry: retryRes.retry,
   });
 
@@ -873,6 +849,52 @@ async function loadGenerationContext(input: LoadGenerationContextInput): Promise
 }
 
 /**
+ * Sprint 5 step 4 (2026-05-18): saveDiagnostic payload era duplicato
+ * letteralmente in init e regen (28 LoC × 2 = 56). Estratto come fire-and-forget.
+ */
+function recordPlanDiagnostic(args: {
+  mode: PlanDiagnostic["mode"];
+  prescription: ReturnType<typeof computePrescription>;
+  systemInstruction: string;
+  userPrompt: string;
+  maxTokens: number;
+  plan: TrainingPlan;
+  raw: unknown;
+  retry: RetryInfo;
+}): void {
+  const { mode, prescription, systemInstruction, userPrompt, maxTokens, plan, raw, retry } = args;
+  const finalVolume = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
+  void saveDiagnostic({
+    timestamp: new Date().toISOString(),
+    mode,
+    prescription: {
+      weeklyVolumeTargetMin: prescription.weeklyVolumeTargetMin,
+      rangeMin: prescription.weeklyVolumeRangeMin.min,
+      rangeMax: prescription.weeklyVolumeRangeMin.max,
+      avgSessionMin: prescription.avgSessionMin,
+      sessionRangeMin: prescription.sessionRangeMin.min,
+      sessionRangeMax: prescription.sessionRangeMin.max,
+      overrides: prescription.overrides,
+    },
+    prompt: {
+      systemInstructionLength: systemInstruction.length,
+      userPromptLength: userPrompt.length,
+      maxTokens,
+    },
+    result: {
+      actualVolumeMin: finalVolume,
+      deltaPctVsTarget: Math.round(((finalVolume - prescription.weeklyVolumeTargetMin) / Math.max(1, prescription.weeklyVolumeTargetMin)) * 100),
+      sessionsCount: plan.weeks[0]?.sessions.length ?? 0,
+      sessionsBreakdown: (plan.weeks[0]?.sessions ?? []).map(s => ({
+        day: s.day, type: s.type, duration_min: s.duration_min || 0,
+      })),
+      rawResponseSnippet: JSON.stringify(raw).slice(0, 800),
+    },
+    retry,
+  });
+}
+
+/**
  * Costruisce il BuildContext per il prompt conditional (zones/macro/conditions).
  * Identico nelle 3 entry-point dopo step 1 — estratto qui per dedup.
  * hasStrengthInPlan è sempre true (Rønnestad 2014: forza 2-3x/sett per endurance).
@@ -1070,33 +1092,9 @@ ${modeInstruction}
   }
 
   // 2026-05-18 mobile-friendly diagnostic.
-  const finalVolume = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
-  void saveDiagnostic({
-    timestamp: new Date().toISOString(),
+  recordPlanDiagnostic({
     mode: "regen",
-    prescription: {
-      weeklyVolumeTargetMin: prescription.weeklyVolumeTargetMin,
-      rangeMin: prescription.weeklyVolumeRangeMin.min,
-      rangeMax: prescription.weeklyVolumeRangeMin.max,
-      avgSessionMin: prescription.avgSessionMin,
-      sessionRangeMin: prescription.sessionRangeMin.min,
-      sessionRangeMax: prescription.sessionRangeMin.max,
-      overrides: prescription.overrides,
-    },
-    prompt: {
-      systemInstructionLength: systemInstruction.length,
-      userPromptLength: userPrompt.length,
-      maxTokens: 2400,
-    },
-    result: {
-      actualVolumeMin: finalVolume,
-      deltaPctVsTarget: Math.round(((finalVolume - prescription.weeklyVolumeTargetMin) / Math.max(1, prescription.weeklyVolumeTargetMin)) * 100),
-      sessionsCount: plan.weeks[0]?.sessions.length ?? 0,
-      sessionsBreakdown: (plan.weeks[0]?.sessions ?? []).map(s => ({
-        day: s.day, type: s.type, duration_min: s.duration_min || 0,
-      })),
-      rawResponseSnippet: JSON.stringify(raw).slice(0, 800),
-    },
+    prescription, systemInstruction, userPrompt, maxTokens: 2400, plan, raw,
     retry: retryResRegen.retry,
   });
 
