@@ -45,7 +45,18 @@ const cardStyle: React.CSSProperties = {
   borderRadius: "12px", padding: "14px 16px",
 };
 
-export default function GoalsEditor() {
+/**
+ * Variant rendering (2026-05-18):
+ *  - "compact" (Settings → Profilo/Obiettivi): info essenziali + badge
+ *    feasibility "raggiungibile/non raggiungibile". No sparkline, no
+ *    sezione predicted, no reasoning. Focus su edit/manage.
+ *  - "full" (CoachPage → Obiettivi): Card progress completa con trend
+ *    sparkline grande (responsive, height 140) + KPI predetto + reasoning
+ *    scientifico collapsible. Focus su analisi progressione.
+ */
+type GoalsEditorVariant = "compact" | "full";
+
+export default function GoalsEditor({ variant = "compact" }: { variant?: GoalsEditorVariant } = {}) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [goals, setGoals] = useState<UserGoal[]>([]);
 
@@ -354,12 +365,53 @@ export default function GoalsEditor() {
                   <button onClick={() => startEdit(g)} style={{ ...ghostBtn, padding: "10px 14px", minHeight: "40px", fontSize: "12px" }}>Modifica</button>
                   <button onClick={() => removeGoal(g.id)} style={{ ...ghostBtn, padding: "10px 14px", minHeight: "40px", fontSize: "12px", borderColor: "#EF444444", color: "#EF4444" }}>Rimuovi</button>
                 </div>
-                {/* Wave audit 2 — Progress Card: solo per goal active.
-                    Mostra KPI corrente vs target, sparkline 8 sett, segnale, ETA.
-                    Logica in computeGoalProgress (diaryContext.ts). */}
-                {g.status === "active" && (
+                {/* Wave audit 2 — variant-aware rendering:
+                    - "full" (CoachPage tab Obiettivi): Card progress completa
+                      con sparkline trend grande, KPI predetto, reasoning.
+                    - "compact" (Settings/Profilo): solo badge "raggiungibile" /
+                      "non raggiungibile" inline. No trend grande.
+                    In entrambi i casi computeGoalProgress gira (è una pure
+                    function leggera, no side effect). */}
+                {g.status === "active" && variant === "full" && (
                   <GoalProgressCard goal={g} progress={computeGoalProgress(g, recentDays, profile)} />
                 )}
+                {g.status === "active" && variant === "compact" && (() => {
+                  const prog = computeGoalProgress(g, recentDays, profile);
+                  const reachable = prog.feasibility === "ok" || prog.feasibility === "stretch";
+                  const color = prog.feasibility === "ok" ? "#22C55E"
+                    : prog.feasibility === "stretch" ? "#0891B2"
+                    : prog.feasibility === "aggressive" ? "#F59E0B"
+                    : prog.feasibility === "infeasible" ? "#EF4444"
+                    : "#94A3B8";
+                  const label = prog.feasibility === "ok" ? "✓ raggiungibile"
+                    : prog.feasibility === "stretch" ? "✓ raggiungibile (push)"
+                    : prog.feasibility === "aggressive" ? "⚠ rischio: deadline stretta"
+                    : prog.feasibility === "infeasible" ? "🚫 NON raggiungibile a deadline"
+                    : "? dati insufficienti";
+                  return (
+                    <div style={{
+                      marginTop: "8px",
+                      padding: "6px 10px",
+                      background: color + "15",
+                      border: `1px solid ${color}55`,
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                      color,
+                      fontWeight: 600,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      flexWrap: "wrap",
+                    }}>
+                      <span>{label}</span>
+                      {!reachable && prog.realisticDeadlineWeeks != null && prog.realisticDeadlineWeeks > 0 && (
+                        <span style={{ color: "#94A3B8", fontWeight: 500 }}>
+                          · deadline realistica ~{prog.realisticDeadlineWeeks} sett
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* Avanzato: cambio priorità, riordino, stato. Collapsed di default. */}
                 <details style={{ marginTop: "6px" }}>
                   <summary

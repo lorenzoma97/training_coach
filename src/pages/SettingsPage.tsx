@@ -708,7 +708,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
         <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "10px" }}>
           Obiettivi
         </div>
-        <GoalsEditor />
+        <GoalsEditor variant="compact" />
       </div>
 
       {/* ─── Calendario gare (componente separato) ───────────────────── */}

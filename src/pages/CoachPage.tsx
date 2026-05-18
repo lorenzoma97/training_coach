@@ -227,7 +227,7 @@ export default function CoachPage() {
           <div style={{ fontSize: "13px", color: "#94A3B8", lineHeight: 1.5 }}>
             Modifica, aggiungi, archivia. Il coach dimensiona piano e feedback su questi obiettivi.
           </div>
-          <GoalsEditor />
+          <GoalsEditor variant="full" />
         </div>
       )}
       {tab === "zones" && (

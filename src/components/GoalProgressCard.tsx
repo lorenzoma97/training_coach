@@ -9,6 +9,7 @@
 // Logica computata da `computeGoalProgress` in diaryContext.ts (pure).
 // Componente puro presentational: riceve già la struct calcolata.
 
+import { useEffect, useRef, useState } from "react";
 import Sparkline from "./Sparkline";
 import {
   formatPaceSec,
@@ -58,6 +59,21 @@ export default function GoalProgressCard({
   goal: UserGoal;
   progress: GoalProgressData;
 }) {
+  // Sparkline responsive: misura container al mount + resize.
+  const sparkContainerRef = useRef<HTMLDivElement>(null);
+  const [sparkWidth, setSparkWidth] = useState(500);
+  useEffect(() => {
+    const el = sparkContainerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.clientWidth;
+      if (w > 0) setSparkWidth(w);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const feasMeta = FEASIBILITY_META[progress.feasibility];
   const currentStr = formatValue(progress.currentValue, progress.kind);
   const targetStr = progress.targetValue != null ? formatValue(progress.targetValue, progress.kind) : "—";
@@ -145,21 +161,24 @@ export default function GoalProgressCard({
         </div>
       )}
 
-      {/* Sparkline 8 settimane */}
+      {/* Sparkline 8 settimane — responsive width, height ampia per leggibilità. */}
       <div>
-        <div style={{ fontSize: "10px", color: "#64748B", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "4px" }}>
+        <div style={{ fontSize: "10px", color: "#64748B", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "6px" }}>
           Trend 8 settimane
         </div>
-        <Sparkline
-          points={progress.sparklinePoints}
-          width={300}
-          height={60}
-          color={sparkColor}
-          invertY={progress.invertY}
-          formatValue={progress.kind === "corsa_pace" ? formatPaceSec : undefined}
-          unit={progress.unit}
-          ariaLabel={`Trend ${progress.unit} 8 settimane per goal ${goal.smartDescription}`}
-        />
+        <div ref={sparkContainerRef} style={{ width: "100%", overflow: "hidden" }}>
+          <Sparkline
+            points={progress.sparklinePoints}
+            width={sparkWidth}
+            height={140}
+            color={sparkColor}
+            invertY={progress.invertY}
+            formatValue={progress.kind === "corsa_pace" ? formatPaceSec : undefined}
+            unit={progress.unit}
+            showDots
+            ariaLabel={`Trend ${progress.unit} 8 settimane per goal ${goal.smartDescription}`}
+          />
+        </div>
       </div>
 
       {/* Reasoning collapsibile (citazione paper + spiegazione) */}
