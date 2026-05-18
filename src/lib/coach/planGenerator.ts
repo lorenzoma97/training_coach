@@ -473,19 +473,7 @@ ${goalConflictHint}${availableDaysBlock}
 Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'utente verso gli obiettivi rispettando vincoli e sicurezza. La settimana successiva sarà rigenerata lunedì prossimo sulla base dei dati reali del diario, non anticiparla ora.
 `.trim();
 
-  const bCtx: BuildContext = {
-    profile,
-    hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
-    // Il piano generato include sempre forza 2-3x/sett (see Rønnestad 2014); teniamo true per
-    // attivare il modulo strengthForEndurance quando il contesto corsa è presente.
-    hasStrengthInPlan: true,
-    detectedConditions: extractConditionsFromProfile(profile),
-    zones: zonesCtx?.zones ?? undefined,
-    zonesTimeInZone: zonesCtx?.timeInZone,
-    zonesPolar: zonesCtx?.polar,
-    zonesTotalSessions: zonesCtx?.totalSessions,
-    macroContext: macroLookup?.macroContext,
-  };
+  const bCtx = buildBCtxForPrompt(profile, goals, zonesCtx, macroLookup);
   // 2026-05-18: prescription al TOP del systemInstruction (priority alta) +
   // duplicato nel userPrompt per max reinforcement. Gemini lite tende a
   // dimenticare istruzioni in mezzo al prompt — duplicarle è defensive.
@@ -884,6 +872,30 @@ async function loadGenerationContext(input: LoadGenerationContextInput): Promise
   };
 }
 
+/**
+ * Costruisce il BuildContext per il prompt conditional (zones/macro/conditions).
+ * Identico nelle 3 entry-point dopo step 1 — estratto qui per dedup.
+ * hasStrengthInPlan è sempre true (Rønnestad 2014: forza 2-3x/sett per endurance).
+ */
+function buildBCtxForPrompt(
+  profile: UserProfile,
+  goals: UserGoal[],
+  zonesCtx: GenerationContext["zonesCtx"],
+  macroLookup: GenerationContext["macroLookup"],
+): BuildContext {
+  return {
+    profile,
+    hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
+    hasStrengthInPlan: true,
+    detectedConditions: extractConditionsFromProfile(profile),
+    zones: zonesCtx?.zones ?? undefined,
+    zonesTimeInZone: zonesCtx?.timeInZone,
+    zonesPolar: zonesCtx?.polar,
+    zonesTotalSessions: zonesCtx?.totalSessions,
+    macroContext: macroLookup?.macroContext,
+  };
+}
+
 /** Rigenera il piano. Vedi RegenerateMode per le due modalità. */
 export async function regenerateNextWeek(
   profile: UserProfile,
@@ -987,19 +999,7 @@ ${recentDaysText}
 ${restOfWeekBlock}
 ${modeInstruction}
 `.trim();
-  const bCtx: BuildContext = {
-    profile,
-    hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
-    // Il piano generato include sempre forza 2-3x/sett (see Rønnestad 2014); teniamo true per
-    // attivare il modulo strengthForEndurance quando il contesto corsa è presente.
-    hasStrengthInPlan: true,
-    detectedConditions: extractConditionsFromProfile(profile),
-    zones: zonesCtx?.zones ?? undefined,
-    zonesTimeInZone: zonesCtx?.timeInZone,
-    zonesPolar: zonesCtx?.polar,
-    zonesTotalSessions: zonesCtx?.totalSessions,
-    macroContext: macroLookup?.macroContext,
-  };
+  const bCtx = buildBCtxForPrompt(profile, goals, zonesCtx, macroLookup);
   // 2026-05-18: prescription al TOP del systemInstruction (vedi note in generateInitialPlan).
   const systemInstruction = prescriptionBlock + "\n\n" +
     PROMPTS.planGeneration({ age: profile.age }) + "\n\n" +
@@ -1183,17 +1183,7 @@ REGOLE NON VIOLABILI:
 
 Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le sessioni). Il "rationale" DEVE menzionare esplicitamente cosa è cambiato rispetto al piano precedente e perché.
 `.trim();
-  const bCtx: BuildContext = {
-    profile,
-    hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
-    hasStrengthInPlan: true,
-    detectedConditions: extractConditionsFromProfile(profile),
-    zones: zonesCtx?.zones ?? undefined,
-    zonesTimeInZone: zonesCtx?.timeInZone,
-    zonesPolar: zonesCtx?.polar,
-    zonesTotalSessions: zonesCtx?.totalSessions,
-    macroContext: macroLookup?.macroContext,
-  };
+  const bCtx = buildBCtxForPrompt(profile, goals, zonesCtx, macroLookup);
   const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
   const raw = await generateJSON<unknown>({
