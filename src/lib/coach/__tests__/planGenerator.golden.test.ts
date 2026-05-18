@@ -80,7 +80,7 @@ const anna: UserProfile = {
 
 const marco: UserProfile = {
   age: 40, sex: "m", weight_kg: 70, height_cm: 175,
-  experience: "advanced", injuries: [], meds: "",
+  experience: "competitive", injuries: [], meds: "",
   weekly_availability: { days: 5, hoursPerSession: 1.0 },
   availableDays: ["lun", "mar", "mer", "ven", "sab"],
   intensityPreference: "intense",
@@ -103,7 +103,7 @@ const giuseppe: UserProfile = {
 
 const sara: UserProfile = {
   age: 26, sex: "f", weight_kg: 62, height_cm: 165,
-  experience: "advanced", injuries: [], meds: "",
+  experience: "competitive", injuries: [], meds: "",
   weekly_availability: { days: 4, hoursPerSession: 1.25 },
   availableDays: ["lun", "mer", "ven", "sab"],
   intensityPreference: "intense",
