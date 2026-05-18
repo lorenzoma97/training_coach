@@ -610,11 +610,12 @@ export function formatPrescriptionForPrompt(p: TrainingPrescription): string {
   lines.push(
     "",
     "ISTRUZIONI ESECUTIVE (obbligatorie):",
-    `1. PRIMA di scegliere le singole sessioni, calcola: ${p.weeklyVolumeTargetMin} min target ÷ N giorni allenabili = durata media per sessione.`,
-    "2. Allocata la durata target, distribuisci i tipi (corsa/forza/sport) rispettando le zone prescritte.",
-    `3. La somma delle durate delle sessioni nel piano DEVE essere ≥ ${minAcceptable} min e ≤ ${p.weeklyVolumeRangeMin.max} min. Sotto ${minAcceptable}min = REJECTED.`,
-    "4. Se hai 5 giorni × 1.5h disponibili (=450min/sett) e prescrizione dice 360min, NON proporre 4 sessioni da 30-40min (=140min): è SOTTO-prescrizione del 60%, rifiutata.",
-    "5. Rispetta la distribuzione zone aggiustando la durata DENTRO il volume target (non riducendo il totale).",
+    `1. Questo volume target è GIÀ stato scientificamente derivato dal profilo utente includendo: età decay (Tanaka), experience cap (ACSM), readiness override (se low → già ridotto), ACWR check (Gabbett: spike acuto vs chronic load già cappato), eventuali override per infortunio. NON sottrarre ulteriormente "per sicurezza" — la safety è già nel numero.`,
+    `2. PRIMA di scegliere le singole sessioni, calcola: ${p.weeklyVolumeTargetMin} min target ÷ N giorni allenabili = durata media per sessione.`,
+    "3. Allocata la durata target, distribuisci i tipi (corsa/forza/sport) rispettando le zone prescritte.",
+    `4. La somma delle durate del piano DEVE essere ≥ ${minAcceptable} min e ≤ ${p.weeklyVolumeRangeMin.max} min. Sotto ${minAcceptable}min = REJECTED dal validator (sotto-prescrizione passiva).`,
+    `5. ECCEZIONE: puoi ridurre sotto ${minAcceptable}min SOLO se rilevi un NUOVO segnale safety non già considerato dalla prescrizione (es. dolore acuto nel diario degli ultimi 3gg non ancora in painTrackingAreas, o richiesta esplicita utente). In quel caso DEVI motivarlo nel "rationale" esplicitamente.`,
+    "6. Rispetta la distribuzione zone aggiustando la durata DENTRO il volume target (non riducendo il totale).",
   );
   return lines.join("\n");
 }
