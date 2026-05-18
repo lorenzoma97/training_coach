@@ -3,6 +3,7 @@ import { generateJSON } from "../gemini";
 import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, planAsPrompt, getLastNDays, goalProgressContext, sportSpecificPrescriptions, raceDayExecutionContext, tournamentClusterContext, computeGoalProgress } from "../diaryContext";
 import { aggregateDailyLoad, computeTrainingLoad, formatTrainingLoadForPrompt } from "./trainingLoad";
+import { saveDiagnostic } from "./planDiagnostic";
 import type { UserProfile, UserGoal, TrainingPlan, PlanWeek } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 import { validatePlan, planStateHash, computePlanStartDate } from "./planValidator";
@@ -571,7 +572,8 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
   // 2026-05-18 auto-retry: Gemini 3.1 flash lite tende a sotto-prescrivere
   // ignorando le istruzioni numeriche del prompt. Se il volume totale e' <80%
   // del target prescritto, riproviamo UNA volta con prompt addendum esplicito.
-  plan = await retryIfUnderprescribed(plan, prescriptionInit, userPrompt, systemInstruction, effectiveDays);
+  const retryRes = await retryIfUnderprescribed(plan, prescriptionInit, userPrompt, systemInstruction, effectiveDays);
+  plan = retryRes.plan;
 
   // Validator deterministico post-LLM: logga violazioni safety anche se il modello
   // le ha ignorate. G7 readiness: se band="low" oggi, validatePlan downgrade Z4-5→Z3.
@@ -584,6 +586,38 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
       "\n\n[Validator] Avvertenze rilevate: " +
       validation.issues.map(i => i.message).join(" ");
   }
+
+  // 2026-05-18 mobile-friendly diagnostic (Lorenzo: no DevTools su mobile).
+  const finalVolumeInit = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
+  void saveDiagnostic({
+    timestamp: new Date().toISOString(),
+    mode: "initial",
+    prescription: {
+      weeklyVolumeTargetMin: prescriptionInit.weeklyVolumeTargetMin,
+      rangeMin: prescriptionInit.weeklyVolumeRangeMin.min,
+      rangeMax: prescriptionInit.weeklyVolumeRangeMin.max,
+      avgSessionMin: prescriptionInit.avgSessionMin,
+      sessionRangeMin: prescriptionInit.sessionRangeMin.min,
+      sessionRangeMax: prescriptionInit.sessionRangeMin.max,
+      overrides: prescriptionInit.overrides,
+    },
+    prompt: {
+      systemInstructionLength: systemInstruction.length,
+      userPromptLength: userPrompt.length,
+      maxTokens: 2400,
+    },
+    result: {
+      actualVolumeMin: finalVolumeInit,
+      deltaPctVsTarget: Math.round(((finalVolumeInit - prescriptionInit.weeklyVolumeTargetMin) / Math.max(1, prescriptionInit.weeklyVolumeTargetMin)) * 100),
+      sessionsCount: plan.weeks[0]?.sessions.length ?? 0,
+      sessionsBreakdown: (plan.weeks[0]?.sessions ?? []).map(s => ({
+        day: s.day, type: s.type, duration_min: s.duration_min || 0,
+      })),
+      rawResponseSnippet: JSON.stringify(raw).slice(0, 800),
+    },
+    retry: retryRes.retry,
+  });
+
   return plan;
 }
 
@@ -596,18 +630,25 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
  * Costo: max 1 chiamata extra (rare in practice). Risolve il pattern noto
  * di Gemini 3.1 flash lite che ignora prompt complessi.
  */
+interface RetryInfo {
+  attempted: boolean;
+  actualVolumeMin?: number;
+  success?: boolean;
+  error?: string;
+}
+
 async function retryIfUnderprescribed(
   plan: TrainingPlan,
   prescription: import("./trainingPrescription").TrainingPrescription,
   baseUserPrompt: string,
   systemInstruction: string,
   effectiveDays: string[] | undefined,
-): Promise<TrainingPlan> {
+): Promise<{ plan: TrainingPlan; retry: RetryInfo }> {
   const targetVolume = prescription.weeklyVolumeTargetMin;
-  if (targetVolume <= 0) return plan;
+  if (targetVolume <= 0) return { plan, retry: { attempted: false } };
   const actualVolume = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
   const deltaPct = (actualVolume - targetVolume) / targetVolume;
-  if (deltaPct >= -0.20) return plan; // OK
+  if (deltaPct >= -0.20) return { plan, retry: { attempted: false } }; // OK
 
   const minAcceptable = Math.round(targetVolume * 0.85);
   const numDays = effectiveDays?.length ?? 5;
@@ -632,21 +673,26 @@ RIGENERA RISPETTANDO QUESTI VINCOLI NUMERICI:
       systemInstruction,
       userPrompt: baseUserPrompt + "\n\n" + retryAddendum,
       schemaHint,
-      maxTokens: 1800,
+      maxTokens: 2400,
     });
     const retryParsed = planSchema.safeParse(retryRaw);
-    if (!retryParsed.success) return plan;
+    if (!retryParsed.success) {
+      return { plan, retry: { attempted: true, success: false, error: "Zod parse failed" } };
+    }
     const retryWeeks = coerceWeeks(retryParsed.data.weeks);
     const retryVolume = retryWeeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
     if (retryVolume >= targetVolume * 0.75) {
       console.info(`[planGenerator] Retry success: ${retryVolume} min (vs target ${targetVolume}).`);
-      return { ...plan, weeks: retryWeeks, rationale: retryParsed.data.rationale };
+      return {
+        plan: { ...plan, weeks: retryWeeks, rationale: retryParsed.data.rationale },
+        retry: { attempted: true, actualVolumeMin: retryVolume, success: true },
+      };
     }
     console.warn(`[planGenerator] Retry ancora sotto: ${retryVolume} min. Mantengo primo piano.`);
-    return plan;
+    return { plan, retry: { attempted: true, actualVolumeMin: retryVolume, success: false } };
   } catch (e) {
     console.warn("[planGenerator] Retry fallito (network/parse):", e);
-    return plan;
+    return { plan, retry: { attempted: true, success: false, error: String((e as Error)?.message ?? e) } };
   }
 }
 
@@ -950,7 +996,8 @@ ${modeInstruction}
     expectedDayLabels = effectiveDaysRegen;
   }
   // 2026-05-18 auto-retry sotto-prescrizione (vedi retryIfUnderprescribed in generateInitialPlan).
-  plan = await retryIfUnderprescribed(plan, prescriptionRegen, userPrompt, systemInstruction, effectiveDaysRegen);
+  const retryResRegen = await retryIfUnderprescribed(plan, prescriptionRegen, userPrompt, systemInstruction, effectiveDaysRegen);
+  plan = retryResRegen.plan;
 
   // readiness gia' caricato sopra come readinessRegen.
   const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesRegen), { expectedDayLabels, readiness: readinessRegen, prescription: prescriptionRegen });
@@ -959,6 +1006,38 @@ ${modeInstruction}
     console.warn("[regenerateNextWeek] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
     plan.rationale = plan.rationale + "\n\n[Validator] Avvertenze: " + validation.issues.map(i => i.message).join(" ");
   }
+
+  // 2026-05-18 mobile-friendly diagnostic.
+  const finalVolumeRegen = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
+  void saveDiagnostic({
+    timestamp: new Date().toISOString(),
+    mode: "regen",
+    prescription: {
+      weeklyVolumeTargetMin: prescriptionRegen.weeklyVolumeTargetMin,
+      rangeMin: prescriptionRegen.weeklyVolumeRangeMin.min,
+      rangeMax: prescriptionRegen.weeklyVolumeRangeMin.max,
+      avgSessionMin: prescriptionRegen.avgSessionMin,
+      sessionRangeMin: prescriptionRegen.sessionRangeMin.min,
+      sessionRangeMax: prescriptionRegen.sessionRangeMin.max,
+      overrides: prescriptionRegen.overrides,
+    },
+    prompt: {
+      systemInstructionLength: systemInstruction.length,
+      userPromptLength: userPrompt.length,
+      maxTokens: 2400,
+    },
+    result: {
+      actualVolumeMin: finalVolumeRegen,
+      deltaPctVsTarget: Math.round(((finalVolumeRegen - prescriptionRegen.weeklyVolumeTargetMin) / Math.max(1, prescriptionRegen.weeklyVolumeTargetMin)) * 100),
+      sessionsCount: plan.weeks[0]?.sessions.length ?? 0,
+      sessionsBreakdown: (plan.weeks[0]?.sessions ?? []).map(s => ({
+        day: s.day, type: s.type, duration_min: s.duration_min || 0,
+      })),
+      rawResponseSnippet: JSON.stringify(raw).slice(0, 800),
+    },
+    retry: retryResRegen.retry,
+  });
+
   return plan;
 }
 

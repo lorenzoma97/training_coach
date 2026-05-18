@@ -10,6 +10,7 @@ import { getRagCache } from "../lib/ragStorage";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { events } from "../lib/events";
 import BackupSection from "../components/BackupSection";
+import PlanDiagnosticPanel from "../components/PlanDiagnosticPanel";
 import GoalsEditor from "../components/GoalsEditor";
 import ProfileEditor from "../components/ProfileEditor";
 import RaceCalendarSection from "../components/races/RaceCalendarSection";
@@ -795,6 +796,16 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
           >
             {kbBusy ? "Rigenerazione..." : "Rigenera knowledge base"}
           </button>
+        </div>
+      </details>
+
+      {/* ─── Diagnostica piano (collapsible) ─────────────────────────── */}
+      <details style={sectionDetailsStyle}>
+        <summary style={sectionSummaryStyle} aria-label="Diagnostica ultima rigenerazione piano">
+          <span style={{ flex: 1 }}>Diagnostica ultima rigenerazione</span>
+        </summary>
+        <div style={{ padding: "12px 16px 16px" }}>
+          <PlanDiagnosticPanel />
         </div>
       </details>
 
