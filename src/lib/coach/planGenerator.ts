@@ -429,51 +429,32 @@ export async function generateInitialPlan(
   goals: UserGoal[],
   opts?: GenerationOptions,
 ): Promise<TrainingPlan> {
-  // Zone FC personalizzate: onboarding ha storico nullo → Tanaka. Carichiamo
-  // comunque per sicurezza (es. onboarding ripetuto con diario esistente).
-  const recentDaysForZones = await getLastNDays(60).catch(() => []);
-  const zonesCtxInit = computeZonesContext(profile, recentDaysForZones);
-  // Wave 3.3: macro context per fase corrente (se profile ha race "A" attiva).
-  // Errori storage gestiti silenziosamente: degradiamo a prompt senza macro.
-  const macroLookupInit = await loadActiveMacroContext(profile).catch(() => null);
-  const goalConflictHint = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
-  const effectiveDays = effectiveAvailableDays(opts?.availableDaysOverride, profile.availableDays);
-  const availableDaysBlock = buildAvailableDaysBlock(effectiveDays, "GIORNI ALLENABILI");
+  // Sprint 5 (2026-05-18): context loading + prescription + formatted blocks
+  // estratti in loadGenerationContext (shared con regen + adapt).
+  const ctx = await loadGenerationContext({ profile, goals, opts });
+  const {
+    recentDays,
+    zonesCtx,
+    macroLookup,
+    readiness,
+    effectiveDays,
+    prescription,
+    prescriptionBlock,
+    volumeLandmarksBlock,
+    loadBlock,
+    readinessLine,
+    availableDaysBlock,
+    goalConflictHint,
+  } = ctx;
 
-  // Wave 4.1 — multi-pass path (default). Fallback graceful: se l'orchestrator
-  // fallisce (Pass-1 LLM down o JSON malformato), ricadiamo sul piano di
-  // emergenza hard-coded — stessa garanzia del path legacy.
-  // ── Training Prescription layer (2026-05-13): iniettato in single-pass e
-  //    multi-pass per garantire numeri concreti vs hint vaghi.
-  const readinessInit = await getCurrentReadiness();
-  const acwrInit = computeAcwrFromRecentDays(recentDaysForZones);
-  const goalMultInit = aggregateGoalVolumeMultiplier(goals, recentDaysForZones, profile);
-  const prescriptionInit = computePrescription({
-    profile,
-    intensity: profile.intensityPreference,
-    goalType: inferGoalType(goals),
-    macroPhase: extractMacroPhase(macroLookupInit?.macroContext),
-    readinessBand: readinessInit?.band,
-    weeklyVolumeRecentMin: acwrInit?.acuteMin,
-    weeklyVolumeChronicMin: acwrInit?.chronicMin,
-    goalVolumeMultiplier: goalMultInit,
-  });
-  const prescriptionBlockInit = formatPrescriptionForPrompt(prescriptionInit);
-  const volumeLandmarksBlockInit = formatVolumeLandmarksForPrompt(inferGoalType(goals));
-
-  // Sprint 2: branch multi-pass rimosso (kill dormant). Single-pass è l'unico path.
-
-  const readinessLineInit = readinessInit?.band ? `READINESS OGGI: ${readinessInit.band}.` : "";
-  const loadSnapInit = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDaysForZones)));
-  const loadBlockInit = formatTrainingLoadForPrompt(loadSnapInit);
   const userPrompt = `
-${prescriptionBlockInit}
+${prescriptionBlock}
 
-${volumeLandmarksBlockInit}
+${volumeLandmarksBlock}
 
-${loadBlockInit}
+${loadBlock}
 
-${readinessLineInit}
+${readinessLine}
 
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
@@ -481,9 +462,9 @@ ${profileAsPrompt(profile)}
 OBIETTIVI:
 ${goalsAsPrompt(goals)}
 
-${goalProgressContext(goals, recentDaysForZones)}
+${goalProgressContext(goals, recentDays)}
 
-${sportSpecificPrescriptions(recentDaysForZones)}
+${sportSpecificPrescriptions(recentDays)}
 
 ${raceDayExecutionContext(profile)}
 
@@ -499,24 +480,24 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
     // attivare il modulo strengthForEndurance quando il contesto corsa è presente.
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
-    zones: zonesCtxInit?.zones ?? undefined,
-    zonesTimeInZone: zonesCtxInit?.timeInZone,
-    zonesPolar: zonesCtxInit?.polar,
-    zonesTotalSessions: zonesCtxInit?.totalSessions,
-    macroContext: macroLookupInit?.macroContext,
+    zones: zonesCtx?.zones ?? undefined,
+    zonesTimeInZone: zonesCtx?.timeInZone,
+    zonesPolar: zonesCtx?.polar,
+    zonesTotalSessions: zonesCtx?.totalSessions,
+    macroContext: macroLookup?.macroContext,
   };
   // 2026-05-18: prescription al TOP del systemInstruction (priority alta) +
   // duplicato nel userPrompt per max reinforcement. Gemini lite tende a
   // dimenticare istruzioni in mezzo al prompt — duplicarle è defensive.
-  const systemInstruction = prescriptionBlockInit + "\n\n" +
+  const systemInstruction = prescriptionBlock + "\n\n" +
     PROMPTS.planGeneration({ age: profile.age }) + "\n\n" +
     buildConditionalPrompt(bCtx);
 
   // Diagnostic logging (F12 console) per debug sotto-prescrizione persistente.
   console.info("[planGen:diag] target=%d range=%d-%d days=%s",
-    prescriptionInit.weeklyVolumeTargetMin,
-    prescriptionInit.weeklyVolumeRangeMin.min,
-    prescriptionInit.weeklyVolumeRangeMin.max,
+    prescription.weeklyVolumeTargetMin,
+    prescription.weeklyVolumeRangeMin.min,
+    prescription.weeklyVolumeRangeMin.max,
     effectiveDays?.join(",") ?? "any");
   console.debug("[planGen:diag] systemInstruction.length=%d, userPrompt.length=%d",
     systemInstruction.length, userPrompt.length);
@@ -555,12 +536,12 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
   // 2026-05-18 auto-retry: Gemini 3.1 flash lite tende a sotto-prescrivere
   // ignorando le istruzioni numeriche del prompt. Se il volume totale e' <80%
   // del target prescritto, riproviamo UNA volta con prompt addendum esplicito.
-  const retryRes = await retryIfUnderprescribed(plan, prescriptionInit, userPrompt, systemInstruction, effectiveDays);
+  const retryRes = await retryIfUnderprescribed(plan, prescription, userPrompt, systemInstruction, effectiveDays);
   plan = retryRes.plan;
 
   // Validator deterministico post-LLM: logga violazioni safety anche se il modello
   // le ha ignorate. G7 readiness: se band="low" oggi, validatePlan downgrade Z4-5→Z3.
-  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZones), { readiness: readinessInit, prescription: prescriptionInit });
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDays), { readiness, prescription });
   plan = validation.correctedPlan;
   if (!validation.ok) {
     console.warn("[planGenerator] Violazioni safety nel piano generato:",
@@ -571,18 +552,18 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
   }
 
   // 2026-05-18 mobile-friendly diagnostic (Lorenzo: no DevTools su mobile).
-  const finalVolumeInit = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
+  const finalVolume = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
   void saveDiagnostic({
     timestamp: new Date().toISOString(),
     mode: "initial",
     prescription: {
-      weeklyVolumeTargetMin: prescriptionInit.weeklyVolumeTargetMin,
-      rangeMin: prescriptionInit.weeklyVolumeRangeMin.min,
-      rangeMax: prescriptionInit.weeklyVolumeRangeMin.max,
-      avgSessionMin: prescriptionInit.avgSessionMin,
-      sessionRangeMin: prescriptionInit.sessionRangeMin.min,
-      sessionRangeMax: prescriptionInit.sessionRangeMin.max,
-      overrides: prescriptionInit.overrides,
+      weeklyVolumeTargetMin: prescription.weeklyVolumeTargetMin,
+      rangeMin: prescription.weeklyVolumeRangeMin.min,
+      rangeMax: prescription.weeklyVolumeRangeMin.max,
+      avgSessionMin: prescription.avgSessionMin,
+      sessionRangeMin: prescription.sessionRangeMin.min,
+      sessionRangeMax: prescription.sessionRangeMin.max,
+      overrides: prescription.overrides,
     },
     prompt: {
       systemInstructionLength: systemInstruction.length,
@@ -590,8 +571,8 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
       maxTokens: 2400,
     },
     result: {
-      actualVolumeMin: finalVolumeInit,
-      deltaPctVsTarget: Math.round(((finalVolumeInit - prescriptionInit.weeklyVolumeTargetMin) / Math.max(1, prescriptionInit.weeklyVolumeTargetMin)) * 100),
+      actualVolumeMin: finalVolume,
+      deltaPctVsTarget: Math.round(((finalVolume - prescription.weeklyVolumeTargetMin) / Math.max(1, prescription.weeklyVolumeTargetMin)) * 100),
       sessionsCount: plan.weeks[0]?.sessions.length ?? 0,
       sessionsBreakdown: (plan.weeks[0]?.sessions ?? []).map(s => ({
         day: s.day, type: s.type, duration_min: s.duration_min || 0,
@@ -809,6 +790,100 @@ function inferAdherenceFromRecent(
   return Math.max(0, Math.min(100, (actual / planned) * 100));
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// SHARED GENERATION CONTEXT (Sprint 5, 2026-05-18)
+// ────────────────────────────────────────────────────────────────────────────
+// I 3 entry-point (init/regen/adapt) condividono lo stesso blocco di async-loading
+// + computePrescription + formatted blocks. Estraiamo qui per eliminare la
+// triplicazione e ridurre il rischio di drift (es. una entry-point aggiorna
+// prescription input e le altre divergono).
+//
+// Contract: pure async + no side-effect. Tutti gli storage read sono
+// defensive (.catch → default). Output struct deterministico dato profile+goals
+// + recent days.
+
+interface LoadGenerationContextInput {
+  profile: UserProfile;
+  goals: UserGoal[];
+  opts?: GenerationOptions;
+  /**
+   * Solo per regen rest-of-week: intersezione effectiveDays con i giorni
+   * rimanenti della settimana corrente. Undefined per init/adapt/regen-nw.
+   */
+  remainingThisWeek?: ReadonlyArray<string>;
+  /**
+   * Solo per regen (Sprint 1 fix #2): aderenza override dal previousReport
+   * con fallback inferAdherenceFromRecent. Undefined per init/adapt.
+   */
+  previousReport?: WeeklyReportSummary;
+  /** Solo per regen: serve a inferAdherenceFromRecent come fallback. */
+  currentPlan?: TrainingPlan | null;
+}
+
+interface GenerationContext {
+  recentDays: Array<{ date: string; daily: unknown; workouts: unknown[] }>;
+  zonesCtx: ReturnType<typeof computeZonesContext>;
+  macroLookup: Awaited<ReturnType<typeof loadActiveMacroContext>> | null;
+  readiness: Awaited<ReturnType<typeof getCurrentReadiness>>;
+  effectiveDays: string[] | undefined;
+  prescription: ReturnType<typeof computePrescription>;
+  prescriptionBlock: string;
+  volumeLandmarksBlock: string;
+  loadBlock: string;
+  readinessLine: string;
+  availableDaysBlock: string;
+  goalConflictHint: string;
+}
+
+async function loadGenerationContext(input: LoadGenerationContextInput): Promise<GenerationContext> {
+  const { profile, goals, opts, remainingThisWeek, previousReport, currentPlan } = input;
+  const recentDays = await getLastNDays(60).catch(() => []);
+  const zonesCtx = computeZonesContext(profile, recentDays);
+  const macroLookup = await loadActiveMacroContext(profile).catch(() => null);
+  const readiness = await getCurrentReadiness();
+  const acwr = computeAcwrFromRecentDays(recentDays);
+  const goalMult = aggregateGoalVolumeMultiplier(goals, recentDays, profile);
+  const effectiveDays = effectiveAvailableDays(opts?.availableDaysOverride, profile.availableDays, remainingThisWeek);
+  // Sprint 1 fix #2: adherence cap deterministico. previousReport ha precedenza;
+  // altrimenti fallback dal piano corrente vs sessioni recenti.
+  const adherencePct = previousReport?.adherencePct ?? inferAdherenceFromRecent(currentPlan ?? null, recentDays);
+
+  const prescription = computePrescription({
+    profile,
+    intensity: profile.intensityPreference,
+    goalType: inferGoalType(goals),
+    macroPhase: extractMacroPhase(macroLookup?.macroContext),
+    readinessBand: readiness?.band,
+    weeklyVolumeRecentMin: acwr?.acuteMin,
+    weeklyVolumeChronicMin: acwr?.chronicMin,
+    goalVolumeMultiplier: goalMult,
+    adherencePct,
+  });
+
+  const prescriptionBlock = formatPrescriptionForPrompt(prescription);
+  const volumeLandmarksBlock = formatVolumeLandmarksForPrompt(inferGoalType(goals));
+  const loadSnap = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDays)));
+  const loadBlock = formatTrainingLoadForPrompt(loadSnap);
+  const readinessLine = readiness?.band ? `READINESS OGGI: ${readiness.band}.` : "";
+  const availableDaysBlock = buildAvailableDaysBlock(effectiveDays, "GIORNI ALLENABILI");
+  const goalConflictHint = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
+
+  return {
+    recentDays,
+    zonesCtx,
+    macroLookup,
+    readiness,
+    effectiveDays,
+    prescription,
+    prescriptionBlock,
+    volumeLandmarksBlock,
+    loadBlock,
+    readinessLine,
+    availableDaysBlock,
+    goalConflictHint,
+  };
+}
+
 /** Rigenera il piano. Vedi RegenerateMode per le due modalità. */
 export async function regenerateNextWeek(
   profile: UserProfile,
@@ -849,41 +924,28 @@ non includere sessioni per essi.${minimalWindowGuard}
     : `Genera la settimana corrente parziale (weekNumber=1, una sola) coprendo solo i ${remainingLabels.length} giorni rimanenti. Adatta volume/intensità in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.`;
 
   // Sprint 2: branch multi-pass rimosso (kill dormant). Single-pass è l'unico path.
-
-  const goalConflictHintRegen = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
-  // Se mode=rest-of-week intersechiamo l'override (o profilo) con i giorni
-  // RIMANENTI: l'utente non può "selezionare" un giorno passato.
-  const effectiveDaysRegen = effectiveAvailableDays(
-    opts?.availableDaysOverride,
-    profile.availableDays,
-    mode === "rest-of-week" ? remainingLabels : undefined,
-  );
-  const availableDaysBlockRegen = buildAvailableDaysBlock(effectiveDaysRegen, "GIORNI ALLENABILI");
-
-  // 2026-05-13 prescription layer: caricamento deps spostato sopra userPrompt
-  // per poter iniettare il blocco PRESCRIZIONE TARGET.
-  const recentDaysForZonesRegen = await getLastNDays(60).catch(() => []);
-  const zonesCtxRegen = computeZonesContext(profile, recentDaysForZonesRegen);
-  // Wave 3.3: macro context per fase corrente (se profile ha race "A" attiva).
-  const macroLookupRegen = await loadActiveMacroContext(profile).catch(() => null);
-  const readinessRegen = await getCurrentReadiness();
-  const acwrRegen = computeAcwrFromRecentDays(recentDaysForZonesRegen);
-  const goalMultRegen = aggregateGoalVolumeMultiplier(goals, recentDaysForZonesRegen, profile);
-  // Sprint 1 fix #2: adherence cap deterministico (vedi sopra).
-  const adherencePctRegen = previousReport?.adherencePct ?? inferAdherenceFromRecent(currentPlan, recentDaysForZonesRegen);
-  const prescriptionRegen = computePrescription({
-    profile,
-    intensity: profile.intensityPreference,
-    goalType: inferGoalType(goals),
-    macroPhase: extractMacroPhase(macroLookupRegen?.macroContext),
-    readinessBand: readinessRegen?.band,
-    weeklyVolumeRecentMin: acwrRegen?.acuteMin,
-    weeklyVolumeChronicMin: acwrRegen?.chronicMin,
-    goalVolumeMultiplier: goalMultRegen,
-    adherencePct: adherencePctRegen,
+  // Sprint 5 (2026-05-18): context loading + prescription + formatted blocks
+  // estratti in loadGenerationContext. Per regen passiamo remainingThisWeek
+  // (intersezione per rest-of-week) + previousReport/currentPlan (adherence cap).
+  const ctx = await loadGenerationContext({
+    profile, goals, opts,
+    remainingThisWeek: mode === "rest-of-week" ? remainingLabels : undefined,
+    previousReport, currentPlan,
   });
-  const prescriptionBlockRegen = formatPrescriptionForPrompt(prescriptionRegen);
-  const volumeLandmarksBlockRegen = formatVolumeLandmarksForPrompt(inferGoalType(goals));
+  const {
+    recentDays,
+    zonesCtx,
+    macroLookup,
+    readiness,
+    effectiveDays,
+    prescription,
+    prescriptionBlock,
+    volumeLandmarksBlock,
+    loadBlock,
+    readinessLine,
+    availableDaysBlock,
+    goalConflictHint,
+  } = ctx;
 
   // Sprint 1 fix #1: closed-loop. Se previousReport è disponibile, iniettiamo
   // un blocco esplicito nel userPrompt così l'LLM moduli volume/intensità
@@ -892,19 +954,16 @@ non includere sessioni per essi.${minimalWindowGuard}
     ? buildPreviousReportBlock(previousReport)
     : "";
 
-  const readinessLineRegen = readinessRegen?.band ? `READINESS OGGI: ${readinessRegen.band}.` : "";
-  const loadSnapRegen = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDaysForZonesRegen)));
-  const loadBlockRegen = formatTrainingLoadForPrompt(loadSnapRegen);
   const userPrompt = `
-${prescriptionBlockRegen}
+${prescriptionBlock}
 
 ${previousReportBlock}
 
-${volumeLandmarksBlockRegen}
+${volumeLandmarksBlock}
 
-${loadBlockRegen}
+${loadBlock}
 
-${readinessLineRegen}
+${readinessLine}
 
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
@@ -912,14 +971,14 @@ ${profileAsPrompt(profile)}
 OBIETTIVI:
 ${goalsAsPrompt(goals)}
 
-${goalProgressContext(goals, recentDaysForZonesRegen)}
+${goalProgressContext(goals, recentDays)}
 
-${sportSpecificPrescriptions(recentDaysForZonesRegen)}
+${sportSpecificPrescriptions(recentDays)}
 
 ${raceDayExecutionContext(profile)}
 
 ${tournamentClusterContext(profile)}
-${goalConflictHintRegen}${availableDaysBlockRegen}
+${goalConflictHint}${availableDaysBlock}
 PIANO CORRENTE:
 ${planAsPrompt(currentPlan)}
 
@@ -935,22 +994,22 @@ ${modeInstruction}
     // attivare il modulo strengthForEndurance quando il contesto corsa è presente.
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
-    zones: zonesCtxRegen?.zones ?? undefined,
-    zonesTimeInZone: zonesCtxRegen?.timeInZone,
-    zonesPolar: zonesCtxRegen?.polar,
-    zonesTotalSessions: zonesCtxRegen?.totalSessions,
-    macroContext: macroLookupRegen?.macroContext,
+    zones: zonesCtx?.zones ?? undefined,
+    zonesTimeInZone: zonesCtx?.timeInZone,
+    zonesPolar: zonesCtx?.polar,
+    zonesTotalSessions: zonesCtx?.totalSessions,
+    macroContext: macroLookup?.macroContext,
   };
   // 2026-05-18: prescription al TOP del systemInstruction (vedi note in generateInitialPlan).
-  const systemInstruction = prescriptionBlockRegen + "\n\n" +
+  const systemInstruction = prescriptionBlock + "\n\n" +
     PROMPTS.planGeneration({ age: profile.age }) + "\n\n" +
     buildConditionalPrompt(bCtx);
 
   console.info("[planGen:diag regen] target=%d range=%d-%d days=%s mode=%s",
-    prescriptionRegen.weeklyVolumeTargetMin,
-    prescriptionRegen.weeklyVolumeRangeMin.min,
-    prescriptionRegen.weeklyVolumeRangeMin.max,
-    effectiveDaysRegen?.join(",") ?? "any",
+    prescription.weeklyVolumeTargetMin,
+    prescription.weeklyVolumeRangeMin.min,
+    prescription.weeklyVolumeRangeMin.max,
+    effectiveDays?.join(",") ?? "any",
     mode);
 
   const raw = await generateJSON<unknown>({
@@ -995,16 +1054,15 @@ ${modeInstruction}
   // effettiva è ancora più piccola — passa l'intersezione.
   let expectedDayLabels: string[] | undefined;
   if (mode === "rest-of-week") {
-    expectedDayLabels = effectiveDaysRegen ?? remainingLabels.slice();
-  } else if (effectiveDaysRegen) {
-    expectedDayLabels = effectiveDaysRegen;
+    expectedDayLabels = effectiveDays ?? remainingLabels.slice();
+  } else if (effectiveDays) {
+    expectedDayLabels = effectiveDays;
   }
   // 2026-05-18 auto-retry sotto-prescrizione (vedi retryIfUnderprescribed in generateInitialPlan).
-  const retryResRegen = await retryIfUnderprescribed(plan, prescriptionRegen, userPrompt, systemInstruction, effectiveDaysRegen);
+  const retryResRegen = await retryIfUnderprescribed(plan, prescription, userPrompt, systemInstruction, effectiveDays);
   plan = retryResRegen.plan;
 
-  // readiness gia' caricato sopra come readinessRegen.
-  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesRegen), { expectedDayLabels, readiness: readinessRegen, prescription: prescriptionRegen });
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDays), { expectedDayLabels, readiness, prescription });
   plan = validation.correctedPlan;
   if (!validation.ok) {
     console.warn("[regenerateNextWeek] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
@@ -1012,18 +1070,18 @@ ${modeInstruction}
   }
 
   // 2026-05-18 mobile-friendly diagnostic.
-  const finalVolumeRegen = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
+  const finalVolume = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
   void saveDiagnostic({
     timestamp: new Date().toISOString(),
     mode: "regen",
     prescription: {
-      weeklyVolumeTargetMin: prescriptionRegen.weeklyVolumeTargetMin,
-      rangeMin: prescriptionRegen.weeklyVolumeRangeMin.min,
-      rangeMax: prescriptionRegen.weeklyVolumeRangeMin.max,
-      avgSessionMin: prescriptionRegen.avgSessionMin,
-      sessionRangeMin: prescriptionRegen.sessionRangeMin.min,
-      sessionRangeMax: prescriptionRegen.sessionRangeMin.max,
-      overrides: prescriptionRegen.overrides,
+      weeklyVolumeTargetMin: prescription.weeklyVolumeTargetMin,
+      rangeMin: prescription.weeklyVolumeRangeMin.min,
+      rangeMax: prescription.weeklyVolumeRangeMin.max,
+      avgSessionMin: prescription.avgSessionMin,
+      sessionRangeMin: prescription.sessionRangeMin.min,
+      sessionRangeMax: prescription.sessionRangeMin.max,
+      overrides: prescription.overrides,
     },
     prompt: {
       systemInstructionLength: systemInstruction.length,
@@ -1031,8 +1089,8 @@ ${modeInstruction}
       maxTokens: 2400,
     },
     result: {
-      actualVolumeMin: finalVolumeRegen,
-      deltaPctVsTarget: Math.round(((finalVolumeRegen - prescriptionRegen.weeklyVolumeTargetMin) / Math.max(1, prescriptionRegen.weeklyVolumeTargetMin)) * 100),
+      actualVolumeMin: finalVolume,
+      deltaPctVsTarget: Math.round(((finalVolume - prescription.weeklyVolumeTargetMin) / Math.max(1, prescription.weeklyVolumeTargetMin)) * 100),
       sessionsCount: plan.weeks[0]?.sessions.length ?? 0,
       sessionsBreakdown: (plan.weeks[0]?.sessions ?? []).map(s => ({
         day: s.day, type: s.type, duration_min: s.duration_min || 0,
@@ -1059,43 +1117,32 @@ export async function adaptPlan(
   userRequest: string,
   opts?: GenerationOptions,
 ): Promise<TrainingPlan> {
-  const goalConflictHintAdapt = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
-  const effectiveDaysAdapt = effectiveAvailableDays(opts?.availableDaysOverride, profile.availableDays);
-  const availableDaysBlockAdapt = buildAvailableDaysBlock(effectiveDaysAdapt, "GIORNI ALLENABILI");
-
-  // 2026-05-13 prescription layer: deps caricate sopra per iniezione prompt.
-  const recentDaysForZonesAdapt = await getLastNDays(60).catch(() => []);
-  const zonesCtxAdapt = computeZonesContext(profile, recentDaysForZonesAdapt);
-  // Wave 3.3: macro context per fase corrente.
-  const macroLookupAdapt = await loadActiveMacroContext(profile).catch(() => null);
-  const readinessAdapt = await getCurrentReadiness();
-  const acwrAdapt = computeAcwrFromRecentDays(recentDaysForZonesAdapt);
-  const goalMultAdapt = aggregateGoalVolumeMultiplier(goals, recentDaysForZonesAdapt, profile);
-  const prescriptionAdapt = computePrescription({
-    profile,
-    intensity: profile.intensityPreference,
-    goalType: inferGoalType(goals),
-    weeklyVolumeRecentMin: acwrAdapt?.acuteMin,
-    weeklyVolumeChronicMin: acwrAdapt?.chronicMin,
-    macroPhase: extractMacroPhase(macroLookupAdapt?.macroContext),
-    readinessBand: readinessAdapt?.band,
-    goalVolumeMultiplier: goalMultAdapt,
-  });
-  const prescriptionBlockAdapt = formatPrescriptionForPrompt(prescriptionAdapt);
-  const volumeLandmarksBlockAdapt = formatVolumeLandmarksForPrompt(inferGoalType(goals));
+  // Sprint 5 (2026-05-18): context loading + prescription + formatted blocks
+  // estratti in loadGenerationContext (shared con init + regen).
+  const ctx = await loadGenerationContext({ profile, goals, opts });
+  const {
+    recentDays,
+    zonesCtx,
+    macroLookup,
+    readiness,
+    prescription,
+    prescriptionBlock,
+    volumeLandmarksBlock,
+    loadBlock,
+    readinessLine,
+    availableDaysBlock,
+    goalConflictHint,
+  } = ctx;
 
   // Sprint 2: branch multi-pass rimosso (kill dormant). Single-pass è l'unico path.
-  const readinessLineAdapt = readinessAdapt?.band ? `READINESS OGGI: ${readinessAdapt.band}.` : "";
-  const loadSnapAdapt = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDaysForZonesAdapt)));
-  const loadBlockAdapt = formatTrainingLoadForPrompt(loadSnapAdapt);
   const userPrompt = `
-${prescriptionBlockAdapt}
+${prescriptionBlock}
 
-${volumeLandmarksBlockAdapt}
+${volumeLandmarksBlock}
 
-${loadBlockAdapt}
+${loadBlock}
 
-${readinessLineAdapt}
+${readinessLine}
 
 PROFILO UTENTE:
 ${profileAsPrompt(profile)}
@@ -1103,14 +1150,14 @@ ${profileAsPrompt(profile)}
 OBIETTIVI:
 ${goalsAsPrompt(goals)}
 
-${goalProgressContext(goals, recentDaysForZonesAdapt)}
+${goalProgressContext(goals, recentDays)}
 
-${sportSpecificPrescriptions(recentDaysForZonesAdapt)}
+${sportSpecificPrescriptions(recentDays)}
 
 ${raceDayExecutionContext(profile)}
 
 ${tournamentClusterContext(profile)}
-${goalConflictHintAdapt}${availableDaysBlockAdapt}
+${goalConflictHint}${availableDaysBlock}
 PIANO CORRENTE (da modificare):
 ${planAsPrompt(currentPlan)}
 
@@ -1141,11 +1188,11 @@ Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le
     hasRunningGoal: goals.some(g => RUNNING_GOAL_RE.test(g.smartDescription)),
     hasStrengthInPlan: true,
     detectedConditions: extractConditionsFromProfile(profile),
-    zones: zonesCtxAdapt?.zones ?? undefined,
-    zonesTimeInZone: zonesCtxAdapt?.timeInZone,
-    zonesPolar: zonesCtxAdapt?.polar,
-    zonesTotalSessions: zonesCtxAdapt?.totalSessions,
-    macroContext: macroLookupAdapt?.macroContext,
+    zones: zonesCtx?.zones ?? undefined,
+    zonesTimeInZone: zonesCtx?.timeInZone,
+    zonesPolar: zonesCtx?.polar,
+    zonesTotalSessions: zonesCtx?.totalSessions,
+    macroContext: macroLookup?.macroContext,
   };
   const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
 
@@ -1170,8 +1217,7 @@ Rispondi con il piano MODIFICATO completo (UNA settimana, weekNumber=1, tutte le
     weeks: coerceWeeks(parsed.weeks),
     rationale: parsed.rationale,
   };
-  // readiness gia' caricato sopra come readinessAdapt.
-  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesAdapt), { readiness: readinessAdapt, prescription: prescriptionAdapt });
+  const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDays), { readiness, prescription });
   plan = validation.correctedPlan;
   if (!validation.ok) {
     console.warn("[adaptPlan] Violazioni safety:", validation.issues.map(i => i.message).join(" | "));
