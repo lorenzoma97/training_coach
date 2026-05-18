@@ -593,10 +593,13 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
  * Output target: ~400-600 caratteri. Numeri concreti + regole d'uso esplicite.
  */
 export function formatPrescriptionForPrompt(p: TrainingPrescription): string {
+  const minAcceptable = Math.round(p.weeklyVolumeTargetMin * 0.85);
   const lines: string[] = [
-    "PRESCRIZIONE TARGET (formule scientifiche, NON negoziabile):",
-    `- Volume settimanale: ${p.weeklyVolumeTargetMin} min (range ${p.weeklyVolumeRangeMin.min}-${p.weeklyVolumeRangeMin.max}).`,
-    `- Durata sessione media: ${p.avgSessionMin} min (range ${p.sessionRangeMin.min}-${p.sessionRangeMin.max}).`,
+    "PRESCRIZIONE TARGET (formule scientifiche peer-reviewed — VINCOLO HARD, non negoziabile):",
+    `- Volume settimanale TOTALE OBBLIGATORIO: ${p.weeklyVolumeTargetMin} min (range tollerato ${p.weeklyVolumeRangeMin.min}-${p.weeklyVolumeRangeMin.max}).`,
+    `  → MINIMO ACCETTABILE: ${minAcceptable} min totali. Sotto questa soglia il piano è REJECTED dal validator deterministico.`,
+    `- Durata sessione MEDIA target: ${p.avgSessionMin} min (range tipico ${p.sessionRangeMin.min}-${p.sessionRangeMin.max}).`,
+    `  → NON proporre sessioni 25-40min "per stare sicuro" se la disponibilità utente è 60-90min: significa SOTTO-PRESCRIZIONE e violazione del target.`,
     `- Distribuzione zone: ${p.zoneDistributionPct.z1z2Pct}% Z1-Z2 · ${p.zoneDistributionPct.z3Pct}% Z3 · ${p.zoneDistributionPct.z4z5Pct}% Z4-Z5.`,
     `- Forza: ${p.strength.sessionsPerWeek} sess/sett, RPE ${p.strength.rpeRange.min}-${p.strength.rpeRange.max}, carichi ${p.strength.pct1RMRange.min}-${p.strength.pct1RMRange.max}% 1RM.`,
     `- Riposo: min ${p.minRestDaysPerWeek} gg/sett, ≥${p.minHoursBetweenStrengthSameGroup}h tra forza stesso gruppo.`,
@@ -606,12 +609,12 @@ export function formatPrescriptionForPrompt(p: TrainingPrescription): string {
   }
   lines.push(
     "",
-    "REGOLE D'USO:",
-    "- Distribuisci il volume target tra le sessioni dei giorni allenabili.",
-    "- Rispetta la distribuzione zone (anche aggiustando la durata).",
-    "- Non scendere sotto il 70% del volume target (sottostimolo).",
-    "- Non superare il 115% (rischio overload / aderenza bassa).",
-    "- Le sessioni cardio devono coprire le zone prescritte settimanalmente.",
+    "ISTRUZIONI ESECUTIVE (obbligatorie):",
+    `1. PRIMA di scegliere le singole sessioni, calcola: ${p.weeklyVolumeTargetMin} min target ÷ N giorni allenabili = durata media per sessione.`,
+    "2. Allocata la durata target, distribuisci i tipi (corsa/forza/sport) rispettando le zone prescritte.",
+    `3. La somma delle durate delle sessioni nel piano DEVE essere ≥ ${minAcceptable} min e ≤ ${p.weeklyVolumeRangeMin.max} min. Sotto ${minAcceptable}min = REJECTED.`,
+    "4. Se hai 5 giorni × 1.5h disponibili (=450min/sett) e prescrizione dice 360min, NON proporre 4 sessioni da 30-40min (=140min): è SOTTO-prescrizione del 60%, rifiutata.",
+    "5. Rispetta la distribuzione zone aggiustando la durata DENTRO il volume target (non riducendo il totale).",
   );
   return lines.join("\n");
 }

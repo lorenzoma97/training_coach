@@ -380,9 +380,12 @@ describe("formatPrescriptionForPrompt", () => {
     });
     const text = formatPrescriptionForPrompt(p);
     expect(text).toContain("PRESCRIZIONE TARGET");
-    expect(text).toContain("Volume settimanale: 450 min");
+    expect(text).toContain("Volume settimanale TOTALE OBBLIGATORIO: 450 min");
+    expect(text).toContain("MINIMO ACCETTABILE");
     expect(text).toContain("Distribuzione zone: 75% Z1-Z2");
     expect(text).toContain("Forza: 3 sess/sett");
-    expect(text).toContain("REGOLE D'USO");
+    expect(text).toContain("ISTRUZIONI ESECUTIVE");
+    // MIN accettabile = 85% target (382 per 450)
+    expect(text).toContain("382 min");
   });
 });
