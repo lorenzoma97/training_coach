@@ -20,14 +20,13 @@ const WORKOUT_TYPES = [
     fields: [
       { key: "tipo", label: "Tipo Sessione", type: "select", options: ["Fondo Lento","Fartlek","Ripetute","Progressione","Test Ritmo Gara","Test Finale","Corsa Intermittente"], required: true },
       { key: "durata_totale", label: "Durata Totale", unit: "min", type: "number", required: true },
-      { key: "durata_corsa", label: "Tempo Corsa Effettivo", unit: "min", type: "number" },
+      // 2026-05-18 data cleanup: rimossi durata_corsa, passo_frazioni, scarpe, superficie
+      // (data theatre — campi raccolti ma mai usati da nessun coach module).
+      // Workout già salvati con questi campi restano leggibili (campi extra ignorati).
       { key: "passo_medio", label: "Passo Medio", unit: "min/km", type: "text", placeholder: "es. 6:30" },
-      { key: "passo_frazioni", label: "Passo Frazioni Veloci", unit: "min/km", type: "text", placeholder: "es. 5:05" },
       { key: "fc_media", label: "FC Media", unit: "bpm", type: "number", required: true },
       { key: "fc_max", label: "FC Max", unit: "bpm", type: "number" },
       { key: "cadenza", label: "Cadenza", unit: "ppm", type: "number" },
-      { key: "scarpe", label: "Scarpe", type: "select", options: ["Nike Pegasus","ZoomX (Sospese)","Altre"] },
-      { key: "superficie", label: "Superficie", type: "select", options: ["Asfalto","Sterrato","Erba","Pista","Tapis Roulant"] },
     ],
   },
   {
@@ -57,7 +56,8 @@ const WORKOUT_TYPES = [
     fields: [
       { key: "sport", label: "Sport", type: "select", options: ["Tennis","Padel","Calcio (Allenamento)","Calcio (Partita)","Altro"], required: true },
       { key: "durata", label: "Durata", unit: "min", type: "number", required: true },
-      { key: "match_type", label: "Tipo", type: "select", options: ["Palleggio / Tecnica","Partita","Torneo","Recupero Attivo"] },
+      // 2026-05-18 data cleanup: rimosso match_type (data theatre, mai usato).
+      // Tipo match è già implicito nello "Sport" subtype (es. "Calcio (Partita)" vs "Calcio (Allenamento)").
       { key: "fc_media", label: "FC Media", unit: "bpm", type: "number" },
       { key: "fc_max", label: "FC Max", unit: "bpm", type: "number" },
       { key: "kcal", label: "Calorie", unit: "kcal", type: "number" },

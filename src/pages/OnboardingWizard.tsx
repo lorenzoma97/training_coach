@@ -838,81 +838,25 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
 
           {profile.sex === "f" && (
             <div style={cardStyle}>
-              <label style={labelStyle}>Ciclo mestruale (opzionale)</label>
+              <label style={labelStyle}>Tracking ciclo mestruale (opzionale)</label>
               <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "10px", lineHeight: 1.5 }}>
-                Attivare aiuta il coach a contestualizzare fatica/performance nelle diverse fasi (Elliott-Sale 2020) e a riconoscere segnali di RED-S (amenorrea persistente, Mountjoy IOC 2023). Puoi saltare e attivarlo in seguito.
+                Attivare permette al coach di rilevare amenorrea persistente (red flag RED-S, Mountjoy IOC 2023) dal diario daily. I sintomi vengono tracciati nel check giornaliero.
               </div>
+              {/* 2026-05-18 data cleanup: rimossi contraception, lastPeriodStart,
+                  avgCycleLengthDays — raccolti ma mai usati. Solo `enabled` ha
+                  consumer effettivo (RED-S detection via amenorrhea). Profili
+                  esistenti con valori restano backward-compat (campi extra ignorati). */}
               <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "13px", color: "#CBD5E1" }}>
                 <input
                   type="checkbox"
                   checked={!!profile.menstrualCycle?.enabled}
                   onChange={e => setProfile(p => ({
                     ...p,
-                    menstrualCycle: {
-                      enabled: e.target.checked,
-                      contraception: p.menstrualCycle?.contraception ?? "none",
-                      lastPeriodStart: p.menstrualCycle?.lastPeriodStart,
-                      avgCycleLengthDays: p.menstrualCycle?.avgCycleLengthDays,
-                    },
+                    menstrualCycle: { enabled: e.target.checked },
                   }))}
                 />
-                Traccia il ciclo mestruale
+                Traccia ciclo mestruale (RED-S detection)
               </label>
-              {profile.menstrualCycle?.enabled && (
-                <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr", gap: "10px" }}>
-                  <div>
-                    <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Contraccezione ormonale</div>
-                    <select
-                      style={{ ...inputStyle, fontFamily: "inherit" }}
-                      value={profile.menstrualCycle?.contraception ?? "none"}
-                      onChange={e => setProfile(p => ({
-                        ...p,
-                        menstrualCycle: { ...(p.menstrualCycle ?? { enabled: true }), contraception: e.target.value as any },
-                      }))}
-                    >
-                      <option value="none">Nessuna</option>
-                      <option value="combined_pill">Pillola combinata</option>
-                      <option value="progestin_only">Pillola solo progestinico</option>
-                      <option value="iud_hormonal">IUD ormonale</option>
-                      <option value="iud_copper">IUD rame</option>
-                      <option value="other">Altra</option>
-                    </select>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                    <div>
-                      <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Inizio ultimo ciclo</div>
-                      <input
-                        type="date"
-                        style={inputStyle}
-                        value={profile.menstrualCycle?.lastPeriodStart ?? ""}
-                        onChange={e => setProfile(p => ({
-                          ...p,
-                          menstrualCycle: { ...(p.menstrualCycle ?? { enabled: true }), lastPeriodStart: e.target.value || undefined },
-                        }))}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "4px" }}>Lunghezza media (giorni)</div>
-                      <input
-                        type="number" min={15} max={60}
-                        style={inputStyle}
-                        value={profile.menstrualCycle?.avgCycleLengthDays ?? ""}
-                        placeholder="es. 28"
-                        onChange={e => {
-                          const n = parseInt(e.target.value, 10);
-                          setProfile(p => ({
-                            ...p,
-                            menstrualCycle: {
-                              ...(p.menstrualCycle ?? { enabled: true }),
-                              avgCycleLengthDays: Number.isFinite(n) && n >= 15 && n <= 60 ? n : undefined,
-                            },
-                          }));
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
