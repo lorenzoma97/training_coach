@@ -211,42 +211,61 @@ describe("computePrescription — golden cases", () => {
     expect(p.strength.sessionsPerWeek).toBe(1);
   });
 
-  // ─── 13. ACWR ramp limit ─────────────────────────────────────────────
-  it("ramp limit ACWR: target 450, recente 200, chronic 200 (baseline ok) → cap a 300", () => {
+  // ─── 13. ACWR ramp limit graduale (Gabbett + Lydiard floor) ───────────
+  it("regular very_intense, recente 200, chronic 200: cap ramp = max(effective×1.5, target×0.7)", () => {
     const p = computePrescription({
       profile: makeProfile({ age: 28, experience: "regular" }),
       intensity: "very_intense",
       weeklyVolumeRecentMin: 200,
-      weeklyVolumeChronicMin: 200, // baseline solida (>=200 min/sett soglia)
+      weeklyVolumeChronicMin: 200,
     });
-    // 450 / 200 = 2.25 > 1.5 → cap 200 × 1.5 = 300
-    expect(p.weeklyVolumeTargetMin).toBe(300);
+    // effective_recent = max(200, 150 floor regular) = 200
+    // cap = max(200*1.5=300, 450*0.7=315) = 315
+    expect(p.weeklyVolumeTargetMin).toBe(315);
     expect(p.overrides.some(o => o.toLowerCase().includes("acwr"))).toBe(true);
   });
 
-  // ─── 13bis. Guard baseline minima: chronic < 200 → no cap, volume full ─
-  it("guard baseline insufficiente: chronic 100 < 200 soglia → NO cap, volume target intero", () => {
+  // ─── 13bis. Floor experience: chronic 100 (sotto regular floor 150) → ramp ─
+  it("regular very_intense, recente 100: ramp graduale via floor regular=150", () => {
     const p = computePrescription({
       profile: makeProfile({ age: 28, experience: "regular" }),
       intensity: "very_intense",
       weeklyVolumeRecentMin: 100,
-      weeklyVolumeChronicMin: 100, // sotto soglia
+      weeklyVolumeChronicMin: 100,
     });
-    // Volume target completo (~450 per regular+very_intense), NIENTE cap
-    expect(p.weeklyVolumeTargetMin).toBeGreaterThanOrEqual(400);
-    expect(p.overrides.some(o => o.toLowerCase().includes("acwr check skipped"))).toBe(true);
+    // effective_recent = max(100, 150 floor regular) = 150
+    // cap = max(150*1.5=225, 450*0.7=315) = 315
+    expect(p.weeklyVolumeTargetMin).toBe(315);
+    expect(p.overrides.some(o => o.toLowerCase().includes("acwr ramp"))).toBe(true);
   });
 
-  // ─── 13b. ACWR canonico alto (acute/chronic > 1.5) → override + cap ──
-  it("ACWR canonico alto: acute 400 vs chronic 200 → override + cap chronic*1.3", () => {
+  // ─── 13ter. Casual occasional: floor 90 protegge da spike ─────────────
+  it("occasional intense, recente 30: cap ramp via floor occasional=90", () => {
+    const p = computePrescription({
+      profile: makeProfile({ age: 28, experience: "occasional" }),
+      intensity: "intense",
+      weeklyVolumeRecentMin: 30,
+      weeklyVolumeChronicMin: 30,
+    });
+    // target ~ 156min (occasional+intense × age 28y), effective_recent = max(30, 90)=90
+    // cap = max(90*1.5=135, target*0.7) → cap permissivo ma ≤ target
+    expect(p.weeklyVolumeTargetMin).toBeGreaterThan(30 * 1.5); // > 45 (no cap secco al recent)
+    expect(p.overrides.some(o => o.toLowerCase().includes("acwr"))).toBe(true);
+  });
+
+  // ─── 13b. ACWR canonico alto (acute/chronic > 1.5) → override + cap ramp ─
+  it("ACWR canonico alto: acute 400 vs chronic 200 → override + cap = max(eff×1.3, target×0.7)", () => {
     const p = computePrescription({
       profile: makeProfile({ age: 28, experience: "regular" }),
       intensity: "very_intense",
       weeklyVolumeRecentMin: 400,
       weeklyVolumeChronicMin: 200,
     });
-    // ratio acute/chronic = 2.0 > 1.5 → override registrato + cap a 200*1.3 = 260
-    expect(p.weeklyVolumeTargetMin).toBeLessThanOrEqual(260);
+    // First check #9a: ratio target/recente = 450/400 = 1.125 < 1.5 → no cap.
+    // Then #9b: effective_chronic = max(200, 150 floor) = 200, ratio acute/eff = 400/200 = 2.0 > 1.5
+    // → cap = max(200*1.3=260, weeklyVolume*0.7). Quale "weeklyVolume" qui?
+    // Probabilmente 450 (target intero) → cap = max(260, 315) = 315.
+    expect(p.weeklyVolumeTargetMin).toBeLessThanOrEqual(315);
     expect(p.overrides.some(o => o.toLowerCase().includes("acwr alto"))).toBe(true);
   });
 

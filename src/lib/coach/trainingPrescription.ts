@@ -472,66 +472,68 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
     overrides.push("Goal strength → forza +1 sess/sett (max 4).");
   }
 
-  // ─── 9. ACWR ramp check (Gabbett 2016) ──────────────────────────────────
-  // GUARD MINIMO BASELINE (2026-05-18): Gabbett ACWR e' pensato per atleti
-  // con baseline solida. Se l'utente ha tracciato poco (chronic < 200 min/sett,
-  // ~30 min/giorno avg), NON applicare il cap: l'utente e' in ramp-up phase
-  // o nuovo, e cappare al 1.5x del poco diario blocca progressioni legittime.
-  // In questi casi il volume target completo e' OK (gia' considera experience,
-  // age decay, readiness). Lydiard 10%/sett rule resta come safety implicita.
-  const ACWR_MIN_CHRONIC_BASELINE = 200; // min/sett. ~30min/giorno.
-  const hasReliableBaseline = typeof input.weeklyVolumeChronicMin === "number"
-    && input.weeklyVolumeChronicMin >= ACWR_MIN_CHRONIC_BASELINE;
+  // ─── 9. ACWR ramp check con FLOOR PER EXPERIENCE (Gabbett 2016 + Lydiard) ──
+  // Lorenzo 2026-05-18: skip secco era rischioso per edge cases (post-infortunio
+  // che riprende, casual che cambia intensity, master con chronic naturalmente
+  // bassa). Sostituito con ramp graduale:
+  //   effective_chronic = max(chronic, FLOOR_BY_EXP[exp])
+  //   cap_target = max(effective_chronic × 1.5, original_target × 0.7)
+  // Invarianti: mai >2× effective chronic, mai <70% target original.
+  // - Utente nuovo/sparso: floor garantisce minimo sensato per experience
+  // - Goal-driven push viene re-bounded da cap_target nel check #10
+  // - Per chronic alto (>floor) si comporta come standard Gabbett 1.5x
+  const FLOOR_CHRONIC_BY_EXP: Record<typeof input.profile.experience, number> = {
+    sedentary: 60,
+    occasional: 90,
+    regular: 150,
+    competitive: 250,
+  };
+  const floorChronic = FLOOR_CHRONIC_BY_EXP[input.profile.experience];
 
-  // 9a. Check semplificato target/recente: il volume target non puo' eccedere
-  //     del 50% il volume effettivo dell'ultima settimana (anti-ramp prescritto).
-  //     ATTIVO SOLO se hasReliableBaseline.
-  if (hasReliableBaseline && typeof input.weeklyVolumeRecentMin === "number" && input.weeklyVolumeRecentMin > 0) {
+  // 9a. Cap target con ramp graduale (anti-spike acuto vs recente).
+  if (typeof input.weeklyVolumeRecentMin === "number" && input.weeklyVolumeRecentMin > 0) {
     const ratio = weeklyVolume / input.weeklyVolumeRecentMin;
     if (ratio > 1.5) {
-      // Cap il volume target al +50% del recente (ACWR sweet spot <1.5).
-      const cappedVolume = input.weeklyVolumeRecentMin * 1.5;
-      overrides.push(
-        `ACWR ramp check: target ${Math.round(weeklyVolume)}min vs recente ${input.weeklyVolumeRecentMin}min (ratio ${ratio.toFixed(2)}) → cap a ${Math.round(cappedVolume)}min (Gabbett 2016).`,
-      );
-      weeklyVolume = cappedVolume;
-      avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
-      bases.push("Gabbett 2016: ACWR (acute:chronic workload ratio) sweet spot 0.8-1.3, rischio overuse oltre 1.5.");
+      const effectiveRecent = Math.max(input.weeklyVolumeRecentMin, floorChronic);
+      const cappedVolume = Math.max(effectiveRecent * 1.5, weeklyVolume * 0.7);
+      const cappedRounded = Math.min(weeklyVolume, cappedVolume);
+      if (cappedRounded < weeklyVolume) {
+        overrides.push(
+          `ACWR ramp check: target ${Math.round(weeklyVolume)}min vs recente ${input.weeklyVolumeRecentMin}min (ratio ${ratio.toFixed(2)}). Effective recent (floor ${input.profile.experience}=${floorChronic}): ${effectiveRecent}min → cap a ${Math.round(cappedRounded)}min (max(effective×1.5, target×0.7), Gabbett 2016 + Lydiard ramp).`,
+        );
+        weeklyVolume = cappedRounded;
+        avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
+        bases.push("Gabbett 2016 + Lydiard ramp: cap = max(effective_chronic × 1.5, target × 0.7).");
+      }
     }
-  } else if (typeof input.weeklyVolumeChronicMin === "number" && input.weeklyVolumeChronicMin > 0) {
-    overrides.push(
-      `ACWR check skipped: baseline chronic ${input.weeklyVolumeChronicMin}min/sett <${ACWR_MIN_CHRONIC_BASELINE}min/sett soglia minima — non sufficiente per fare safety check Gabbett. Volume target completo applicato (ramp-up phase).`,
-    );
   }
-  // 9b. ACWR canonico acute(7gg)/chronic(28gg media settimanale) — diagnostica
-  //     pattern reale dell'utente, indipendente dal target generato.
-  //     Spike >1.5 = rischio infortunio; <0.8 = detraining/ripresa graduale.
-  //     ATTIVO SOLO se hasReliableBaseline.
+  // 9b. ACWR canonico acute(7gg)/chronic(28gg) — diagnostica pattern reale.
+  // Anche qui usa effective_chronic (floor by experience) per evitare ratio
+  // gonfiati artificialmente in utenti sparsi.
   if (
-    hasReliableBaseline &&
     typeof input.weeklyVolumeRecentMin === "number" &&
     typeof input.weeklyVolumeChronicMin === "number" &&
     input.weeklyVolumeChronicMin > 0
   ) {
-    const acwr = input.weeklyVolumeRecentMin / input.weeklyVolumeChronicMin;
+    const effectiveChronic = Math.max(input.weeklyVolumeChronicMin, floorChronic);
+    const acwr = input.weeklyVolumeRecentMin / effectiveChronic;
     if (acwr > 1.5) {
       overrides.push(
-        `ACWR alto: ultimi 7gg ${input.weeklyVolumeRecentMin}min vs media 28gg ${input.weeklyVolumeChronicMin}min/sett (ratio ${acwr.toFixed(2)}). Sweet spot 0.8-1.3 (Gabbett 2016). NON aumentare volume questa sett — preferisci scarico o consolidamento.`,
+        `ACWR alto: ultimi 7gg ${input.weeklyVolumeRecentMin}min vs effective chronic ${effectiveChronic}min/sett (floor ${input.profile.experience}=${floorChronic}, ratio ${acwr.toFixed(2)}). Sweet spot 0.8-1.3 (Gabbett 2016).`,
       );
-      // Cap aggiuntivo: target non puo' eccedere chronic*1.3 (top sweet spot).
-      const cap = Math.round(input.weeklyVolumeChronicMin * 1.3);
+      // Cap aggiuntivo con stesso pattern ramp graduale.
+      const cap = Math.max(effectiveChronic * 1.3, weeklyVolume * 0.7);
       if (cap < weeklyVolume) {
         weeklyVolume = cap;
         avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
       }
     } else if (acwr < 0.8) {
       overrides.push(
-        `ACWR basso: ultimi 7gg ${input.weeklyVolumeRecentMin}min vs media 28gg ${input.weeklyVolumeChronicMin}min/sett (ratio ${acwr.toFixed(2)}). Probabile ripresa post-stop/scarico — riprogressione graduale, no spike acuti.`,
+        `ACWR basso: ultimi 7gg ${input.weeklyVolumeRecentMin}min vs effective chronic ${effectiveChronic}min/sett (ratio ${acwr.toFixed(2)}). Probabile ripresa post-stop/scarico — riprogressione graduale.`,
       );
     }
-    // bases gia' inclusa al check 9a; se 9a non e' scattato, aggiungila qui.
     if (!bases.some(b => b.includes("Gabbett 2016"))) {
-      bases.push("Gabbett 2016: ACWR (acute:chronic workload ratio) sweet spot 0.8-1.3, rischio overuse oltre 1.5.");
+      bases.push("Gabbett 2016 + Lydiard ramp: effective_chronic floor by experience.");
     }
   }
 
@@ -554,13 +556,14 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
     const before = weeklyVolume;
     weeklyVolume = weeklyVolume * multiplier;
     let label = `Goal-driven volume adapt: ×${multiplier.toFixed(3)} (predictor-derived)`;
-    // Re-applica ACWR cap se attivo (safety > goal push).
-    // SOLO con baseline affidabile (vedi guard ACWR_MIN_CHRONIC_BASELINE in #9).
-    if (hasReliableBaseline) {
-      const acwrCap = input.weeklyVolumeChronicMin! * 1.3;
+    // Re-applica ACWR cap con ramp graduale (vedi #9). Mai sotto 70% del target
+    // post-multiplier per evitare cap over-aggressive.
+    if (typeof input.weeklyVolumeChronicMin === "number" && input.weeklyVolumeChronicMin > 0) {
+      const effectiveChronic = Math.max(input.weeklyVolumeChronicMin, floorChronic);
+      const acwrCap = Math.max(effectiveChronic * 1.3, weeklyVolume * 0.7);
       if (weeklyVolume > acwrCap) {
         weeklyVolume = acwrCap;
-        label += ` (capped a ACWR ceiling ${Math.round(acwrCap)}min per safety)`;
+        label += ` (capped a ACWR ceiling ${Math.round(acwrCap)}min, effective chronic ${effectiveChronic}min)`;
       }
     }
     avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
