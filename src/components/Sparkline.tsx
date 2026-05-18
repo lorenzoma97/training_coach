@@ -19,6 +19,7 @@ export default function Sparkline({
   formatValue,
   invertY = false,
   ariaLabel,
+  showValueLabels = "auto",
 }: {
   points: SparklinePoint[];
   width?: number;
@@ -34,6 +35,14 @@ export default function Sparkline({
   invertY?: boolean;
   /** Etichetta accessibile per screen reader (es. "Trend peso ultimi 30 giorni"). */
   ariaLabel?: string;
+  /**
+   * Label valore disegnata sopra i pallini (2026-05-18 — UX request Lorenzo).
+   *  - "auto": ≤14 punti validi → "all", 15-30 → "endpoints" (max/min/last), >30 → "none"
+   *  - "all": label su OGNI punto valido (rischio overlap se molti)
+   *  - "endpoints": solo max, min, ultimo punto valido
+   *  - "none": nessuna label (solo tooltip hover, comportamento legacy)
+   */
+  showValueLabels?: "auto" | "all" | "endpoints" | "none";
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -153,6 +162,31 @@ export default function Sparkline({
   const hoverCoord = hoverIdx != null ? allCoords[hoverIdx] : null;
   const hoverPoint = hoverIdx != null ? points[hoverIdx] : null;
 
+  // Value labels (2026-05-18 — UX request Lorenzo): pallino + valore sopra.
+  // Auto-detect basato su conteggio punti validi per evitare collision.
+  const effectiveLabels: "all" | "endpoints" | "none" = showValueLabels === "auto"
+    ? (validCount <= 14 ? "all" : validCount <= 30 ? "endpoints" : "none")
+    : showValueLabels;
+
+  // Pre-calcola gli indici "interessanti" per modalità endpoints (max, min, last).
+  const endpointIndices = (() => {
+    if (effectiveLabels !== "endpoints") return new Set<number>();
+    const indices = new Set<number>();
+    let maxV = -Infinity, maxI = -1, minV = Infinity, minI = -1, lastI = -1;
+    for (const c of allCoords) {
+      if (!c) continue;
+      const v = points[c.idx]?.value;
+      if (typeof v !== "number") continue;
+      if (v > maxV) { maxV = v; maxI = c.idx; }
+      if (v < minV) { minV = v; minI = c.idx; }
+      lastI = c.idx;
+    }
+    if (maxI >= 0) indices.add(maxI);
+    if (minI >= 0) indices.add(minI);
+    if (lastI >= 0) indices.add(lastI);
+    return indices;
+  })();
+
   return (
     <div style={{ position: "relative", width }}>
       <svg
@@ -171,9 +205,40 @@ export default function Sparkline({
         <title>{ariaLabel || `Trend ${points.length} valori${lastValue != null ? `, ultimo ${lastValue}` : ""}`}</title>
         <path d={area} fill={color} opacity={0.12} />
         <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-        {autoShowDots && dots.map((d, i) => (
-          <circle key={i} cx={d.x} cy={d.y} r={validCount <= 3 ? 4 : 2.5} fill={color} />
+        {/* Pallini: forziamo sempre se ci sono label (servono come anchor visivo). */}
+        {(autoShowDots || effectiveLabels !== "none") && dots.map((d, i) => (
+          <circle
+            key={i}
+            cx={d.x} cy={d.y}
+            r={effectiveLabels === "all" ? 3 : validCount <= 3 ? 4 : 2.5}
+            fill={color}
+          />
         ))}
+        {/* Value labels sopra i pallini (auto-detect su validCount). */}
+        {effectiveLabels !== "none" && allCoords.map((c, ci) => {
+          if (!c) return null;
+          const v = points[c.idx]?.value;
+          if (typeof v !== "number") return null;
+          if (effectiveLabels === "endpoints" && !endpointIndices.has(c.idx)) return null;
+          // Posiziona sopra il pallino. Se troppo vicino al top (y<14), flip sotto.
+          const aboveY = c.y - 8;
+          const isFlipped = aboveY < 12;
+          const labelY = isFlipped ? c.y + 16 : aboveY;
+          return (
+            <text
+              key={`l-${ci}`}
+              x={c.x} y={labelY}
+              fontSize="10"
+              fontFamily="'JetBrains Mono', monospace"
+              fontWeight="700"
+              fill={color}
+              textAnchor="middle"
+              style={{ pointerEvents: "none" }}
+            >
+              {fmt(v)}
+            </text>
+          );
+        })}
         {hoverCoord && (
           <>
             <line x1={hoverCoord.x} x2={hoverCoord.x} y1={0} y2={height} stroke={color} strokeWidth={1} strokeDasharray="2 2" opacity={0.5} />
