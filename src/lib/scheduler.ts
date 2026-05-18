@@ -5,7 +5,7 @@ import { savePlanWithHistory } from "./coach/planHistory";
 import { generateText } from "./llm";
 import { PROMPTS } from "./coach/systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, getLastNDays } from "./diaryContext";
-import type { CoachFeedItem, TrainingPlan, UserProfile, UserGoal } from "./types";
+import type { CoachFeedItem, TrainingPlan, UserProfile, UserGoal, WeeklyReportSummary } from "./types";
 import { buildCoachContext } from "./diaryContext";
 import { hasApiKey } from "./gemini";
 import { events } from "./events";
@@ -136,7 +136,17 @@ async function _runWeekly(force: boolean): Promise<CoachFeedItem | null> {
       const goals = await getJSON<UserGoal[]>("user-goals", []);
       const ctx = await buildCoachContext({ daysBack: 14 });
       const currentPlan = await getJSON<TrainingPlan | null>("training-plan", null);
-      const nextPlan = await regenerateNextWeek(profile, goals, currentPlan, ctx.recentDaysText);
+      // Sprint 1 fix #1: closed-loop weeklyReport → regen. Costruiamo lo
+      // struct WeeklyReportSummary dal report LLM appena prodotto, così la
+      // regen riceve adherencePct, volume reale, pain trend, hint testuali
+      // → applica adherence cap deterministico + iniezione prompt.
+      const previousReport: WeeklyReportSummary = {
+        adherencePct: report.adherencePct,
+        volumeByDiscipline: report.volumeByDiscipline,
+        painTrend: report.painTrend,
+        adjustmentsHints: report.adjustments,
+      };
+      const nextPlan = await regenerateNextWeek(profile, goals, currentPlan, ctx.recentDaysText, "next-week", undefined, previousReport);
       // Archivia il piano precedente nello storico prima di sovrascrivere.
       await savePlanWithHistory(nextPlan);
       events.emit("plan:updated", { at: new Date().toISOString() });

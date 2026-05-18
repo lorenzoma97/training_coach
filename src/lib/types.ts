@@ -394,3 +394,24 @@ export interface WeeklyReport {
   adherencePct: number;
   adjustments: string;
 }
+
+/**
+ * Shape strutturato del report settimanale (Sprint 1 fix #1, 2026-05-18).
+ * Estratto da `WeeklyReport` (LLM output) e passato al closed-loop scheduler
+ * → regenerateNextWeek(... previousReport) per modulare il piano nuovo
+ * coerentemente con i dati osservati nella settimana appena conclusa.
+ *
+ * Backward-compat: il caller del scheduler costruisce questo struct sempre
+ * dal WeeklyReport corrente. La firma di regenerateNextWeek accetta il
+ * parametro come opzionale per non rompere call-site esistenti.
+ */
+export interface WeeklyReportSummary {
+  /** 0-100, aderenza al piano (clamp lato weeklyReport). */
+  adherencePct: number;
+  /** Volume per disciplina (planned vs actual minuti). */
+  volumeByDiscipline: Record<string, { planned_min: number; actual_min: number }>;
+  /** Trend dolore (testo libero, eventualmente vuoto). */
+  painTrend: string;
+  /** Hint testuali per la regen: tipicamente il campo `adjustments` LLM. */
+  adjustmentsHints: string;
+}
