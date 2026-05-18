@@ -473,9 +473,20 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
   }
 
   // ─── 9. ACWR ramp check (Gabbett 2016) ──────────────────────────────────
+  // GUARD MINIMO BASELINE (2026-05-18): Gabbett ACWR e' pensato per atleti
+  // con baseline solida. Se l'utente ha tracciato poco (chronic < 200 min/sett,
+  // ~30 min/giorno avg), NON applicare il cap: l'utente e' in ramp-up phase
+  // o nuovo, e cappare al 1.5x del poco diario blocca progressioni legittime.
+  // In questi casi il volume target completo e' OK (gia' considera experience,
+  // age decay, readiness). Lydiard 10%/sett rule resta come safety implicita.
+  const ACWR_MIN_CHRONIC_BASELINE = 200; // min/sett. ~30min/giorno.
+  const hasReliableBaseline = typeof input.weeklyVolumeChronicMin === "number"
+    && input.weeklyVolumeChronicMin >= ACWR_MIN_CHRONIC_BASELINE;
+
   // 9a. Check semplificato target/recente: il volume target non puo' eccedere
   //     del 50% il volume effettivo dell'ultima settimana (anti-ramp prescritto).
-  if (typeof input.weeklyVolumeRecentMin === "number" && input.weeklyVolumeRecentMin > 0) {
+  //     ATTIVO SOLO se hasReliableBaseline.
+  if (hasReliableBaseline && typeof input.weeklyVolumeRecentMin === "number" && input.weeklyVolumeRecentMin > 0) {
     const ratio = weeklyVolume / input.weeklyVolumeRecentMin;
     if (ratio > 1.5) {
       // Cap il volume target al +50% del recente (ACWR sweet spot <1.5).
@@ -487,11 +498,17 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
       avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
       bases.push("Gabbett 2016: ACWR (acute:chronic workload ratio) sweet spot 0.8-1.3, rischio overuse oltre 1.5.");
     }
+  } else if (typeof input.weeklyVolumeChronicMin === "number" && input.weeklyVolumeChronicMin > 0) {
+    overrides.push(
+      `ACWR check skipped: baseline chronic ${input.weeklyVolumeChronicMin}min/sett <${ACWR_MIN_CHRONIC_BASELINE}min/sett soglia minima — non sufficiente per fare safety check Gabbett. Volume target completo applicato (ramp-up phase).`,
+    );
   }
   // 9b. ACWR canonico acute(7gg)/chronic(28gg media settimanale) — diagnostica
   //     pattern reale dell'utente, indipendente dal target generato.
   //     Spike >1.5 = rischio infortunio; <0.8 = detraining/ripresa graduale.
+  //     ATTIVO SOLO se hasReliableBaseline.
   if (
+    hasReliableBaseline &&
     typeof input.weeklyVolumeRecentMin === "number" &&
     typeof input.weeklyVolumeChronicMin === "number" &&
     input.weeklyVolumeChronicMin > 0
@@ -538,11 +555,9 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
     weeklyVolume = weeklyVolume * multiplier;
     let label = `Goal-driven volume adapt: ×${multiplier.toFixed(3)} (predictor-derived)`;
     // Re-applica ACWR cap se attivo (safety > goal push).
-    if (
-      typeof input.weeklyVolumeChronicMin === "number" &&
-      input.weeklyVolumeChronicMin > 0
-    ) {
-      const acwrCap = input.weeklyVolumeChronicMin * 1.3;
+    // SOLO con baseline affidabile (vedi guard ACWR_MIN_CHRONIC_BASELINE in #9).
+    if (hasReliableBaseline) {
+      const acwrCap = input.weeklyVolumeChronicMin! * 1.3;
       if (weeklyVolume > acwrCap) {
         weeklyVolume = acwrCap;
         label += ` (capped a ACWR ceiling ${Math.round(acwrCap)}min per safety)`;

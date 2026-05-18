@@ -212,15 +212,29 @@ describe("computePrescription — golden cases", () => {
   });
 
   // ─── 13. ACWR ramp limit ─────────────────────────────────────────────
-  it("ramp limit ACWR: target 450, recente 200 → cap a 300", () => {
+  it("ramp limit ACWR: target 450, recente 200, chronic 200 (baseline ok) → cap a 300", () => {
     const p = computePrescription({
       profile: makeProfile({ age: 28, experience: "regular" }),
       intensity: "very_intense",
       weeklyVolumeRecentMin: 200,
+      weeklyVolumeChronicMin: 200, // baseline solida (>=200 min/sett soglia)
     });
     // 450 / 200 = 2.25 > 1.5 → cap 200 × 1.5 = 300
     expect(p.weeklyVolumeTargetMin).toBe(300);
     expect(p.overrides.some(o => o.toLowerCase().includes("acwr"))).toBe(true);
+  });
+
+  // ─── 13bis. Guard baseline minima: chronic < 200 → no cap, volume full ─
+  it("guard baseline insufficiente: chronic 100 < 200 soglia → NO cap, volume target intero", () => {
+    const p = computePrescription({
+      profile: makeProfile({ age: 28, experience: "regular" }),
+      intensity: "very_intense",
+      weeklyVolumeRecentMin: 100,
+      weeklyVolumeChronicMin: 100, // sotto soglia
+    });
+    // Volume target completo (~450 per regular+very_intense), NIENTE cap
+    expect(p.weeklyVolumeTargetMin).toBeGreaterThanOrEqual(400);
+    expect(p.overrides.some(o => o.toLowerCase().includes("acwr check skipped"))).toBe(true);
   });
 
   // ─── 13b. ACWR canonico alto (acute/chronic > 1.5) → override + cap ──
