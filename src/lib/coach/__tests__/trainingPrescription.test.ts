@@ -385,7 +385,7 @@ describe("formatPrescriptionForPrompt", () => {
     expect(text).toContain("Distribuzione zone: 75% Z1-Z2");
     expect(text).toContain("Forza: 3 sess/sett");
     expect(text).toContain("ISTRUZIONI ESECUTIVE");
-    // MIN accettabile = 85% target (382 per 450)
-    expect(text).toContain("382 min");
+    // MIN accettabile = 85% target. Math.round(450 * 0.85) = 383 (JS round-half-up).
+    expect(text).toContain("383 min");
   });
 });
