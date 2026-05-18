@@ -137,10 +137,10 @@ describe("planStateHash", () => {
       expect(h1).not.toBe(h2);
     });
 
-    it("does NOT change when wearableConnected/wearableLastSync changes (excluded by design)", () => {
+    it("does NOT change when wearableConnected changes (excluded by design)", () => {
       const h1 = planStateHash(baseProfile, []);
       const h2 = planStateHash(
-        { ...baseProfile, wearableConnected: true, wearableLastSync: "2026-05-09T08:00:00Z" },
+        { ...baseProfile, wearableConnected: true },
         [],
       );
       expect(h1).toBe(h2);

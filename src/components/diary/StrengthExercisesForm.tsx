@@ -88,7 +88,7 @@ export function emptySet(): ExerciseSet {
 /**
  * Clona l'ultimo set come template per il prossimo (reps + weight + rpe + rir).
  * Workflow tipico: utente compila set 1, poi "+ Set" pre-popola coi valori già
- * usati così deve solo aggiustare. NON copia rest_sec/tut_sec/notes.
+ * usati così deve solo aggiustare. NON copia notes.
  */
 export function cloneSetAsTemplate(prev: ExerciseSet): ExerciseSet {
   const next: ExerciseSet = { reps: prev.reps };

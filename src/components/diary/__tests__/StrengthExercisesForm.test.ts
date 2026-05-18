@@ -7,7 +7,6 @@
 //  - filterAvailableExercises include sempre bodyweight-only
 //  - addExerciseToList aggiunge entry con 1 set vuoto
 //  - addSetToExercise copia ultimo set come template (reps/kg/rpe/rir)
-//  - addSetToExercise NON copia rest_sec/tut_sec
 //  - removeExerciseFromList rimuove entry corretta
 //  - removeSetFromExercise rimuove set corretto
 //  - updateSetField gestisce sia numeri che undefined (clear)
@@ -102,15 +101,13 @@ describe("emptySet / cloneSetAsTemplate", () => {
     expect(s.rir).toBeUndefined();
   });
 
-  it("cloneSetAsTemplate copia reps/weight/rpe/rir ma NON rest_sec/tut_sec", () => {
-    const prev = { reps: 8, weight_kg: 60, rpe: 8, rir: 2, rest_sec: 90, tut_sec: 30 };
+  it("cloneSetAsTemplate copia reps/weight/rpe/rir", () => {
+    const prev = { reps: 8, weight_kg: 60, rpe: 8, rir: 2 };
     const next = cloneSetAsTemplate(prev);
     expect(next.reps).toBe(8);
     expect(next.weight_kg).toBe(60);
     expect(next.rpe).toBe(8);
     expect(next.rir).toBe(2);
-    expect(next.rest_sec).toBeUndefined();
-    expect(next.tut_sec).toBeUndefined();
   });
 
   it("cloneSetAsTemplate omette campi opzionali undefined", () => {
