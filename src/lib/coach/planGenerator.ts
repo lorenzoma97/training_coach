@@ -521,23 +521,35 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
     zonesTotalSessions: zonesCtxInit?.totalSessions,
     macroContext: macroLookupInit?.macroContext,
   };
-  const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
+  // 2026-05-18: prescription al TOP del systemInstruction (priority alta) +
+  // duplicato nel userPrompt per max reinforcement. Gemini lite tende a
+  // dimenticare istruzioni in mezzo al prompt — duplicarle è defensive.
+  const systemInstruction = prescriptionBlockInit + "\n\n" +
+    PROMPTS.planGeneration({ age: profile.age }) + "\n\n" +
+    buildConditionalPrompt(bCtx);
 
-  // Fallback graceful: se la chiamata LLM fallisce o il JSON non è parsabile,
-  // restituiamo un piano di emergenza hard-coded invece di bloccare l'onboarding.
-  // L'utente può rigenerare un piano personalizzato in qualunque momento.
+  // Diagnostic logging (F12 console) per debug sotto-prescrizione persistente.
+  console.info("[planGen:diag] target=%d range=%d-%d days=%s",
+    prescriptionInit.weeklyVolumeTargetMin,
+    prescriptionInit.weeklyVolumeRangeMin.min,
+    prescriptionInit.weeklyVolumeRangeMin.max,
+    effectiveDays?.join(",") ?? "any");
+  console.debug("[planGen:diag] systemInstruction.length=%d, userPrompt.length=%d",
+    systemInstruction.length, userPrompt.length);
+
   let raw: unknown;
   try {
     raw = await generateJSON<unknown>({
       systemInstruction,
       userPrompt,
       schemaHint,
-      maxTokens: 1800,
+      maxTokens: 2400, // bump da 1800: piani 5gg con dettagli + rationale richiedono più token
     });
   } catch (e) {
     console.error("[planGenerator] generateJSON failed in onboarding, returning fallback plan:", e);
     return buildFallbackPlan(profile, goals);
   }
+  console.debug("[planGen:diag] raw response (init):", JSON.stringify(raw).slice(0, 800));
   const parseResult = planSchema.safeParse(raw);
   if (!parseResult.success) {
     console.error("[planGenerator] Zod parse failed in onboarding, returning fallback plan:", parseResult.error.message);
@@ -879,14 +891,25 @@ ${modeInstruction}
     zonesTotalSessions: zonesCtxRegen?.totalSessions,
     macroContext: macroLookupRegen?.macroContext,
   };
-  const systemInstruction = PROMPTS.planGeneration({ age: profile.age }) + "\n\n" + buildConditionalPrompt(bCtx);
+  // 2026-05-18: prescription al TOP del systemInstruction (vedi note in generateInitialPlan).
+  const systemInstruction = prescriptionBlockRegen + "\n\n" +
+    PROMPTS.planGeneration({ age: profile.age }) + "\n\n" +
+    buildConditionalPrompt(bCtx);
+
+  console.info("[planGen:diag regen] target=%d range=%d-%d days=%s mode=%s",
+    prescriptionRegen.weeklyVolumeTargetMin,
+    prescriptionRegen.weeklyVolumeRangeMin.min,
+    prescriptionRegen.weeklyVolumeRangeMin.max,
+    effectiveDaysRegen?.join(",") ?? "any",
+    mode);
 
   const raw = await generateJSON<unknown>({
     systemInstruction,
     userPrompt,
     schemaHint,
-    maxTokens: 1800,
+    maxTokens: 2400,
   });
+  console.debug("[planGen:diag regen] raw response:", JSON.stringify(raw).slice(0, 800));
   // Soft-parse: prima prova con softening (lowercase enum, null→undefined,
   // coerce numeric). Se ancora fail, log dettagliato per debug live.
   const softened = softenRawPlan(raw);
