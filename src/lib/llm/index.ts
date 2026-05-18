@@ -85,14 +85,18 @@ function readConfigSync(): LLMConfig | null {
   return null;
 }
 
-// Modelli deprecati da migrare automaticamente al default attuale.
+// Modelli da migrare automaticamente al default attuale (gemini-3.1-flash-lite-preview).
+// Include: instabili (preview/exp con quota tight), legacy default precedenti.
 // NOTA: 'gemini-3.1-flash-lite-preview' (attuale default) NON è nell'elenco:
-// se viene 503 il fallback automatico a 'gemini-2.5-flash-lite' gestisce già.
+// se viene 503 il fallback automatico a 'gemini-2.5-flash-lite' gestisce già
+// la singola chiamata; il config persistito resta sul default attuale.
 const UNSTABLE_MODEL_PATTERNS = [
   /gemini-2\.0-flash-exp/i,        // vecchio default deprecato
-  /gemini-2\.5-flash$/i,           // upgradiamo al 3.1-lite-preview (più economico, stesse performance tipiche)
+  /gemini-2\.5-flash$/i,           // upgrade al 3.1-lite-preview (più economico)
+  /gemini-2\.5-flash-lite$/i,      // 2026-05-18: legacy default, migrate al 3.1
+  /gemini-3-flash$/i,              // 2026-05-18: legacy default, migrate al 3.1-lite
   /gemini-3-flash-preview/i,       // non più default
-  /^gemini-3\.1-flash-lite$/i,     // senza -preview: alias che risolve comunque a preview, meglio esplicito
+  /^gemini-3\.1-flash-lite$/i,     // senza -preview: alias, meglio esplicito
 ];
 
 function isUnstableModel(modelId: string): boolean {
