@@ -555,10 +555,14 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
     weeks: coerceWeeks(parsed.weeks),
     rationale: parsed.rationale,
   };
+
+  // 2026-05-18 auto-retry: Gemini 3.1 flash lite tende a sotto-prescrivere
+  // ignorando le istruzioni numeriche del prompt. Se il volume totale e' <80%
+  // del target prescritto, riproviamo UNA volta con prompt addendum esplicito.
+  plan = await retryIfUnderprescribed(plan, prescriptionInit, userPrompt, systemInstruction, effectiveDays);
+
   // Validator deterministico post-LLM: logga violazioni safety anche se il modello
-  // le ha ignorate. Non ri-generiamo automaticamente (caro in token) — segnaliamo.
-  // G7 readiness: se band="low" oggi, validatePlan downgrade Z4-5→Z3 su correctedPlan.
-  // 2026-05-13: readiness gia' caricato sopra come readinessInit.
+  // le ha ignorate. G7 readiness: se band="low" oggi, validatePlan downgrade Z4-5→Z3.
   const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZones), { readiness: readinessInit, prescription: prescriptionInit });
   plan = validation.correctedPlan;
   if (!validation.ok) {
@@ -569,6 +573,69 @@ Genera la SETTIMANA 1 del piano (una sola settimana, weekNumber=1) che porti l'u
       validation.issues.map(i => i.message).join(" ");
   }
   return plan;
+}
+
+/**
+ * Auto-retry deterministico: se il piano generato e' sotto -20% dal target
+ * volume, ri-chiama il modello UNA volta con prompt addendum esplicito
+ * (numeri concreti + minimo per sessione). Se anche il retry fallisce,
+ * mantiene il primo piano (meglio averne uno sotto-prescritto che nessuno).
+ *
+ * Costo: max 1 chiamata extra (rare in practice). Risolve il pattern noto
+ * di Gemini 3.1 flash lite che ignora prompt complessi.
+ */
+async function retryIfUnderprescribed(
+  plan: TrainingPlan,
+  prescription: import("./trainingPrescription").TrainingPrescription,
+  baseUserPrompt: string,
+  systemInstruction: string,
+  effectiveDays: string[] | undefined,
+): Promise<TrainingPlan> {
+  const targetVolume = prescription.weeklyVolumeTargetMin;
+  if (targetVolume <= 0) return plan;
+  const actualVolume = plan.weeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
+  const deltaPct = (actualVolume - targetVolume) / targetVolume;
+  if (deltaPct >= -0.20) return plan; // OK
+
+  const minAcceptable = Math.round(targetVolume * 0.85);
+  const numDays = effectiveDays?.length ?? 5;
+  const minPerSession = Math.round(targetVolume / numDays);
+  console.warn(`[planGenerator] Sotto-prescrizione: ${actualVolume}min vs target ${targetVolume}min (${Math.round(deltaPct * 100)}%). Retry forced.`);
+
+  const retryAddendum = `
+
+═══ ATTENZIONE — RIGENERAZIONE OBBLIGATORIA ═══
+Il PIANO PRECEDENTE che hai generato totalizzava ${actualVolume} minuti, MOLTO SOTTO il minimo accettabile (${minAcceptable} min). Era SBAGLIATO.
+
+RIGENERA RISPETTANDO QUESTI VINCOLI NUMERICI:
+1. SOMMA TOTALE delle "duration_min" DEVE essere ≥${minAcceptable} minuti.
+2. Su ${numDays} giorni allenabili → genera ${numDays} sessioni di ≈${minPerSession} min ciascuna.
+3. NON proporre sessioni da 30-45 min se la disponibilità utente è di ~90 min.
+4. Niente eccezioni: il PRECEDENTE era un errore, NON ripeterlo.
+═══════════════════════════════════════════════
+`.trim();
+
+  try {
+    const retryRaw = await generateJSON<unknown>({
+      systemInstruction,
+      userPrompt: baseUserPrompt + "\n\n" + retryAddendum,
+      schemaHint,
+      maxTokens: 1800,
+    });
+    const retryParsed = planSchema.safeParse(retryRaw);
+    if (!retryParsed.success) return plan;
+    const retryWeeks = coerceWeeks(retryParsed.data.weeks);
+    const retryVolume = retryWeeks[0]?.sessions.reduce((a, s) => a + (s.duration_min || 0), 0) ?? 0;
+    if (retryVolume >= targetVolume * 0.75) {
+      console.info(`[planGenerator] Retry success: ${retryVolume} min (vs target ${targetVolume}).`);
+      return { ...plan, weeks: retryWeeks, rationale: retryParsed.data.rationale };
+    }
+    console.warn(`[planGenerator] Retry ancora sotto: ${retryVolume} min. Mantengo primo piano.`);
+    return plan;
+  } catch (e) {
+    console.warn("[planGenerator] Retry fallito (network/parse):", e);
+    return plan;
+  }
 }
 
 /**
@@ -859,6 +926,9 @@ ${modeInstruction}
   } else if (effectiveDaysRegen) {
     expectedDayLabels = effectiveDaysRegen;
   }
+  // 2026-05-18 auto-retry sotto-prescrizione (vedi retryIfUnderprescribed in generateInitialPlan).
+  plan = await retryIfUnderprescribed(plan, prescriptionRegen, userPrompt, systemInstruction, effectiveDaysRegen);
+
   // readiness gia' caricato sopra come readinessRegen.
   const validation = validatePlan(plan, profile, flattenWorkoutsForValidator(recentDaysForZonesRegen), { expectedDayLabels, readiness: readinessRegen, prescription: prescriptionRegen });
   plan = validation.correctedPlan;

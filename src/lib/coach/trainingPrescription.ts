@@ -594,28 +594,25 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
  */
 export function formatPrescriptionForPrompt(p: TrainingPrescription): string {
   const minAcceptable = Math.round(p.weeklyVolumeTargetMin * 0.85);
+  // FORMATO ULTRA-COMPATTO (2026-05-18): Gemini 3.1 flash lite ignora prompt
+  // lunghi. Il prompt deve essere semplice, diretto, con il vincolo numerico
+  // in CIMA e ripetuto. Niente paragrafi narrativi.
   const lines: string[] = [
-    "PRESCRIZIONE TARGET (formule scientifiche peer-reviewed — VINCOLO HARD, non negoziabile):",
-    `- Volume settimanale TOTALE OBBLIGATORIO: ${p.weeklyVolumeTargetMin} min (range tollerato ${p.weeklyVolumeRangeMin.min}-${p.weeklyVolumeRangeMin.max}).`,
-    `  → MINIMO ACCETTABILE: ${minAcceptable} min totali. Sotto questa soglia il piano è REJECTED dal validator deterministico.`,
-    `- Durata sessione MEDIA target: ${p.avgSessionMin} min (range tipico ${p.sessionRangeMin.min}-${p.sessionRangeMin.max}).`,
-    `  → NON proporre sessioni 25-40min "per stare sicuro" se la disponibilità utente è 60-90min: significa SOTTO-PRESCRIZIONE e violazione del target.`,
-    `- Distribuzione zone: ${p.zoneDistributionPct.z1z2Pct}% Z1-Z2 · ${p.zoneDistributionPct.z3Pct}% Z3 · ${p.zoneDistributionPct.z4z5Pct}% Z4-Z5.`,
-    `- Forza: ${p.strength.sessionsPerWeek} sess/sett, RPE ${p.strength.rpeRange.min}-${p.strength.rpeRange.max}, carichi ${p.strength.pct1RMRange.min}-${p.strength.pct1RMRange.max}% 1RM.`,
-    `- Riposo: min ${p.minRestDaysPerWeek} gg/sett, ≥${p.minHoursBetweenStrengthSameGroup}h tra forza stesso gruppo.`,
+    "═══ VINCOLO MATEMATICO INDEROGABILE ═══",
+    `SOMMA TOTALE delle "duration_min" di tutte le sessioni del piano DEVE essere ≥${minAcceptable} e ≤${p.weeklyVolumeRangeMin.max} minuti.`,
+    `Target ideale: ${p.weeklyVolumeTargetMin} min. Sotto ${minAcceptable} = piano RIFIUTATO.`,
+    `Esempio: se prescrivi 5 sessioni, media = ${Math.round(p.weeklyVolumeTargetMin / 5)} min/sessione.`,
+    "════════════════════════════════════════",
+    "",
+    "PRESCRIZIONE TARGET (già scientificamente safety-checked: età, esperienza, readiness, ACWR):",
+    `- Volume settimanale: ${p.weeklyVolumeTargetMin} min totali (range ${p.weeklyVolumeRangeMin.min}-${p.weeklyVolumeRangeMin.max}).`,
+    `- Durata media sessione: ${p.avgSessionMin} min (range ${p.sessionRangeMin.min}-${p.sessionRangeMin.max}).`,
+    `- Zone: ${p.zoneDistributionPct.z1z2Pct}% Z1-Z2, ${p.zoneDistributionPct.z3Pct}% Z3, ${p.zoneDistributionPct.z4z5Pct}% Z4-Z5.`,
+    `- Forza: ${p.strength.sessionsPerWeek} sess/sett, RPE ${p.strength.rpeRange.min}-${p.strength.rpeRange.max}.`,
+    `- Riposo: min ${p.minRestDaysPerWeek} gg/sett.`,
   ];
   if (p.overrides.length > 0) {
-    lines.push(`- Override applicati: ${p.overrides.join(" | ")}.`);
+    lines.push(`- Override: ${p.overrides.join(" | ")}.`);
   }
-  lines.push(
-    "",
-    "ISTRUZIONI ESECUTIVE (obbligatorie):",
-    `1. Questo volume target è GIÀ stato scientificamente derivato dal profilo utente includendo: età decay (Tanaka), experience cap (ACSM), readiness override (se low → già ridotto), ACWR check (Gabbett: spike acuto vs chronic load già cappato), eventuali override per infortunio. NON sottrarre ulteriormente "per sicurezza" — la safety è già nel numero.`,
-    `2. PRIMA di scegliere le singole sessioni, calcola: ${p.weeklyVolumeTargetMin} min target ÷ N giorni allenabili = durata media per sessione.`,
-    "3. Allocata la durata target, distribuisci i tipi (corsa/forza/sport) rispettando le zone prescritte.",
-    `4. La somma delle durate del piano DEVE essere ≥ ${minAcceptable} min e ≤ ${p.weeklyVolumeRangeMin.max} min. Sotto ${minAcceptable}min = REJECTED dal validator (sotto-prescrizione passiva).`,
-    `5. ECCEZIONE: puoi ridurre sotto ${minAcceptable}min SOLO se rilevi un NUOVO segnale safety non già considerato dalla prescrizione (es. dolore acuto nel diario degli ultimi 3gg non ancora in painTrackingAreas, o richiesta esplicita utente). In quel caso DEVI motivarlo nel "rationale" esplicitamente.`,
-    "6. Rispetta la distribuzione zone aggiustando la durata DENTRO il volume target (non riducendo il totale).",
-  );
   return lines.join("\n");
 }

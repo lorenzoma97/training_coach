@@ -379,13 +379,11 @@ describe("formatPrescriptionForPrompt", () => {
       intensity: "very_intense",
     });
     const text = formatPrescriptionForPrompt(p);
-    expect(text).toContain("PRESCRIZIONE TARGET");
-    expect(text).toContain("Volume settimanale TOTALE OBBLIGATORIO: 450 min");
-    expect(text).toContain("MINIMO ACCETTABILE");
-    expect(text).toContain("Distribuzione zone: 75% Z1-Z2");
+    expect(text).toContain("VINCOLO MATEMATICO INDEROGABILE");
+    expect(text).toContain("Volume settimanale: 450 min totali");
+    // MIN accettabile = 85% target. Math.round(450 * 0.85) = 383.
+    expect(text).toContain("≥383");
     expect(text).toContain("Forza: 3 sess/sett");
-    expect(text).toContain("ISTRUZIONI ESECUTIVE");
-    // MIN accettabile = 85% target. Math.round(450 * 0.85) = 383 (JS round-half-up).
-    expect(text).toContain("383 min");
+    expect(text).toContain("PRESCRIZIONE TARGET");
   });
 });

@@ -176,10 +176,13 @@ export default function TrainingPlanView() {
   // 2° tentativo: split su periodo + spazio (rationale tradizionali).
   const rationaleToBullets = (text: string): string[] => {
     if (!text) return [];
-    const byNewline = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
+    // Strip markdown bullet leading ("- ", "* ", "• ") che il modello include
+    // talvolta nella stringa rationale → evita doppio bullet "• - testo".
+    const stripBullet = (s: string) => s.trim().replace(/^[-*•]\s+/, "");
+    const byNewline = text.split(/\n+/).map(stripBullet).filter(Boolean);
     if (byNewline.length > 1) return byNewline;
-    const bySentence = text.split(/(?<=[.!?])\s+(?=[A-ZÀÈÉÌÒÙ])/).map(s => s.trim()).filter(Boolean);
-    return bySentence.length > 1 ? bySentence : [text];
+    const bySentence = text.split(/(?<=[.!?])\s+(?=[A-ZÀÈÉÌÒÙ])/).map(stripBullet).filter(Boolean);
+    return bySentence.length > 1 ? bySentence : [stripBullet(text)];
   };
 
   const showSuccess = (title: string, rationale: string) => {
