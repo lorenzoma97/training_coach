@@ -4,7 +4,7 @@ import { PROMPTS } from "./systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, planAsPrompt, getLastNDays, goalProgressContext, sportSpecificPrescriptions, raceDayExecutionContext, tournamentClusterContext, computeGoalProgress } from "../diaryContext";
 import { aggregateDailyLoad, computeTrainingLoad, formatTrainingLoadForPrompt } from "./trainingLoad";
 import { saveDiagnostic } from "./planDiagnostic";
-import type { UserProfile, UserGoal, TrainingPlan, PlanWeek } from "../types";
+import type { UserProfile, UserGoal, TrainingPlan, PlanWeek, WeeklyReportSummary } from "../types";
 import { buildConditionalPrompt, extractConditionsFromProfile, RUNNING_GOAL_RE, type BuildContext } from "./promptBuilder";
 import { validatePlan, planStateHash, computePlanStartDate } from "./planValidator";
 import { computeZonesContext } from "./zones";
@@ -12,10 +12,12 @@ import { workoutSubtypesForPrompt, isCanonicalSubtype } from "../workoutCatalog"
 import { loadActiveMacroContext } from "./macroLookup";
 import { getCurrentReadiness } from "./readinessScoring";
 import { sanitizePII } from "../promptSanitizer";
-// Wave 4.1 — multi-pass orchestrator. Default attivo; se MULTI_PASS_ENABLED
-// e' false (override locale per debug), si ricade sul codice single-pass legacy
-// che resta integralmente sotto.
-import { runMultiPass, MULTI_PASS_ENABLED } from "./passes/passOrchestrator";
+// Sprint 2 (2026-05-18): kill multi-pass dormant. L'orchestrator multi-pass
+// (passes/) era già disattivato (MULTI_PASS_ENABLED=false) dopo regressione
+// live su Pass-1 skeleton schema vs Gemini Flash output variabile. I cue
+// ricchi (cardio fartlek struttura, strength cue scapolari/postura) sono
+// stati travasati in systemPrompts.PROMPTS.planGeneration come bullet
+// aggiuntivi nel schemaHint/regole. Single-pass è ora l'unico path.
 // 2026-05-13 (architect-specialist): layer Training Prescription data-driven.
 // Sostituisce gli hint vaghi di intensityPreference (diaryContext.ts) con
 // numeri concreti calcolati da formule peer-reviewed. L'LLM riceve target di
@@ -459,26 +461,7 @@ export async function generateInitialPlan(
   const prescriptionBlockInit = formatPrescriptionForPrompt(prescriptionInit);
   const volumeLandmarksBlockInit = formatVolumeLandmarksForPrompt(inferGoalType(goals));
 
-  if (MULTI_PASS_ENABLED) {
-    try {
-      const result = await runMultiPass({
-        profile,
-        goals,
-        recentDays: recentDaysForZones,
-        macroContext: macroLookupInit?.macroContext ?? null,
-        readiness: readinessInit,
-        zones: zonesCtxInit?.zones ?? null,
-        mode: "initial",
-        availableDays: effectiveDays,
-        prescriptionBlock: prescriptionBlockInit,
-        prescription: prescriptionInit,
-      });
-      return result.plan;
-    } catch (e) {
-      console.error("[planGenerator] runMultiPass failed in onboarding, returning fallback plan:", e);
-      return buildFallbackPlan(profile, goals);
-    }
-  }
+  // Sprint 2: branch multi-pass rimosso (kill dormant). Single-pass è l'unico path.
 
   const readinessLineInit = readinessInit?.band ? `READINESS OGGI: ${readinessInit.band}.` : "";
   const loadSnapInit = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDaysForZones)));
@@ -762,6 +745,70 @@ function formatDateIT(d: Date): string {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
+/**
+ * Costruisce il blocco prompt "REPORT SETTIMANA PRECEDENTE" da iniettare
+ * nel userPrompt di regen (Sprint 1 fix #1, 2026-05-18).
+ *
+ * Output compatto: aderenza + deviazioni volume per disciplina + pain trend
+ * + hint testuali. L'LLM deve usare questi numeri per modulare il piano
+ * nuovo (es. se la settimana precedente è andata a 50% aderenza, niente
+ * push aggressivo).
+ *
+ * NB: l'adherence cap DETERMINISTICO è già applicato in computePrescription
+ * via input.adherencePct. Questo blocco serve in aggiunta per dare contesto
+ * narrativo all'LLM (es. "modula carico nuovo coerentemente").
+ */
+function buildPreviousReportBlock(report: WeeklyReportSummary): string {
+  const deviationLines: string[] = [];
+  for (const [disc, v] of Object.entries(report.volumeByDiscipline ?? {})) {
+    const planned = v.planned_min ?? 0;
+    const actual = v.actual_min ?? 0;
+    const delta = actual - planned;
+    const sign = delta >= 0 ? "+" : "";
+    deviationLines.push(`  - ${disc}: pianificato ${planned}min vs eseguito ${actual}min (${sign}${delta}min)`);
+  }
+  const deviations = deviationLines.length > 0 ? deviationLines.join("\n") : "  - (nessuna disciplina tracciata)";
+  return [
+    "REPORT SETTIMANA PRECEDENTE (closed-loop, già considerato nella PRESCRIZIONE TARGET):",
+    `- Aderenza: ${Math.round(report.adherencePct)}%`,
+    "- Deviazioni volume:",
+    deviations,
+    `- Trend dolore: ${report.painTrend || "—"}`,
+    `- Hint aggiustamenti: ${report.adjustmentsHints || "—"}`,
+    "Modula carico nuovo coerentemente: se aderenza <75% NON proporre incremento volume; se aderenza ≥85% puoi mantenere/aumentare progressivamente. Se deviazione cardio molto negativa (utente salta corse), riduci ambizione cardio in favore di sessioni più brevi e gestibili.",
+  ].join("\n");
+}
+
+/**
+ * Calcola adherence % fallback dal piano precedente vs sessioni recenti.
+ * Sprint 1 fix #2 (2026-05-18): se previousReport non disponibile (es. prima
+ * regen senza weeklyReport), proviamo a derivare un'aderenza grossolana dal
+ * numero di sessioni eseguite negli ultimi 7gg vs sessioni pianificate.
+ *
+ * Limite: stima coarse — non distingue durata vs presenza. Sufficiente per
+ * triggerare l'adherence cap deterministico nei casi estremi (<60% o <75%).
+ * Restituisce undefined se manca currentPlan o non ci sono sessioni
+ * pianificate (no signal).
+ */
+function inferAdherenceFromRecent(
+  currentPlan: TrainingPlan | null,
+  recentDays: Array<{ date: string; daily: unknown; workouts: unknown[] }>,
+): number | undefined {
+  if (!currentPlan?.weeks?.[0]?.sessions?.length) return undefined;
+  const planned = currentPlan.weeks[0].sessions.length;
+  if (planned === 0) return undefined;
+  // Conta workouts ultimi 7gg.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cutoff = today.getTime() - 7 * 86400000;
+  let actual = 0;
+  for (const d of recentDays) {
+    const dt = new Date(d.date).getTime();
+    if (Number.isNaN(dt) || dt < cutoff) continue;
+    actual += (d.workouts || []).length;
+  }
+  return Math.max(0, Math.min(100, (actual / planned) * 100));
+}
+
 /** Rigenera il piano. Vedi RegenerateMode per le due modalità. */
 export async function regenerateNextWeek(
   profile: UserProfile,
@@ -770,6 +817,7 @@ export async function regenerateNextWeek(
   recentDaysText: string,
   mode: RegenerateMode = "next-week",
   opts?: GenerationOptions,
+  previousReport?: WeeklyReportSummary,
 ): Promise<TrainingPlan> {
   // Per "rest-of-week" calcoliamo oggi, lunedì-corrente, giorni rimanenti.
   // Il piano avrà startDate = lunedì-corrente (canonical) ma sessioni solo
@@ -800,63 +848,7 @@ non includere sessioni per essi.${minimalWindowGuard}
     ? `Genera la NUOVA settimana (weekNumber=1, una sola) a partire dalla settimana prossima, adattando in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.\nSe rilevi red flag, proponi deload esplicito.`
     : `Genera la settimana corrente parziale (weekNumber=1, una sola) coprendo solo i ${remainingLabels.length} giorni rimanenti. Adatta volume/intensità in base ad aderenza, trend dolore/fatica, e risposta al carico osservati.`;
 
-  // Wave 4.1 — multi-pass path (default). NB: errori in regen NON sono gracefully
-  // fallback-ati (a differenza di onboarding) per preservare il comportamento
-  // legacy che throwa al caller.
-  if (MULTI_PASS_ENABLED) {
-    const recentDaysForZonesRegenMP = await getLastNDays(60).catch(() => []);
-    const zonesCtxRegenMP = computeZonesContext(profile, recentDaysForZonesRegenMP);
-    const macroLookupRegenMP = await loadActiveMacroContext(profile).catch(() => null);
-    const effectiveDaysRegenMP = effectiveAvailableDays(
-      opts?.availableDaysOverride,
-      profile.availableDays,
-      mode === "rest-of-week" ? remainingLabels : undefined,
-    );
-    const readiness = await getCurrentReadiness();
-    const expectedDayLabelsMP: string[] | undefined = mode === "rest-of-week"
-      ? [...(effectiveDaysRegenMP ?? remainingLabels)]
-      : effectiveDaysRegenMP ? [...effectiveDaysRegenMP] : undefined;
-    // Prescription layer (2026-05-13): inject numeri concreti nel prompt MP.
-    const acwrRegenMP = computeAcwrFromRecentDays(recentDaysForZonesRegenMP);
-    const goalMultRegenMP = aggregateGoalVolumeMultiplier(goals, recentDaysForZonesRegenMP, profile);
-    const prescriptionRegenMP = computePrescription({
-      profile,
-      intensity: profile.intensityPreference,
-      goalType: inferGoalType(goals),
-      macroPhase: extractMacroPhase(macroLookupRegenMP?.macroContext),
-      readinessBand: readiness?.band,
-      weeklyVolumeRecentMin: acwrRegenMP?.acuteMin,
-      weeklyVolumeChronicMin: acwrRegenMP?.chronicMin,
-      goalVolumeMultiplier: goalMultRegenMP,
-    });
-    const result = await runMultiPass(
-      {
-        profile,
-        goals,
-        recentDays: recentDaysForZonesRegenMP,
-        macroContext: macroLookupRegenMP?.macroContext ?? null,
-        readiness,
-        zones: zonesCtxRegenMP?.zones ?? null,
-        mode: "regen",
-        currentPlan,
-        recentDaysText,
-        availableDays: effectiveDaysRegenMP,
-        remainingThisWeek: mode === "rest-of-week" ? remainingLabels : undefined,
-        prescriptionBlock: formatPrescriptionForPrompt(prescriptionRegenMP),
-        prescription: prescriptionRegenMP,
-      },
-      { expectedDayLabels: expectedDayLabelsMP },
-    );
-    // Override startDate per "next-week": l'orchestrator default = lunedi'
-    // corrente; per next-week serve lunedi' PROSSIMO (mirror del path legacy).
-    if (mode === "next-week") {
-      const nextMonday = new Date(now);
-      const todayIdxLocal = (now.getDay() + 6) % 7;
-      nextMonday.setDate(now.getDate() + (7 - todayIdxLocal));
-      result.plan.startDate = `${nextMonday.getFullYear()}-${String(nextMonday.getMonth() + 1).padStart(2, "0")}-${String(nextMonday.getDate()).padStart(2, "0")}`;
-    }
-    return result.plan;
-  }
+  // Sprint 2: branch multi-pass rimosso (kill dormant). Single-pass è l'unico path.
 
   const goalConflictHintRegen = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
   // Se mode=rest-of-week intersechiamo l'override (o profilo) con i giorni
@@ -877,6 +869,8 @@ non includere sessioni per essi.${minimalWindowGuard}
   const readinessRegen = await getCurrentReadiness();
   const acwrRegen = computeAcwrFromRecentDays(recentDaysForZonesRegen);
   const goalMultRegen = aggregateGoalVolumeMultiplier(goals, recentDaysForZonesRegen, profile);
+  // Sprint 1 fix #2: adherence cap deterministico (vedi sopra).
+  const adherencePctRegen = previousReport?.adherencePct ?? inferAdherenceFromRecent(currentPlan, recentDaysForZonesRegen);
   const prescriptionRegen = computePrescription({
     profile,
     intensity: profile.intensityPreference,
@@ -886,15 +880,25 @@ non includere sessioni per essi.${minimalWindowGuard}
     weeklyVolumeRecentMin: acwrRegen?.acuteMin,
     weeklyVolumeChronicMin: acwrRegen?.chronicMin,
     goalVolumeMultiplier: goalMultRegen,
+    adherencePct: adherencePctRegen,
   });
   const prescriptionBlockRegen = formatPrescriptionForPrompt(prescriptionRegen);
   const volumeLandmarksBlockRegen = formatVolumeLandmarksForPrompt(inferGoalType(goals));
+
+  // Sprint 1 fix #1: closed-loop. Se previousReport è disponibile, iniettiamo
+  // un blocco esplicito nel userPrompt così l'LLM moduli volume/intensità
+  // coerentemente con i dati reali della settimana appena conclusa.
+  const previousReportBlock = previousReport
+    ? buildPreviousReportBlock(previousReport)
+    : "";
 
   const readinessLineRegen = readinessRegen?.band ? `READINESS OGGI: ${readinessRegen.band}.` : "";
   const loadSnapRegen = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDaysForZonesRegen)));
   const loadBlockRegen = formatTrainingLoadForPrompt(loadSnapRegen);
   const userPrompt = `
 ${prescriptionBlockRegen}
+
+${previousReportBlock}
 
 ${volumeLandmarksBlockRegen}
 
@@ -1080,28 +1084,7 @@ export async function adaptPlan(
   const prescriptionBlockAdapt = formatPrescriptionForPrompt(prescriptionAdapt);
   const volumeLandmarksBlockAdapt = formatVolumeLandmarksForPrompt(inferGoalType(goals));
 
-  // Wave 4.1 — multi-pass path (default). Errore propagato al caller (parita'
-  // con legacy throw "Il coach non e' riuscito...").
-  if (MULTI_PASS_ENABLED) {
-    const result = await runMultiPass(
-      {
-        profile,
-        goals,
-        recentDays: recentDaysForZonesAdapt,
-        macroContext: macroLookupAdapt?.macroContext ?? null,
-        readiness: readinessAdapt,
-        zones: zonesCtxAdapt?.zones ?? null,
-        mode: "adapt",
-        currentPlan,
-        recentDaysText,
-        availableDays: effectiveDaysAdapt,
-        prescriptionBlock: prescriptionBlockAdapt,
-        prescription: prescriptionAdapt,
-      },
-      { userRequest: sanitizePII(userRequest) },
-    );
-    return result.plan;
-  }
+  // Sprint 2: branch multi-pass rimosso (kill dormant). Single-pass è l'unico path.
   const readinessLineAdapt = readinessAdapt?.band ? `READINESS OGGI: ${readinessAdapt.band}.` : "";
   const loadSnapAdapt = computeTrainingLoad(aggregateDailyLoad(extractWorkoutsForLoad(recentDaysForZonesAdapt)));
   const loadBlockAdapt = formatTrainingLoadForPrompt(loadSnapAdapt);

@@ -51,6 +51,7 @@
 // - Bosquet et al. 2007 → deload settimanale -40-50% volume.
 
 import type { UserProfile, Experience, MacroPhase } from "../types";
+import { volumeMultiplierForPhase } from "./macroPlanner";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Public types.
@@ -150,6 +151,17 @@ export interface ComputePrescriptionInput {
    * Gabbett (+10%/sett). Sostituisce la logica categorica del signal.
    */
   goalVolumeMultiplier?: number;
+  /**
+   * Adherence % della settimana precedente (0-100). Iniettato dal
+   * closed-loop scheduler (weeklyReport → regen): se basso, applica
+   * un cap deterministico al volume target per la nuova settimana.
+   *  - <60: vol × 0.85 (forte downscale)
+   *  - 60-75: vol × 0.95 (lieve downscale)
+   *  - >=75: no-op
+   * Sprint 1 (2026-05-18): evita di riproporre la stessa dose che
+   * l'utente non è riuscito a sostenere.
+   */
+  adherencePct?: number;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -425,14 +437,27 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
   }
 
   // ─── 7. Macro phase override ────────────────────────────────────────────
+  // Sprint 1 fix #4 (2026-05-18): volume scaling per TUTTE le fasi (non solo
+  // taper). Sincronizzato con macroPlanner.VOLUME_BY_PHASE (build×1.2,
+  // peak×0.9, taper×0.6, base×1.0, transition×0.5). Lo zone-shift specifico
+  // per base/peak resta sotto. Per taper usiamo volumeMultiplierForPhase(
+  // "taper", 1) = 0.6 (punto medio rampa); il taper-ramp preciso settimana-
+  // per-settimana è gestito in macroPlanner.buildMacroCycle.
   if (macroPhase === "taper") {
     // Mujika 2003: taper -40% volume mantenendo intensita'.
-    const taperMult = 0.6;
+    const taperMult = volumeMultiplierForPhase("taper", 1); // = 0.6
     weeklyVolume = weeklyVolume * taperMult;
     avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
-    overrides.push("Macro taper → volume × 0.6 (Mujika & Padilla 2003).");
+    overrides.push(`Macro phase taper: vol ×${taperMult.toFixed(2)} (Mujika & Padilla 2003).`);
     bases.push("Mujika & Padilla 2003: taper -40-60% volume, intensita' invariata.");
   } else if (macroPhase === "base") {
+    // Base: vol × 1.0 (no-op esplicito, ma logghiamo per trasparenza UI).
+    const baseMult = volumeMultiplierForPhase("base", 1); // = 1.0
+    if (baseMult !== 1.0) {
+      weeklyVolume = weeklyVolume * baseMult;
+      avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
+    }
+    overrides.push(`Macro phase base: vol ×${baseMult.toFixed(2)} (aerobic accumulation).`);
     // Base: +10% Z1-Z2 (accumulazione aerobica), -10% Z4-Z5.
     const z45Shift = Math.min(10, zoneDist.z4z5Pct);
     zoneDist = {
@@ -444,6 +469,11 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
     overrides.push("Macro base → +10% Z1-Z2 (aerobic accumulation), -10% Z4-Z5.");
     bases.push("Bompa & Buzzichelli Periodization: base phase = aerobic accumulation.");
   } else if (macroPhase === "peak") {
+    // Peak: vol × 0.9 (riduzione volume per qualità, Bompa).
+    const peakMult = volumeMultiplierForPhase("peak", 1); // = 0.9
+    weeklyVolume = weeklyVolume * peakMult;
+    avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
+    overrides.push(`Macro phase peak: vol ×${peakMult.toFixed(2)} (race-specific, Bompa).`);
     // Peak: bump Z4-Z5 +5%, Z1-Z2 -5%.
     const z12Shift = Math.min(5, zoneDist.z1z2Pct);
     zoneDist = {
@@ -454,8 +484,18 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
     zoneDist = normalizeZones(zoneDist);
     overrides.push("Macro peak → +5% Z4-Z5 (specific intensity), -5% Z1-Z2.");
   } else if (macroPhase === "build") {
-    // Build: intensita' specifica gia' incoraggiata da zoneDist[intensity].
-    overrides.push("Macro build → intensita' specifica (zone gia' bilanciate).");
+    // Build: vol × 1.2 (accumulazione qualità, Bompa). Intensita' specifica
+    // gia' incoraggiata dal zoneDist base[intensity].
+    const buildMult = volumeMultiplierForPhase("build", 1); // = 1.2
+    weeklyVolume = weeklyVolume * buildMult;
+    avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
+    overrides.push(`Macro phase build: vol ×${buildMult.toFixed(2)} (quality accumulation, Bompa).`);
+  } else if (macroPhase === "transition") {
+    // Transition: vol × 0.5 (recovery post-gara).
+    const transMult = volumeMultiplierForPhase("transition", 1); // = 0.5
+    weeklyVolume = weeklyVolume * transMult;
+    avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
+    overrides.push(`Macro phase transition: vol ×${transMult.toFixed(2)} (post-race recovery).`);
   }
 
   // ─── 8. Goal type override ──────────────────────────────────────────────
@@ -537,6 +577,28 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
     }
   }
 
+  // ─── 9c. Adherence cap deterministico (Sprint 1 fix #2, 2026-05-18) ─────
+  // Closed-loop con weeklyReport: se la settimana precedente è stata
+  // sotto-aderente, riduci il target deterministicamente. NIENTE retry-LLM,
+  // NIENTE bias soft — applica un multiplier secco con override esplicito.
+  //  - adherence < 60: vol × 0.85 (downscale forte: utente in difficoltà)
+  //  - 60 <= adherence < 75: vol × 0.95 (downscale leggero: rifinitura)
+  //  - >= 75: no-op
+  if (typeof input.adherencePct === "number" && Number.isFinite(input.adherencePct)) {
+    let adhMult: number | null = null;
+    if (input.adherencePct < 60) adhMult = 0.85;
+    else if (input.adherencePct < 75) adhMult = 0.95;
+    if (adhMult !== null) {
+      const before = weeklyVolume;
+      weeklyVolume = weeklyVolume * adhMult;
+      avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
+      overrides.push(
+        `Adherence cap: aderenza settimana precedente ${Math.round(input.adherencePct)}% → vol ×${adhMult.toFixed(2)} (${Math.round(before)}min → ${Math.round(weeklyVolume)}min).`,
+      );
+      bases.push("Closed-loop adherence cap: target volume modulato sull'aderenza osservata (riduce gap target↔reale).");
+    }
+  }
+
   // ─── 10. Goal convergence auto-adapt (Wave audit 2 commit 2/3) ──────────
   // Adatta carichi via multiplier continuo dal goalPredictor (Daniels VDOT,
   // ACSM, Krustrup, Schoenfeld, Pfitzinger). Sostituisce mapping categorico
@@ -569,6 +631,30 @@ export function computePrescription(input: ComputePrescriptionInput): TrainingPr
     avgSession = Math.min(weeklyVolume / daysAvail, sessionCap);
     overrides.push(`${label} (volume: ${Math.round(before)}min → ${Math.round(weeklyVolume)}min).`);
     bases.push("Goal-driven volume adapt: multiplier continuo da goalPredictor (Daniels/ACSM/Krustrup/Schoenfeld/Pfitzinger), capped Lydiard/Gabbett 2016.");
+  }
+
+  // ─── 11. Strength + cardio reconciliation (Sprint 1 fix #3, 2026-05-18) ─
+  // Vincolo: strength.sessionsPerWeek + cardio_sessions_implicit ≤ daysAvail.
+  // Senza questo check, l'LLM riceveva richieste impossibili (es. 3 forza +
+  // 5 cardio impliciti su 5 giorni → overflow). Riduciamo strength PRIMA
+  // (il cardio è il driver primario del volume target → ha precedenza).
+  // Cardio sessions implicito calcolato come ceil(weeklyVolume / avgSessionMin)
+  // con guard contro divisione per zero.
+  if (avgSession > 0 && weeklyVolume > 0) {
+    const cardioSessionsImplicit = Math.ceil(weeklyVolume / avgSession);
+    const totalSessions = strength.sessionsPerWeek + cardioSessionsImplicit;
+    if (totalSessions > daysAvail && strength.sessionsPerWeek > 0) {
+      const strengthBefore = strength.sessionsPerWeek;
+      // Riduci strength finché total entra in daysAvail. Floor a 0 (mai
+      // negativo); se il cardio da solo eccede daysAvail, segnaliamo
+      // comunque ma non possiamo ridurre cardio (sarebbe taglio al volume
+      // target già scientificamente safety-checked).
+      const targetStrength = Math.max(0, daysAvail - cardioSessionsImplicit);
+      strength.sessionsPerWeek = targetStrength;
+      overrides.push(
+        `Strength ridotta a ${strength.sessionsPerWeek} per fit giorni: cardio implicito ${cardioSessionsImplicit} + strength ${strengthBefore} > daysAvail ${daysAvail}.`,
+      );
+    }
   }
 
   // ─── Output finale: banda ±15% sui range. ──────────────────────────────

@@ -153,6 +153,28 @@ CROSS-SPORT FATIGUE CONFLICT (regole hardcoded — il piano sarà validato post-
 - VIETATO: forza_gambe il giorno PRIMA di sport "Partita"/"Match" (Ekstrand 2011 UEFA injury study: rischio strain ischiocrurale/quadricipite).
 - EVITARE: 2 giorni consecutivi entrambi con sessione hard (Z4-Z5 cardio o sport match o forza pesante). Coach pro Friel/Daniels: separa giorni hard con almeno 1 easy/rest tra i due.
 
+CUE RICCHI NEL "details" (Sprint 2 — travasati dai prompt builder Pass-2 dismessi):
+- CARDIO FARTLEK / RIPETUTE / SOGLIA — il "details" DEVE indicare la struttura completa:
+  warmup Z2 (8-15 min) + main/rip (durata, zona, eventuali reps + recovery_sec)
+  + cooldown Z1 (5-10 min). Esempi formato accettato:
+    "Warmup 10min Z2 + 6x3min Z4 rec 90s + cooldown 8min"
+    "Warmup 15' Z2 + 20' continuo Z4 + cooldown 10' Z1"
+    "Warmup 10' + fartlek 5x3' progressivo Z3->Z5 (rec 90s) + cooldown 10'"
+  Regole intervallo:
+    - Z5 brevi (200-800m, 30s-3min): recovery 60-180s in jog Z1.
+    - Z4 medi (800-1600m, 3-6min): recovery 60-120s in jog Z1.
+    - Z4 soglia continua: nessuna recovery (singolo blocco main).
+- FORZA — il "details" deve includere cue tecnici scapolari/postura/respirazione
+  embedded. Esempi:
+    "3 serie × 8 squat (RPE 7): petto alto, talloni a terra, sotto parallelo; rec 90s"
+    "4 serie × 6-8 bench press: scapole retratte, barra al petto basso, gomiti 45°; rec 180s"
+    "3x10 row: busto a 30°, tira al pube, scapole compresse; rec 90s"
+  Coerenza set/reps con intensità:
+    - Forza pura/potenza (>85% 1RM o RPE 9+): max 5 reps/set, rest 180-300s.
+    - Ipertrofia (70-85% 1RM o RPE 7-8): 6-12 reps/set, rest 60-120s.
+    - Endurance muscolare (<70% o RPE 5-7): 12-25 reps/set, rest 30-60s.
+- NIENTE bpm assoluti nei details (il frontend li calcola dalle zone personalizzate).
+
 ESEMPIO DI BUONA STRUTTURA SETTIMANA (riferimento, NON copiare letteralmente):
   Profilo: 4 giorni/sett, max 75min/sess, intensity intense, runner regular, goal 10K in 50min, readiness moderate.
   Output ideale (struttura — popola comunque tutti i campi richiesti dallo schema):
