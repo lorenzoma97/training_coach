@@ -105,8 +105,6 @@ export interface UserProfile {
    * Influenza la UI (pulsante "Importa Samsung") e il fallback readinessScoring.
    */
   wearableConnected?: boolean;
-  /** ISO datetime ultima sync wearable. */
-  wearableLastSync?: string;
   /**
    * Race future configurate (G5). Sorgente di verità per macroPlanner.
    * Cambiare → rigenera `MacroCycle` ma NON il piano corrente (I3).

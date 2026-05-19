@@ -12,22 +12,12 @@ export const ExerciseSetSchema = z.object({
   weight_kg: z.number().min(0).max(500).optional(),
   rpe: z.number().min(1).max(10).optional(),
   rir: z.number().int().min(0).max(10).optional(),
-  rest_sec: z.number().int().min(0).max(900).optional(),
-  tut_sec: z.number().int().min(0).max(900).optional(),
 });
-
-export const ExerciseFailureReasonSchema = z.enum([
-  "form_breakdown",
-  "rpe_cap",
-  "missed_reps",
-  "pain",
-]);
 
 export const ExercisePerformanceSchema = z.object({
   exerciseId: z.string().min(1),
   sets: z.array(ExerciseSetSchema),
   notes: z.string().optional(),
-  failureReason: ExerciseFailureReasonSchema.optional(),
 });
 
 export const OneRepMaxSourceSchema = z.enum(["tested", "estimated"]);

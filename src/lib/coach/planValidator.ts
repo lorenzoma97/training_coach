@@ -639,8 +639,8 @@ export function planStateHash(profile: UserProfile, goals: UserGoal[] = []): str
   //   Pass-1 riceve macroPhase diverso → struttura settimana diversa.
   // - activeMacroCycleId: cambio macro attivo → fase corrente diversa.
   // - experienceByDiscipline: filtra Exercise.level per Pass-2 forza.
-  // NB: NON includiamo wearableConnected/wearableLastSync (cambiamenti
-  // frequenti ma non impattano la struttura del piano).
+  // NB: NON includiamo wearableConnected (cambiamenti frequenti ma non
+  // impattano la struttura del piano).
   const oneRepMaxes = [...(profile.oneRepMaxes || [])]
     .map(o => ({
       exerciseId: o.exerciseId,

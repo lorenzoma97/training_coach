@@ -29,16 +29,6 @@ export interface ExerciseSet {
    * fare ancora"). RIR=0 ≈ RPE 10. Inietta UNO solo dei due in pass-2.
    */
   rir?: number;
-  /**
-   * Tempo di riposo PRIMA di questo set (sec). Per super-set/EMOM/cluster
-   * sets — il primo set della sessione tipicamente non lo specifica.
-   */
-  rest_sec?: number;
-  /**
-   * Tempo sotto tensione totale del set (sec). Mostly per ipertrofia/eccentriche
-   * controllate. Optional, raramente registrato dagli amatori.
-   */
-  tut_sec?: number;
 }
 
 /**
@@ -57,15 +47,6 @@ export interface ExercisePerformance {
   sets: ExerciseSet[];
   /** Note libere dell'utente (es. "tecnica buona, ho perso bracing al 4° set"). */
   notes?: string;
-  /**
-   * Se l'utente segnala uno stallo, viene iniettato nel prompt di Pass-2
-   * della prossima sessione per adattare il carico/volume.
-   * - form_breakdown: tecnica persa → de-load 5%
-   * - rpe_cap: RPE 10 raggiunto prima delle reps target → mantieni carico
-   * - missed_reps: reps target non raggiunte → mantieni carico, retry settimana prossima
-   * - pain: dolore → swap esercizio o skip pattern
-   */
-  failureReason?: "form_breakdown" | "rpe_cap" | "missed_reps" | "pain";
 }
 
 /**

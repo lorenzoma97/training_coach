@@ -11,7 +11,7 @@ describe("ExerciseSetSchema", () => {
   });
 
   it("accepts a complete set", () => {
-    const set = { reps: 5, weight_kg: 100, rpe: 8, rir: 2, rest_sec: 180, tut_sec: 30 };
+    const set = { reps: 5, weight_kg: 100, rpe: 8, rir: 2 };
     expect(ExerciseSetSchema.safeParse(set).success).toBe(true);
   });
 
@@ -42,7 +42,6 @@ describe("ExercisePerformanceSchema", () => {
         { reps: 4, weight_kg: 80, rpe: 9 },
       ],
       notes: "buona tecnica",
-      failureReason: "rpe_cap" as const,
     };
     expect(ExercisePerformanceSchema.safeParse(perf).success).toBe(true);
   });
@@ -54,15 +53,6 @@ describe("ExercisePerformanceSchema", () => {
 
   it("rejects missing exerciseId", () => {
     const perf = { sets: [{ reps: 5 }] };
-    expect(ExercisePerformanceSchema.safeParse(perf).success).toBe(false);
-  });
-
-  it("rejects unknown failureReason", () => {
-    const perf = {
-      exerciseId: "x",
-      sets: [{ reps: 5 }],
-      failureReason: "boredom",
-    };
     expect(ExercisePerformanceSchema.safeParse(perf).success).toBe(false);
   });
 });
