@@ -435,13 +435,13 @@ Implicazione per il coach: in v2 differenziare il suggerimento di recupero nel f
   {
     id: "sec-21-running-biomechanics",
     sectionNumber: 21,
-    title: "Biomeccanica della corsa — cadenza, footstrike, scarpe",
-    topics: ["cadenza", "footstrike", "scarpe", "biomeccanica corsa", "Heiderscheit", "165 ppm", "stride rate"],
-    content: `Il diario raccoglie cadenza, tipo di scarpe e superficie. Il coach potrebbe commentare ma attualmente non ha regole specifiche di biomeccanica della corsa.
+    title: "Biomeccanica della corsa — cadenza e footstrike",
+    topics: ["cadenza", "footstrike", "biomeccanica corsa", "Heiderscheit", "165 ppm", "stride rate"],
+    content: `Il diario raccoglie la cadenza (passi/min). Il coach commenta su quel dato; scarpe e superficie NON sono tracciate (cleanup 2026-05-18: nessuna regola specifica del coach le usava, evidenza Napier 2019 di basso valore predittivo).
 
-Evidenza: Heiderscheit et al. (Med Sci Sports Exerc, 2011) è landmark: aumentare la cadenza di circa 5-10% rispetto alla preferita riduce significativamente lo stress su ginocchio e anca, senza richiedere cambio di footstrike. Quinn et al. (Sports Med Open, 2022) con systematic review confermano: la cadenza più alta riduce carico articolare e picco d'impatto; l'effetto sugli infortuni è evidenza indiretta ma coerente. Anderson et al. (2024) review aggiornata: cadenze <165 passi/min sono associate a maggiore incidenza di overload injuries, specialmente tibiali. Napier et al. (Am J Sports Med, 2019) sulla scarpa: evidenza inconsistente su tipo e minimalismo; contano abitudine e progressione graduale, non la scarpa in sé. Daoud et al. (Med Sci Sports Exerc, 2012) su popolazione elite trovano il forefoot strike associato a minor incidenza di infortuni ripetitivi, ma non è generalizzabile al runner medio.
+Evidenza: Heiderscheit et al. (Med Sci Sports Exerc, 2011) è landmark: aumentare la cadenza di circa 5-10% rispetto alla preferita riduce significativamente lo stress su ginocchio e anca, senza richiedere cambio di footstrike. Quinn et al. (Sports Med Open, 2022) con systematic review confermano: la cadenza più alta riduce carico articolare e picco d'impatto; l'effetto sugli infortuni è evidenza indiretta ma coerente. Anderson et al. (2024) review aggiornata: cadenze <165 passi/min sono associate a maggiore incidenza di overload injuries, specialmente tibiali. Daoud et al. (Med Sci Sports Exerc, 2012) su popolazione elite trovano il forefoot strike associato a minor incidenza di infortuni ripetitivi, ma non è generalizzabile al runner medio. Napier et al. (Am J Sports Med, 2019) sulla scarpa: evidenza inconsistente su tipo e minimalismo; contano abitudine e progressione graduale, non la scarpa in sé — questa è la ragione per cui il dato non viene più raccolto.
 
-Implicazione per il coach: in v2, se la cadenza dichiarata è <165 ppm, suggerire gentilmente "prova ad aumentare la cadenza di ~5%" come strategia anti-impatto. Warning: non consigliare cambi di footstrike (rischio infortuni da transizione) e monitorare che l'utente mantenga stabile lo stesso modello di scarpa per almeno 2 mesi prima di cambiarlo.`,
+Implicazione per il coach: se la cadenza dichiarata è <165 ppm, suggerire gentilmente "prova ad aumentare la cadenza di ~5%" come strategia anti-impatto. Warning: non consigliare cambi di footstrike (rischio infortuni da transizione). Non commentare scarpe/superficie: dati non disponibili nel diario.`,
     primaryCitation: "Heiderscheit 2011",
     links: [
       "https://pmc.ncbi.nlm.nih.gov/articles/PMC12440572/",
