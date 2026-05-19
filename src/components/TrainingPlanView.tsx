@@ -508,6 +508,10 @@ export default function TrainingPlanView() {
   // Override giorni allenabili per QUESTA generazione. undefined = usa profilo
   // (default routine). Inizializzato dal profilo all'apertura del picker.
   const [pickerDays, setPickerDays] = useState<string[] | undefined>(undefined);
+  // 2026-05-19: opt-in per skippare l'adherence cap deterministico in questa
+  // generazione. False di default = safety net attivo. True quando l'utente sa
+  // di essere in forma nonostante l'aderenza bassa (es. settimana di scelta).
+  const [skipAdherenceCap, setSkipAdherenceCap] = useState(false);
 
   // Quando il picker si apre, sincronizza con il default del profilo. Se profilo
   // ha availableDays popolato, parte da quello. Altrimenti seleziona TUTTI i giorni
@@ -517,11 +521,15 @@ export default function TrainingPlanView() {
     const def = currentProfile?.availableDays;
     if (def && def.length > 0) setPickerDays([...def]);
     else setPickerDays(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]);
+    // Reset adherence cap toggle a ogni apertura — è un opt-in per-generazione,
+    // non un setting persistente.
+    setSkipAdherenceCap(false);
   }, [regenPickerOpen, currentProfile]);
 
   const handleRegenerate = async (
     mode: "rest-of-week" | "next-week" = "next-week",
     daysOverride?: string[],
+    skipAdherence?: boolean,
   ) => {
     if (regenerating) return;
     // Guard offline: la generazione richiede LLM cloud. Evita errore network
@@ -550,7 +558,12 @@ export default function TrainingPlanView() {
         if (profileDefault === "" && overrideSorted === allDaysSorted) return undefined;
         return daysOverride;
       })();
-      const opts = effectiveOverride ? { availableDaysOverride: effectiveOverride } : undefined;
+      const opts = (effectiveOverride || skipAdherence)
+        ? {
+          ...(effectiveOverride ? { availableDaysOverride: effectiveOverride } : {}),
+          ...(skipAdherence ? { skipAdherenceCap: true } : {}),
+        }
+        : undefined;
       let next: TrainingPlan;
       let title: string;
       if (plan) {
@@ -1191,10 +1204,38 @@ export default function TrainingPlanView() {
                   >↺ Reset</button>
                 </div>
 
+                {/* 2026-05-19 — Override adherence cap. Default off (safety
+                    net attivo: aderenza bassa → volume cap deterministico).
+                    On = ignora aderenza recente, prescrivi al pieno del target
+                    profilo. Use case: settimana scorsa saltata per scelta /
+                    impegni ma fisicamente in forma. */}
+                <label style={{
+                  display: "flex", alignItems: "flex-start", gap: "8px",
+                  padding: "10px 12px", marginTop: "4px",
+                  background: skipAdherenceCap ? "#0891B215" : "#1A1A2E",
+                  border: skipAdherenceCap ? "1px solid #0891B266" : "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: "10px", cursor: "pointer",
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={skipAdherenceCap}
+                    onChange={e => setSkipAdherenceCap(e.target.checked)}
+                    style={{ marginTop: "2px", accentColor: "#0891B2", cursor: "pointer" }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: skipAdherenceCap ? "#38BDF8" : "#E2E8F0" }}>
+                      Ignora aderenza recente
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.4, marginTop: "2px" }}>
+                      Di default, se hai saltato sessioni il coach riduce il volume nel piano nuovo (safety: ACWR Gabbett 2016). Attiva se sei in forma e vuoi il pieno target del tuo profilo.
+                    </div>
+                  </div>
+                </label>
+
                 <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600, marginTop: "4px" }}>Come vuoi rigenerare?</div>
                 {showRestOfWeek && (
                   <button
-                    onClick={() => handleRegenerate("rest-of-week", pickerDays)}
+                    onClick={() => handleRegenerate("rest-of-week", pickerDays, skipAdherenceCap)}
                     disabled={noDaysSelected || remainingActive.length === 0}
                     style={{
                       textAlign: "left", padding: "12px 14px",
@@ -1215,7 +1256,7 @@ export default function TrainingPlanView() {
                   </button>
                 )}
                 <button
-                  onClick={() => handleRegenerate("next-week", pickerDays)}
+                  onClick={() => handleRegenerate("next-week", pickerDays, skipAdherenceCap)}
                   disabled={noDaysSelected}
                   style={{
                     textAlign: "left", padding: "12px 14px",

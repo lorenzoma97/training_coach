@@ -684,6 +684,16 @@ function buildAvailableDaysBlock(effective: string[] | undefined, label: string)
 export interface GenerationOptions {
   /** Override per-rigenerazione dei giorni allenabili (es. picker UI). */
   availableDaysOverride?: ReadonlyArray<string>;
+  /**
+   * Solo per regen (2026-05-19): se true, l'adherence cap deterministico è
+   * skippato per QUESTA generazione (computePrescription riceve
+   * `adherencePct=undefined` invece di previousReport.adherencePct o
+   * inferAdherenceFromRecent). Use case: utente ha avuto bassa aderenza
+   * per motivi non fisici (impegni / scelta) ma è in forma; vuole il piano
+   * completo senza la riduzione automatica del volume.
+   * Default false = adherence cap attivo (sicurezza by default).
+   */
+  skipAdherenceCap?: boolean;
 }
 
 function formatDateIT(d: Date): string {
@@ -810,7 +820,11 @@ async function loadGenerationContext(input: LoadGenerationContextInput): Promise
   const effectiveDays = effectiveAvailableDays(opts?.availableDaysOverride, profile.availableDays, remainingThisWeek);
   // Sprint 1 fix #2: adherence cap deterministico. previousReport ha precedenza;
   // altrimenti fallback dal piano corrente vs sessioni recenti.
-  const adherencePct = previousReport?.adherencePct ?? inferAdherenceFromRecent(currentPlan ?? null, recentDays);
+  // 2026-05-19: opts.skipAdherenceCap permette all'utente di disabilitare il
+  // cap per QUESTA generazione (es. "in forma nonostante aderenza bassa").
+  const adherencePct = opts?.skipAdherenceCap
+    ? undefined
+    : (previousReport?.adherencePct ?? inferAdherenceFromRecent(currentPlan ?? null, recentDays));
 
   const prescription = computePrescription({
     profile,

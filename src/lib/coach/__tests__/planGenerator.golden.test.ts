@@ -363,6 +363,39 @@ describe("regenerateNextWeek — shape + closed-loop invariants", () => {
     expect(lowTarget).toBeLessThanOrEqual(highTarget);
   });
 
+  it("opts.skipAdherenceCap=true → ignora aderenza bassa, target = aderenza alta", async () => {
+    // Stessa aderenza bassa del test precedente, ma con skipAdherenceCap=true.
+    // Target deve essere equivalente al caso aderenza=95% (full target).
+    mockGenerateJSON.mockResolvedValue(buildMockResponse({
+      totalMin: 600, days: daysFor(lorenzo),
+    }));
+    const reportLow: WeeklyReportSummary = {
+      adherencePct: 50,
+      volumeByDiscipline: { corsa: { planned_min: 400, actual_min: 200 } },
+      painTrend: "", adjustmentsHints: "",
+    };
+    await regenerateNextWeek(lorenzo, [goalRunning], currentPlan, "diario", "next-week",
+      { skipAdherenceCap: true }, reportLow);
+    const targetWithSkip = Number(capturePromptArgs().systemInstruction.match(/Volume settimanale: (\d+) min/)![1]);
+
+    // Riferimento: stesso input ma con aderenza alta (no cap).
+    mockGenerateJSON.mockReset();
+    mockGenerateJSON.mockResolvedValue(buildMockResponse({
+      totalMin: 600, days: daysFor(lorenzo),
+    }));
+    const reportHigh: WeeklyReportSummary = {
+      adherencePct: 95,
+      volumeByDiscipline: { corsa: { planned_min: 400, actual_min: 380 } },
+      painTrend: "", adjustmentsHints: "",
+    };
+    await regenerateNextWeek(lorenzo, [goalRunning], currentPlan, "diario", "next-week", undefined, reportHigh);
+    const targetReference = Number(capturePromptArgs().systemInstruction.match(/Volume settimanale: (\d+) min/)![1]);
+
+    // skipAdherenceCap deve produrre lo stesso target di aderenza alta
+    // (cap deterministico bypassato).
+    expect(targetWithSkip).toBe(targetReference);
+  });
+
   it('mode="rest-of-week" → blocco SCENARIO MID-WEEK presente', async () => {
     // Forziamo "oggi = mercoledì" così i giorni rimanenti sono mer..dom.
     vi.useFakeTimers();
