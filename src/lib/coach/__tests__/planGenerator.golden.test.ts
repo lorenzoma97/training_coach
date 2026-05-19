@@ -517,20 +517,22 @@ describe("generateInitialPlan — auto-retry sotto-prescrizione", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("schema tolerance — variations Gemini reali tollerate", () => {
-  it("subtype:null + duration_min stringa + enum UPPERCASE → parsing OK", async () => {
+  it("subtype:null + duration_min stringa + zone stringa → coerce OK", async () => {
+    // NB: enum UPPERCASE è gestito solo da softenRawPlan in regen, NON in init.
+    // generateInitialPlan richiede day/type già lowercase nel response Gemini.
     mockGenerateJSON.mockResolvedValue({
       weeks: [{
         weekNumber: 1,
         focus: "test",
         sessions: [
           {
-            day: "LUN", // uppercase: softenRawPlan lo lowercase
-            type: "CORSA",
-            subtype: null, // null tollerato
-            duration_min: "60", // string coerced
+            day: "lun",
+            type: "corsa",
+            subtype: null, // null tollerato (Zod transform → undefined)
+            duration_min: "60", // z.coerce.number()
             details: "test",
             rationale: "test",
-            zone: "2", // string coerced
+            zone: "2", // z.coerce.number()
           },
           {
             day: "mer",
@@ -550,6 +552,33 @@ describe("schema tolerance — variations Gemini reali tollerate", () => {
     expect(plan.weeks[0].sessions[0].type).toBe("corsa");
     expect(plan.weeks[0].sessions[0].duration_min).toBe(60);
     expect(plan.weeks[0].sessions[0].zone).toBe(2);
+  });
+
+  it("regen: enum UPPERCASE tollerato via softenRawPlan", async () => {
+    const currentPlan: TrainingPlan = {
+      generatedAt: "2026-05-11T00:00:00Z",
+      validUntil: "2026-05-25T00:00:00Z",
+      startDate: "2026-05-11",
+      weeks: [{
+        weekNumber: 1, focus: "base",
+        sessions: [{ day: "lun", type: "corsa", duration_min: 60, details: "Z2", rationale: "base", zone: 2 }],
+      }],
+      rationale: "piano",
+    };
+    mockGenerateJSON.mockResolvedValue({
+      weeks: [{
+        weekNumber: 1, focus: "test",
+        sessions: [{
+          day: "LUN", type: "CORSA", subtype: "Fondo Lento",
+          duration_min: 60, details: "Z2", rationale: "test", zone: 2,
+        }],
+      }],
+      rationale: "ok",
+    });
+
+    const plan = await regenerateNextWeek(lorenzo, [goalRunning], currentPlan, "diario", "next-week");
+    expect(plan.weeks[0].sessions[0].day).toBe("lun"); // softened
+    expect(plan.weeks[0].sessions[0].type).toBe("corsa"); // softened
   });
 
   it("rationale come array di stringhe → joinato in bullet list", async () => {
