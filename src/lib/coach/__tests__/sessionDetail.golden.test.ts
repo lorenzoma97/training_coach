@@ -189,10 +189,12 @@ describe("generateSessionDetail — strength", () => {
 
     const { userPrompt } = captureLastCall();
     // L'allowlist iniettata NON deve contenere esercizi categorizzati pattern=lunge
-    // (forward/reverse/lateral lunge, cossack squat). bulgarian-split-squat è
-    // pattern=squat nel catalog quindi NON è in scope di questa esclusione.
+    // (forward/reverse/lateral lunge, cossack squat) né pattern=plyometric esplicito
+    // (box/broad/depth jump, lateral bound). NB: jump-squat è pattern=squat, NON
+    // plyometric — esce dall'esclusione lunge/plyometric ma è OK perché il filtering
+    // si basa sul pattern, non sul nome.
     expect(userPrompt).not.toMatch(/forward-lunge|reverse-lunge|lateral-lunge|cossack-squat/);
-    expect(userPrompt).not.toMatch(/jumping|jump-|plyometric/i);
+    expect(userPrompt).not.toMatch(/box-jump|broad-jump|depth-jump|lateral-bound/);
   });
 
   it("math check: troppi sets/recuperi sovradimensionano la sessione → flag ok=false", async () => {
