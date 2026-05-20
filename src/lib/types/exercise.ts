@@ -82,6 +82,15 @@ export interface Exercise {
   unilateral: boolean;
   /** Cue tecnico breve (1-2 frasi) iniettato nel UI esercizio. */
   technique: string;
+  /**
+   * Guida tecnica dettagliata per il Guided Player (2026-05-20).
+   * 5 bullet brevi: Setup · Esecuzione · Respirazione · Errori comuni · Sicurezza.
+   * Peer-reviewed-based (Schoenfeld, Helms, Rippetoe, ACSM). Opzionale: se
+   * presente, mostrato in dettaglio durante l'allenamento guidato; se assente,
+   * fallback su `technique`.
+   * Hardcoded NON delegato a LLM (consistency + offline-capable).
+   */
+  guidance?: string[];
   /** Controindicazioni (es. ["lombare", "spalla anteriore"]). */
   cautions?: string[];
   /**
