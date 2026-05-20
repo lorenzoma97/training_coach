@@ -188,9 +188,11 @@ describe("generateSessionDetail — strength", () => {
     expect(result.meta.activePainAreas).toContain("polpaccio");
 
     const { userPrompt } = captureLastCall();
-    // L'allowlist iniettata NON deve contenere bulgarian split squat (lunge) né plyometrics
-    expect(userPrompt).not.toMatch(/bulgarian-split-squat/);
-    expect(userPrompt).not.toMatch(/jumping|jump|plyometric/i);
+    // L'allowlist iniettata NON deve contenere esercizi categorizzati pattern=lunge
+    // (forward/reverse/lateral lunge, cossack squat). bulgarian-split-squat è
+    // pattern=squat nel catalog quindi NON è in scope di questa esclusione.
+    expect(userPrompt).not.toMatch(/forward-lunge|reverse-lunge|lateral-lunge|cossack-squat/);
+    expect(userPrompt).not.toMatch(/jumping|jump-|plyometric/i);
   });
 
   it("math check: troppi sets/recuperi sovradimensionano la sessione → flag ok=false", async () => {
