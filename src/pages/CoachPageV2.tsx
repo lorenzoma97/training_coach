@@ -34,6 +34,11 @@ import { generateSessionDetail, type SessionDetailResult } from "../lib/coach/se
 import { EXERCISES_BY_ID } from "../lib/catalog/exercises";
 import { setJSON } from "../lib/storage";
 import type { UserGoal, PlannedSession } from "../lib/types";
+import type { ExercisePerformance } from "../lib/types/strength";
+import GuidedPlayer, {
+  loadGuidedSessionSnapshot, clearGuidedSessionSnapshot,
+  type GuidedSessionSnapshot,
+} from "../components/coach/GuidedPlayer";
 
 type Tab = "today" | "plan" | "chat" | "tools";
 
@@ -127,10 +132,18 @@ const TSB_BAND_META: Record<TrainingLoadSnapshot["band"], { color: string; label
 
 function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
   const [refreshKey, setRefreshKey] = useState(0);
+  const [resumeSnapshot, setResumeSnapshot] = useState<GuidedSessionSnapshot | null>(null);
   useEffect(() => {
     const off = events.on("plan:updated", () => setRefreshKey(k => k + 1));
     return () => { off(); };
   }, []);
+  // Step F: check snapshot in-progress al mount + dopo ogni refresh
+  useEffect(() => {
+    (async () => {
+      const snap = await loadGuidedSessionSnapshot();
+      setResumeSnapshot(snap);
+    })();
+  }, [refreshKey]);
   const s = useTodayState(refreshKey);
 
   if (!s.loaded) {
@@ -151,9 +164,24 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
     alerts.push({ kind: "warn", text: `Ultimo piano sotto target del ${s.diagnostic.result.deltaPctVsTarget}% — controlla Diagnostica in Tools` });
   }
 
+  // Banner resume sessione interrotta
+  async function discardResume() {
+    await clearGuidedSessionSnapshot();
+    setResumeSnapshot(null);
+  }
+
   // ─── Render ──────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      {/* Step F: banner Riprendi sessione interrotta */}
+      {resumeSnapshot && (
+        <ResumeSessionBanner
+          snapshot={resumeSnapshot}
+          onResumed={() => setRefreshKey(k => k + 1)}
+          onDiscarded={discardResume}
+        />
+      )}
+
       {/* Alert section */}
       {alerts.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -261,6 +289,7 @@ function SessionDetailCard({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<SessionDetailResult["meta"] | null>(null);
+  const [playerOpen, setPlayerOpen] = useState(false);
 
   if (!session) {
     return (
@@ -325,6 +354,25 @@ function SessionDetailCard({
     } finally {
       setGenerating(false);
     }
+  }
+
+  function handlePlayerComplete(performances: ExercisePerformance[]) {
+    setPlayerOpen(false);
+    if (!session) return;
+    // Pattern allineato a "Copia in diario": emit diary:openAdd con prefill che
+    // include le ExercisePerformance reali (sets compilati) invece di sets vuoti.
+    // L'utente vede il form pre-popolato con i valori reali e conferma il save.
+    const prefill: Record<string, unknown> = {
+      subtype: session.subtype,
+      durata_totale: session.duration_min,
+      exercises: performances,
+    };
+    events.emit("diary:openAdd", {
+      type: session.type,
+      prefill,
+      notes: `Allenamento guidato completato (${performances.reduce((a, p) => a + p.sets.length, 0)} set).`,
+    });
+    events.emit("nav:goto", { tab: "diary" });
   }
 
   function handleCopyToDiary() {
@@ -425,6 +473,22 @@ function SessionDetailCard({
             </div>
           )}
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+            {/* Bottone primario per sessioni forza: Allenamento guidato.
+                Non disponibile per cardio (player è solo strength scope). */}
+            {isStrength && session.exercises && session.exercises.length > 0 && (
+              <button
+                onClick={() => setPlayerOpen(true)}
+                style={{
+                  padding: "12px 18px",
+                  background: "linear-gradient(135deg, #22C55E 0%, #15803D 100%)",
+                  border: "none", borderRadius: "10px",
+                  color: "#FFF", fontSize: "14px", fontWeight: 800, cursor: "pointer",
+                  flex: "1 1 auto", minWidth: "180px",
+                }}
+              >
+                ▶ Inizia allenamento
+              </button>
+            )}
             <button
               onClick={handleCopyToDiary}
               style={{
@@ -454,6 +518,15 @@ function SessionDetailCard({
         </>
       )}
 
+      {/* Guided Player full-screen modal */}
+      {playerOpen && session && (
+        <SessionPlayerWrapper
+          session={session}
+          onClose={() => setPlayerOpen(false)}
+          onComplete={handlePlayerComplete}
+        />
+      )}
+
       {!hasDetail && !supportsDetail && (
         <>
           <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4, marginBottom: "10px" }}>
@@ -477,6 +550,124 @@ function SessionDetailCard({
       )}
 
     </div>
+  );
+}
+
+// Step F — Banner "Riprendi" nel TodayTab quando esiste uno snapshot
+// guided-session-in-progress. Click "Riprendi" → apre Player con resume.
+function ResumeSessionBanner({
+  snapshot, onResumed, onDiscarded,
+}: {
+  snapshot: GuidedSessionSnapshot;
+  onResumed: () => void;
+  onDiscarded: () => void;
+}) {
+  const [playerOpen, setPlayerOpen] = useState(false);
+  const completedSets = snapshot.completed.reduce((a, p) => a + p.sets.length, 0);
+  const totalExercises = snapshot.exercises.length;
+  const completedExercises = snapshot.completed.filter(p => p.sets.length > 0).length;
+
+  // Construct un PlannedSession da snapshot per passarlo al GuidedPlayer.
+  // Il GuidedPlayer riconoscerà la coincidenza sessionDay+sessionType e
+  // ripristinerà dallo snapshot.
+  const fakeSession: PlannedSession = {
+    day: snapshot.sessionDay,
+    type: snapshot.sessionType,
+    duration_min: 60, // placeholder — il player rilegge da snapshot
+    details: "",
+    rationale: "",
+    exercises: snapshot.exercises,
+  };
+
+  async function handleResume() {
+    setPlayerOpen(true);
+  }
+
+  function handleComplete(performances: ExercisePerformance[]) {
+    setPlayerOpen(false);
+    onResumed();
+    // Se la sessione è stata salvata, redirect al diario
+    if (performances.length > 0) {
+      events.emit("diary:openAdd", {
+        type: snapshot.sessionType,
+        prefill: { exercises: performances, durata_totale: 60 },
+        notes: `Allenamento ripreso e completato (${performances.reduce((a, p) => a + p.sets.length, 0)} set).`,
+      });
+      events.emit("nav:goto", { tab: "diary" });
+    }
+  }
+
+  function handleClose() {
+    setPlayerOpen(false);
+    onResumed(); // re-check snapshot status
+  }
+
+  return (
+    <>
+      <div style={{
+        background: "linear-gradient(135deg, #0891B225 0%, #0E749015 100%)",
+        border: "1px solid #0891B266",
+        borderRadius: "12px", padding: "12px 14px",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+          <div style={{ fontSize: "11px", color: "#38BDF8", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            ⏸ Sessione interrotta
+          </div>
+          <button onClick={onDiscarded} style={{
+            background: "transparent", border: "none", color: "#94A3B8", fontSize: "11px", cursor: "pointer",
+          }}>✗ Scarta</button>
+        </div>
+        <div style={{ fontSize: "14px", color: "#E2E8F0", fontWeight: 600, marginBottom: "4px" }}>
+          {snapshot.sessionType.replace("_", " ")} · {completedExercises}/{totalExercises} esercizi · {completedSets} set fatti
+        </div>
+        <button onClick={handleResume} style={{
+          marginTop: "10px", padding: "10px 14px",
+          background: "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
+          border: "none", borderRadius: "8px",
+          color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
+        }}>
+          ▶ Riprendi sessione
+        </button>
+      </div>
+
+      {playerOpen && (
+        <SessionPlayerWrapper
+          session={fakeSession}
+          resumeFromSnapshot={snapshot}
+          onClose={handleClose}
+          onComplete={handleComplete}
+        />
+      )}
+    </>
+  );
+}
+
+// Wrapper che carica profile.equipment al mount per passarlo al GuidedPlayer
+// (filter dell'add-esercizio nel pre-flight editor).
+function SessionPlayerWrapper({
+  session, resumeFromSnapshot, onClose, onComplete,
+}: {
+  session: PlannedSession;
+  resumeFromSnapshot?: GuidedSessionSnapshot | null;
+  onClose: () => void;
+  onComplete: (performances: ExercisePerformance[]) => void;
+}) {
+  const [equipment, setEquipment] = useState<string[] | null>(null);
+  useEffect(() => {
+    (async () => {
+      const p = await getJSON<UserProfile | null>("user-profile", null);
+      setEquipment(p?.equipment ?? []);
+    })();
+  }, []);
+  if (equipment === null) return null;
+  return (
+    <GuidedPlayer
+      session={session}
+      userEquipment={equipment}
+      resumeFromSnapshot={resumeFromSnapshot}
+      onClose={onClose}
+      onComplete={onComplete}
+    />
   );
 }
 
@@ -617,7 +808,7 @@ function ToolsTab() {
       </details>
 
       <details style={sectionDetailsStyle}>
-        <summary style={sectionSummaryStyle}><span style={{ flex: 1 }}>🧘 Warm-up library</span></summary>
+        <summary style={sectionSummaryStyle}><span style={{ flex: 1 }}>🧘 Mobility & Recovery</span></summary>
         <div style={{ padding: "0 16px 16px" }}>
           <MobilityLibrary />
         </div>
