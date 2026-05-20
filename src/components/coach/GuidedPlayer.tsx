@@ -196,9 +196,9 @@ export default function GuidedPlayer({ session, userEquipment, resumeFromSnapsho
   }, [stage, exercises, completed, exerciseIdx, setIdx, routineStepIdx, session.day, session.type, startedAtRef]);
 
   const currentExercise = exercises[exerciseIdx];
-  const currentCatEx = currentExercise ? EXERCISES_BY_ID[currentExercise.effectiveExerciseId ?? currentExercise.exerciseId] : null;
+  const currentCatEx: Exercise | null = currentExercise ? (EXERCISES_BY_ID[currentExercise.effectiveExerciseId ?? currentExercise.exerciseId] ?? null) : null;
   const nextExercise = exercises[exerciseIdx + 1];
-  const nextCatEx = nextExercise ? EXERCISES_BY_ID[nextExercise.effectiveExerciseId ?? nextExercise.exerciseId] : null;
+  const nextCatEx: Exercise | null = nextExercise ? (EXERCISES_BY_ID[nextExercise.effectiveExerciseId ?? nextExercise.exerciseId] ?? null) : null;
   const isLastSetOfExercise = currentExercise ? setIdx >= currentExercise.plannedSets - 1 : false;
   const isLastExercise = exerciseIdx >= exercises.length - 1;
 
@@ -594,7 +594,7 @@ function ExerciseStep({
   exerciseIdx: number; totalExercises: number;
   setIdx: number; plannedSets: number;
   exercise: PlannedExercise;
-  catEx: NonNullable<ReturnType<typeof EXERCISES_BY_ID["x"]>>;
+  catEx: Exercise;
   currentReps: string; currentWeight: string;
   onChangeReps: (v: string) => void; onChangeWeight: (v: string) => void;
   onSetCompleted: () => void;
@@ -927,7 +927,7 @@ function RestStep({
   nextSetIdx: number;
   currentExerciseName: string;
   nextExercise: PlannedExercise | undefined;
-  nextCatEx: ReturnType<typeof EXERCISES_BY_ID["x"]> | null;
+  nextCatEx: Exercise | null;
   onSkip: () => void;
 }) {
   const mm = Math.floor(secLeft / 60);
