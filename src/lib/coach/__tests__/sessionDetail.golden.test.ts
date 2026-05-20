@@ -145,30 +145,32 @@ describe("generateSessionDetail — strength", () => {
     expect(result.session.exercises![0].cue).toMatch(/[Pp]etto alto|ginocchia/);
   });
 
-  it("substitution chain: esercizio barbell con utente solo bodyweight → swap a bodyweight", async () => {
+  it("substitution chain: esercizi barbell con utente solo bodyweight → swap a bodyweight", async () => {
     mockGenerateJSON.mockResolvedValue({
       exercises: [
         { exerciseId: "back-squat-barbell", plannedSets: 3, repsTarget: { min: 8, max: 12 }, rpe_target: 7, rest_sec: 90 },
+        { exerciseId: "romanian-deadlift-barbell", plannedSets: 3, repsTarget: { min: 8, max: 10 }, rpe_target: 7, rest_sec: 90 },
       ],
     });
 
     const result = await generateSessionDetail({
       session: strengthSession, profile: lorenzoNoEquipment, goals: [],
     });
-    // Substitution applicata: l'exerciseId finale non è back-squat-barbell
-    // (può degradare a bodyweight-squat o simili nella chain alternatives)
+    // Substitution applicata: gli exerciseId finali NON contengono i barbell originali
+    // (devono degradare a varianti bodyweight o equivalenti nella chain alternatives)
     const finalIds = result.session.exercises!.map(e => e.exerciseId);
     expect(finalIds).not.toContain("back-squat-barbell");
-    // Meta.substitutions popolato
+    expect(finalIds).not.toContain("romanian-deadlift-barbell");
+    // Meta.substitutions popolato (≥1 swap registrato)
     expect(result.meta.substitutions.length).toBeGreaterThan(0);
   });
 
   it("pain attivo (polpaccio) → patterns lunge/plyometric esclusi dall'allowlist", async () => {
-    // Mock daily check con dolore polpaccio attivo
+    // Mock daily check con dolore polpaccio attivo.
+    // NB: la chiave storage è `day:${date}`, non `diary-${date}` (cfr loadDay()).
     const todayIso = new Date().toISOString().split("T")[0];
-    const idx = [todayIso];
-    localStorage.setItem("diary-index", JSON.stringify(idx));
-    localStorage.setItem(`diary-${todayIso}`, JSON.stringify({
+    localStorage.setItem("diary-index", JSON.stringify([todayIso]));
+    localStorage.setItem(`day:${todayIso}`, JSON.stringify({
       daily: { polpaccio: { pre: 3, during: 2, post: 1 } },
       workouts: [],
     }));
