@@ -261,10 +261,6 @@ function SessionDetailCard({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<SessionDetailResult["meta"] | null>(null);
-  // 2026-05-20 debug: traccia ogni click + ultimo step async per diagnosticare
-  // bug "Genera dettaglio" su mobile dove non c'è console accessibile.
-  const [debugTrace, setDebugTrace] = useState<string>("idle");
-  const [clickCount, setClickCount] = useState(0);
 
   if (!session) {
     return (
@@ -279,30 +275,26 @@ function SessionDetailCard({
 
   const hasDetail = (session.exercises && session.exercises.length > 0)
     || (session.intervals && session.intervals.length > 0);
-  const isCardio = session.type === "corsa" || session.type === "sport";
+  // NB: sessionDetail.ts genera detail SOLO per forza_* e corsa. "sport" e
+  // "mobilita" non hanno ancora un prompt dedicato → mostriamo "Vai al piano"
+  // come fallback. Estensione "sport detail" è feature successiva.
+  const isCardio = session.type === "corsa";
   const isStrength = session.type.startsWith("forza_");
+  const supportsDetail = isStrength || isCardio;
 
   async function handleGenerate() {
-    setClickCount(c => c + 1);
-    setDebugTrace("click ricevuto");
-    if (generating) {
-      setDebugTrace("BLOCKED: gia in generazione");
-      return;
-    }
+    if (generating) return;
     console.info("[SessionDetailCard] handleGenerate start", { day: session?.day, type: session?.type });
     setGenerating(true);
     setError(null);
-    setDebugTrace("loading profile...");
     try {
       const profile = await getJSON<UserProfile | null>("user-profile", null);
       const goals = await getJSON<UserGoal[]>("user-goals", []);
-      setDebugTrace(profile ? `profile OK (${profile.equipment?.length ?? 0} equip), chiamo LLM...` : "profile NULL");
       if (!profile) {
         setError("Profilo mancante. Completa l'onboarding.");
         return;
       }
       const result = await generateSessionDetail({ session: session!, profile, goals });
-      setDebugTrace(`LLM OK, kind=${result.meta.kind}, ex=${result.session.exercises?.length ?? 0}, int=${result.session.intervals?.length ?? 0}`);
       console.info("[SessionDetailCard] generated", {
         kind: result.meta.kind,
         exercises: result.session.exercises?.length ?? 0,
@@ -329,9 +321,7 @@ function SessionDetailCard({
       onSessionUpdated();
     } catch (e) {
       console.error("[SessionDetailCard] generation failed:", e);
-      const msg = (e as Error)?.message ?? "Errore di generazione. Riprova.";
-      setError(msg);
-      setDebugTrace(`CATCH: ${msg.slice(0, 80)}`);
+      setError((e as Error)?.message ?? "Errore di generazione. Riprova.");
     } finally {
       setGenerating(false);
     }
@@ -372,7 +362,7 @@ function SessionDetailCard({
         {session.duration_min} min
       </div>
 
-      {!hasDetail && (isStrength || isCardio) && (
+      {!hasDetail && supportsDetail && (
         <>
           <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.4, marginBottom: "10px" }}>
             {session.details}
@@ -464,31 +454,28 @@ function SessionDetailCard({
         </>
       )}
 
-      {!hasDetail && !isStrength && !isCardio && (
-        <button
-          onClick={onGoToPlan}
-          style={{
-            padding: "10px 14px",
-            background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
-            border: "none", borderRadius: "10px",
-            color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
-          }}
-        >
-          Vai al piano →
-        </button>
+      {!hasDetail && !supportsDetail && (
+        <>
+          <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4, marginBottom: "10px" }}>
+            {session.details}
+          </div>
+          <div style={{ fontSize: "11px", color: "#64748B", marginBottom: "10px", fontStyle: "italic" }}>
+            Detail prescrittivo non ancora disponibile per "{session.type}".
+          </div>
+          <button
+            onClick={onGoToPlan}
+            style={{
+              padding: "10px 14px",
+              background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+              border: "none", borderRadius: "10px",
+              color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
+            }}
+          >
+            Vai al piano →
+          </button>
+        </>
       )}
 
-      {/* 2026-05-20 debug temporaneo per diagnosticare bug "Genera dettaglio"
-          su mobile dove non c'è console. Mostra clickCount + ultimo step async. */}
-      <div style={{
-        marginTop: "12px", padding: "8px 10px",
-        background: "rgba(255,255,255,0.04)",
-        border: "1px dashed rgba(255,255,255,0.12)", borderRadius: "8px",
-        fontSize: "10px", color: "#94A3B8",
-        fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.5,
-      }}>
-        DEBUG: clicks={clickCount} · gen={String(generating)} · trace=&quot;{debugTrace}&quot;{error ? ` · err="${error.slice(0, 60)}"` : ""}
-      </div>
     </div>
   );
 }
