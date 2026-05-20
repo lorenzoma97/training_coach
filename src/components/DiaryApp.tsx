@@ -476,9 +476,16 @@ export default function DiaryApp() {
     setAddDate(p.date || today());
     setAddType(p.type || null);
     const mapped: Record<string, any> = {};
+    // 2026-05-19: prefill.exercises[] gestito separatamente (attiva strength mode
+    // + pre-popola form esercizi). Estratto dal mapping per non sporcare addFields.
+    let prefilledExercises: any[] | null = null;
     if (p.prefill && p.type) {
       const wt = WORKOUT_TYPES.find(w => w.id === p.type);
       for (const [k, v] of Object.entries(p.prefill)) {
+        if (k === "exercises" && Array.isArray(v)) {
+          prefilledExercises = v;
+          continue;
+        }
         if (k === "subtype" && wt) {
           const tipoField = wt.fields.find((f: any) => f.key === "tipo" && "options" in f);
           if (tipoField && typeof v === "string") {
@@ -497,9 +504,16 @@ export default function DiaryApp() {
     setAddPainByArea({});
     setAddRpe(null);
     setAddNotes(p.notes || "");
-    // Wave 3.1: reset modalità strutturata su nuovo open (default OFF, no pre-fill)
-    setAddStrengthMode(false);
-    setAddExercises([]);
+    // Se il prefill include `exercises` (workflow Session Detail → Copia in diario),
+    // attiva strength mode e popola con la scaletta proposta. L'utente compila
+    // i valori effettivi (reps/peso/RPE). Altrimenti reset default.
+    if (prefilledExercises && prefilledExercises.length > 0) {
+      setAddStrengthMode(true);
+      setAddExercises(prefilledExercises);
+    } else {
+      setAddStrengthMode(false);
+      setAddExercises([]);
+    }
     setEditingWorkoutId(null);
     setEditingOriginalDate(null);
     setScreen("add");

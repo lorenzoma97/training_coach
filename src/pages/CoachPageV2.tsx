@@ -30,6 +30,10 @@ import {
   type TrainingLoadSnapshot,
 } from "../lib/coach/trainingLoad";
 import { loadDiagnostic, type PlanDiagnostic } from "../lib/coach/planDiagnostic";
+import { generateSessionDetail, type SessionDetailResult } from "../lib/coach/sessionDetail";
+import { EXERCISES_BY_ID } from "../lib/catalog/exercises";
+import { setJSON } from "../lib/storage";
+import type { UserGoal, PlannedSession } from "../lib/types";
 
 type Tab = "today" | "plan" | "chat" | "tools";
 
@@ -231,19 +235,177 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
       </div>
 
       {/* Sessione di oggi */}
+      <SessionDetailCard
+        session={s.todaySession}
+        onGoToPlan={onGoToPlan}
+        onSessionUpdated={() => setRefreshKey(k => k + 1)}
+      />
+    </div>
+  );
+}
+
+// ─── SessionDetailCard ─────────────────────────────────────────────────────
+// Card "Sessione di oggi" con generazione on-demand del dettaglio prescrittivo
+// (esercizi + sets/reps/peso/recupero per forza; intervalli per cardio).
+// Persistenza: il detail generato viene salvato in `training-plan` (mutazione
+// della session corrispondente). Reload mantiene il detail finché il piano
+// non viene rigenerato.
+
+function SessionDetailCard({
+  session, onGoToPlan, onSessionUpdated,
+}: {
+  session: PlannedSession | null;
+  onGoToPlan: () => void;
+  onSessionUpdated: () => void;
+}) {
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [meta, setMeta] = useState<SessionDetailResult["meta"] | null>(null);
+
+  if (!session) {
+    return (
       <div style={cardStyle}>
         <div style={labelStyle}>Sessione di oggi ({todayLabel()})</div>
-        {s.todaySession ? (
-          <>
-            <div style={{ fontSize: "15px", fontWeight: 700, color: "#E2E8F0", marginBottom: "4px" }}>
-              {s.todaySession.type}{s.todaySession.subtype ? ` · ${s.todaySession.subtype}` : ""}
-              {s.todaySession.zone ? ` · Z${s.todaySession.zone}` : ""}
-            </div>
-            <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "10px" }}>
-              {s.todaySession.duration_min} min
-            </div>
+        <div style={{ fontSize: "12px", color: "#94A3B8" }}>
+          Riposo programmato oggi 🛌 — o nessun piano attivo.
+        </div>
+      </div>
+    );
+  }
+
+  const hasDetail = (session.exercises && session.exercises.length > 0)
+    || (session.intervals && session.intervals.length > 0);
+  const isCardio = session.type === "corsa" || session.type === "sport";
+  const isStrength = session.type.startsWith("forza_");
+
+  async function handleGenerate() {
+    if (generating) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const profile = await getJSON<UserProfile | null>("user-profile", null);
+      const goals = await getJSON<UserGoal[]>("user-goals", []);
+      if (!profile) {
+        setError("Profilo mancante. Completa l'onboarding.");
+        return;
+      }
+      const result = await generateSessionDetail({ session: session!, profile, goals });
+      // Mutiamo il piano in storage sostituendo la session corrispondente.
+      const plan = await getJSON<TrainingPlan | null>("training-plan", null);
+      if (plan && plan.weeks[0]) {
+        const updatedSessions = plan.weeks[0].sessions.map(x =>
+          x.day === session!.day && x.type === session!.type ? result.session : x,
+        );
+        const updatedPlan: TrainingPlan = {
+          ...plan,
+          weeks: [{ ...plan.weeks[0], sessions: updatedSessions }, ...plan.weeks.slice(1)],
+        };
+        await setJSON("training-plan", updatedPlan);
+        events.emit("plan:updated", { at: new Date().toISOString() });
+      }
+      setMeta(result.meta);
+      onSessionUpdated();
+    } catch (e) {
+      setError((e as Error)?.message ?? "Errore di generazione. Riprova.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function handleCopyToDiary() {
+    if (!session) return;
+    // Pre-fill nel form diario:
+    // - type/subtype + durata → identificano il tipo workout
+    // - exercises[]: per forza, mappato a ExercisePerformance[] con sets vuoti
+    //   (l'utente compila reps/peso effettivi)
+    const prefill: Record<string, unknown> = {
+      subtype: session.subtype,
+      durata_totale: session.duration_min,
+    };
+    if (session.exercises && session.exercises.length > 0) {
+      prefill.exercises = session.exercises.map(ex => ({
+        exerciseId: ex.effectiveExerciseId ?? ex.exerciseId,
+        sets: Array.from({ length: ex.plannedSets }, () => ({ reps: 0 })),
+      }));
+    }
+    events.emit("diary:openAdd", {
+      type: session.type,
+      prefill,
+      notes: `Sessione pianificata: ${session.subtype ?? session.type}, ${session.duration_min}min.`,
+    });
+    events.emit("nav:goto", { tab: "diary" });
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div style={labelStyle}>Sessione di oggi ({todayLabel()})</div>
+      <div style={{ fontSize: "15px", fontWeight: 700, color: "#E2E8F0", marginBottom: "4px" }}>
+        {session.type}{session.subtype ? ` · ${session.subtype}` : ""}
+        {session.zone ? ` · Z${session.zone}` : ""}
+      </div>
+      <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "10px" }}>
+        {session.duration_min} min
+      </div>
+
+      {!hasDetail && (isStrength || isCardio) && (
+        <>
+          <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.4, marginBottom: "10px" }}>
+            {session.details}
+          </div>
+          {error && (
+            <div style={{ fontSize: "12px", color: "#EF4444", marginBottom: "8px" }}>{error}</div>
+          )}
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              style={{
+                padding: "10px 14px",
+                background: generating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
+                border: "none", borderRadius: "10px",
+                color: "#FFF", fontSize: "13px", fontWeight: 700,
+                cursor: generating ? "wait" : "pointer",
+                opacity: generating ? 0.6 : 1,
+              }}
+            >
+              {generating ? "⏳ Genero dettaglio…" : "⚡ Genera dettaglio"}
+            </button>
             <button
               onClick={onGoToPlan}
+              style={{
+                padding: "10px 14px",
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px",
+                color: "#94A3B8", fontSize: "12px", fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              Vai al piano →
+            </button>
+          </div>
+        </>
+      )}
+
+      {hasDetail && (
+        <>
+          {session.exercises && session.exercises.length > 0 && (
+            <StrengthDetailList exercises={session.exercises} />
+          )}
+          {session.intervals && session.intervals.length > 0 && (
+            <CardioIntervalList intervals={session.intervals} />
+          )}
+          {meta && meta.substitutions.length > 0 && (
+            <div style={{ fontSize: "11px", color: "#F59E0B", marginTop: "8px", lineHeight: 1.4 }}>
+              ⚠ Sostituzioni applicate: {meta.substitutions.map(s => `${s.originalId} → ${s.resolvedId}`).join(" · ")}
+            </div>
+          )}
+          {meta && meta.mathCheck && !meta.mathCheck.ok && (
+            <div style={{ fontSize: "11px", color: "#F59E0B", marginTop: "8px", lineHeight: 1.4 }}>
+              ⚠ {meta.mathCheck.note}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+            <button
+              onClick={handleCopyToDiary}
               style={{
                 padding: "10px 14px",
                 background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
@@ -251,16 +413,130 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
                 color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
               }}
             >
-              Vai al piano →
+              📋 Copia in diario
             </button>
-          </>
-        ) : (
-          <div style={{ fontSize: "12px", color: "#94A3B8" }}>
-            Riposo programmato oggi 🛌 — o nessun piano attivo.
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              style={{
+                padding: "10px 14px",
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px",
+                color: "#94A3B8", fontSize: "12px", fontWeight: 600,
+                cursor: generating ? "wait" : "pointer",
+                opacity: generating ? 0.6 : 1,
+              }}
+            >
+              {generating ? "⏳" : "🔄 Rigenera"}
+            </button>
           </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {!hasDetail && !isStrength && !isCardio && (
+        <button
+          onClick={onGoToPlan}
+          style={{
+            padding: "10px 14px",
+            background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+            border: "none", borderRadius: "10px",
+            color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
+          }}
+        >
+          Vai al piano →
+        </button>
+      )}
     </div>
+  );
+}
+
+function StrengthDetailList({ exercises }: { exercises: NonNullable<PlannedSession["exercises"]> }) {
+  return (
+    <ol style={{ margin: "8px 0 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "10px" }}>
+      {exercises.map((ex, i) => {
+        const catEx = EXERCISES_BY_ID[ex.effectiveExerciseId ?? ex.exerciseId];
+        const name = catEx?.name ?? ex.exerciseId;
+        const repsStr = ex.repsTarget.min === ex.repsTarget.max
+          ? `${ex.repsTarget.min}`
+          : `${ex.repsTarget.min}-${ex.repsTarget.max}`;
+        const load = ex.weight_kg ? `${ex.weight_kg}kg`
+          : ex.pct1RM ? `${ex.pct1RM}% 1RM`
+          : ex.rpe_target ? `RPE ${ex.rpe_target}`
+          : ex.rir_target !== undefined ? `RIR ${ex.rir_target}`
+          : "";
+        return (
+          <li key={i} style={{
+            background: "#1A1A2E",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: "10px",
+            padding: "10px 12px",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "baseline", flexWrap: "wrap" }}>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#E2E8F0" }}>
+                {i + 1}. {name}
+              </div>
+              <div style={{ fontSize: "11px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>
+                {ex.plannedSets} × {repsStr}{load ? ` @ ${load}` : ""}
+              </div>
+            </div>
+            <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px" }}>
+              Recupero: {ex.rest_sec}s
+            </div>
+            {ex.cue && (
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "4px", lineHeight: 1.4, fontStyle: "italic" }}>
+                💡 {ex.cue}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function CardioIntervalList({ intervals }: { intervals: NonNullable<PlannedSession["intervals"]> }) {
+  const KIND_META: Record<string, { icon: string; label: string; color: string }> = {
+    warmup: { icon: "▶", label: "Warmup", color: "#94A3B8" },
+    main: { icon: "●", label: "Main", color: "#0891B2" },
+    repetition: { icon: "⚡", label: "Ripetuta", color: "#E8553A" },
+    recovery: { icon: "↻", label: "Recovery", color: "#64748B" },
+    cooldown: { icon: "■", label: "Cooldown", color: "#94A3B8" },
+  };
+  return (
+    <ol style={{ margin: "8px 0 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "8px" }}>
+      {intervals.map((iv, i) => {
+        const m = KIND_META[iv.kind] ?? { icon: "·", label: iv.kind, color: "#94A3B8" };
+        const measure = iv.distance_km ? `${iv.distance_km}km` : iv.duration_min ? `${iv.duration_min}min` : "";
+        const repBit = iv.reps ? `${iv.reps}×${measure}` : measure;
+        return (
+          <li key={i} style={{
+            background: "#1A1A2E",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: "10px",
+            padding: "10px 12px",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "baseline", flexWrap: "wrap" }}>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: m.color }}>
+                {m.icon} {m.label}
+              </div>
+              <div style={{ fontSize: "12px", color: "#E2E8F0", fontFamily: "'JetBrains Mono', monospace" }}>
+                {repBit}{iv.zone ? ` · Z${iv.zone}` : ""}
+              </div>
+            </div>
+            {iv.recovery_sec && (
+              <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px" }}>
+                Recovery: {iv.recovery_sec}s
+              </div>
+            )}
+            {iv.cue && (
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "4px", lineHeight: 1.4, fontStyle: "italic" }}>
+                💡 {iv.cue}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
