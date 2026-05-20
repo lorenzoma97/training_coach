@@ -8,11 +8,12 @@
 //
 // Steps E (pre-flight editor) e F (recovery banner) sono feature successive.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PlannedSession, PlannedExercise } from "../../lib/types";
 import type { ExercisePerformance, ExerciseSet } from "../../lib/types/strength";
 import type { MobilityRoutine } from "../../lib/types/mobility";
-import { EXERCISES_BY_ID } from "../../lib/catalog/exercises";
+import type { Exercise, EquipmentTag } from "../../lib/types/exercise";
+import { EXERCISES, EXERCISES_BY_ID } from "../../lib/catalog/exercises";
 import { ROUTINES_BY_ID, MOBILITY_ROUTINES } from "../../lib/catalog/mobilityRoutines";
 import { primeAudio, playCountdownBeep, playCompletionBeep } from "../../lib/audio";
 
@@ -25,6 +26,7 @@ type Stage =
 
 interface GuidedPlayerProps {
   session: PlannedSession;
+  userEquipment?: string[];
   onClose: () => void;
   onComplete: (performances: ExercisePerformance[]) => void;
 }
@@ -105,16 +107,21 @@ const cardStyle: React.CSSProperties = {
 
 // ─── Main component ───────────────────────────────────────────────────────
 
-export default function GuidedPlayer({ session, onClose, onComplete }: GuidedPlayerProps) {
-  const exercises: PlannedExercise[] = session.exercises ?? [];
+export default function GuidedPlayer({ session, userEquipment, onClose, onComplete }: GuidedPlayerProps) {
+  // Editable scaletta: lo stato iniziale è la scaletta dal SessionDetail; il
+  // pre-flight editor (Step E) permette modifica peso/sets/reps + reorder +
+  // add/remove prima di avviare l'allenamento. Una volta partito, la scaletta
+  // è bloccata (si modifica solo registrando il set).
+  const initialExercises: PlannedExercise[] = useMemo(() => session.exercises ?? [], [session]);
   const warmupRoutine = pickWarmupForSession(session);
   const cooldownRoutine = pickCooldownForSession(session);
 
+  const [exercises, setExercises] = useState<PlannedExercise[]>(initialExercises);
   const [stage, setStage] = useState<Stage>(warmupRoutine ? "warmup-intro" : "preflight");
   const [exerciseIdx, setExerciseIdx] = useState(0);
   const [setIdx, setSetIdx] = useState(0);
   const [completed, setCompleted] = useState<ExercisePerformance[]>(() =>
-    exercises.map(ex => ({ exerciseId: ex.effectiveExerciseId ?? ex.exerciseId, sets: [] })),
+    initialExercises.map(ex => ({ exerciseId: ex.effectiveExerciseId ?? ex.exerciseId, sets: [] })),
   );
   const [currentReps, setCurrentReps] = useState<string>("");
   const [currentWeight, setCurrentWeight] = useState<string>("");
@@ -333,30 +340,22 @@ export default function GuidedPlayer({ session, onClose, onComplete }: GuidedPla
           />
         )}
 
-        {/* PREFLIGHT */}
+        {/* PREFLIGHT — editor scaletta */}
         {stage === "preflight" && (
-          <>
-            <div style={cardStyle}>
-              <div style={{ fontSize: "22px", fontWeight: 800, color: "#22C55E", marginBottom: "10px" }}>
-                ✓ Warm-up completato
-              </div>
-              <div style={{ fontSize: "13px", color: "#94A3B8", lineHeight: 1.5, marginBottom: "14px" }}>
-                Pronto per l'allenamento. {exercises.length} esercizi pianificati.
-              </div>
-              <ol style={{ margin: 0, padding: "0 0 0 18px", fontSize: "13px", color: "#CBD5E1", lineHeight: 1.6 }}>
-                {exercises.map((ex, i) => {
-                  const catEx = EXERCISES_BY_ID[ex.effectiveExerciseId ?? ex.exerciseId];
-                  const repsStr = ex.repsTarget.min === ex.repsTarget.max
-                    ? `${ex.repsTarget.min}`
-                    : `${ex.repsTarget.min}-${ex.repsTarget.max}`;
-                  return (
-                    <li key={i}>{catEx?.name ?? ex.exerciseId} — {ex.plannedSets}×{repsStr}</li>
-                  );
-                })}
-              </ol>
-            </div>
-            <button onClick={handleStartWorkout} style={ctaStyle}>▶ Inizia allenamento</button>
-          </>
+          <PreflightEditor
+            exercises={exercises}
+            sessionType={session.type}
+            userEquipment={(userEquipment ?? []) as EquipmentTag[]}
+            onChange={(updated) => {
+              setExercises(updated);
+              // Sincronizza completed array per il save real-time
+              setCompleted(updated.map(ex => ({
+                exerciseId: ex.effectiveExerciseId ?? ex.exerciseId,
+                sets: [],
+              })));
+            }}
+            onConfirm={handleStartWorkout}
+          />
         )}
 
         {/* EXERCISE */}
@@ -588,6 +587,258 @@ function ExerciseStep({
         </button>
       </div>
     </>
+  );
+}
+
+// ─── PreflightEditor (Step E) ─────────────────────────────────────────────
+// Editor inline per la scaletta esercizi prima di iniziare l'allenamento.
+// Permette: modifica peso/sets/reps, reorder con ⬆/⬇, rimuovi, aggiungi
+// nuovo esercizio dal catalog filtered per equipment+pattern.
+
+function PreflightEditor({
+  exercises, sessionType, userEquipment, onChange, onConfirm,
+}: {
+  exercises: PlannedExercise[];
+  sessionType: string;
+  userEquipment: EquipmentTag[];
+  onChange: (updated: PlannedExercise[]) => void;
+  onConfirm: () => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  function update(idx: number, patch: Partial<PlannedExercise>) {
+    onChange(exercises.map((ex, i) => i === idx ? { ...ex, ...patch } : ex));
+  }
+  function move(idx: number, dir: -1 | 1) {
+    const j = idx + dir;
+    if (j < 0 || j >= exercises.length) return;
+    const next = [...exercises];
+    [next[idx], next[j]] = [next[j], next[idx]];
+    onChange(next);
+  }
+  function remove(idx: number) {
+    onChange(exercises.filter((_, i) => i !== idx));
+  }
+  function add(newExId: string) {
+    const catEx = EXERCISES_BY_ID[newExId];
+    if (!catEx) return;
+    const newEx: PlannedExercise = {
+      exerciseId: newExId,
+      plannedSets: 3,
+      repsTarget: { min: 8, max: 12 },
+      rpe_target: 7,
+      rest_sec: 120,
+    };
+    onChange([...exercises, newEx]);
+    setPickerOpen(false);
+  }
+
+  return (
+    <>
+      <div style={cardStyle}>
+        <div style={{ fontSize: "22px", fontWeight: 800, color: "#22C55E", marginBottom: "10px" }}>
+          ✓ Pronto per iniziare
+        </div>
+        <div style={{ fontSize: "13px", color: "#94A3B8", lineHeight: 1.5 }}>
+          Rivedi la scaletta: puoi modificare peso/sets/reps, riordinare o aggiungere/rimuovere esercizi prima di partire.
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {exercises.map((ex, i) => {
+          const catEx = EXERCISES_BY_ID[ex.effectiveExerciseId ?? ex.exerciseId];
+          return (
+            <EditableExerciseRow
+              key={i}
+              idx={i}
+              exercise={ex}
+              catEx={catEx}
+              canMoveUp={i > 0}
+              canMoveDown={i < exercises.length - 1}
+              onUpdate={(patch) => update(i, patch)}
+              onMoveUp={() => move(i, -1)}
+              onMoveDown={() => move(i, 1)}
+              onRemove={() => remove(i)}
+            />
+          );
+        })}
+      </div>
+
+      <button onClick={() => setPickerOpen(true)} style={secondaryBtnStyle}>
+        + Aggiungi esercizio
+      </button>
+
+      <button
+        onClick={onConfirm}
+        disabled={exercises.length === 0}
+        style={{
+          ...ctaStyle,
+          opacity: exercises.length === 0 ? 0.5 : 1,
+          cursor: exercises.length === 0 ? "not-allowed" : "pointer",
+        }}
+      >
+        ▶ Inizia allenamento ({exercises.length} esercizi)
+      </button>
+
+      {pickerOpen && (
+        <ExercisePickerModal
+          sessionType={sessionType}
+          userEquipment={userEquipment}
+          excludeIds={exercises.map(e => e.exerciseId)}
+          onPick={add}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function EditableExerciseRow({
+  idx, exercise, catEx, canMoveUp, canMoveDown,
+  onUpdate, onMoveUp, onMoveDown, onRemove,
+}: {
+  idx: number;
+  exercise: PlannedExercise;
+  catEx: Exercise | undefined;
+  canMoveUp: boolean; canMoveDown: boolean;
+  onUpdate: (patch: Partial<PlannedExercise>) => void;
+  onMoveUp: () => void; onMoveDown: () => void; onRemove: () => void;
+}) {
+  const name = catEx?.name ?? exercise.exerciseId;
+  const repsAvg = Math.round((exercise.repsTarget.min + exercise.repsTarget.max) / 2);
+  const inputStyle: React.CSSProperties = {
+    width: "60px", padding: "6px 8px",
+    background: "#0B0F1A", border: "1px solid rgba(255,255,255,0.12)",
+    borderRadius: "6px", color: "#E2E8F0", fontSize: "13px",
+    fontFamily: "'JetBrains Mono', monospace", textAlign: "center",
+  };
+  const iconBtn: React.CSSProperties = {
+    padding: "6px 8px",
+    background: "transparent",
+    border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px",
+    color: "#94A3B8", fontSize: "12px", cursor: "pointer", minWidth: "32px",
+  };
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px", gap: "6px" }}>
+        <div style={{ fontSize: "14px", fontWeight: 700, color: "#E2E8F0", flex: 1 }}>
+          {idx + 1}. {name}
+        </div>
+        <div style={{ display: "flex", gap: "4px" }}>
+          <button onClick={onMoveUp} disabled={!canMoveUp} style={{ ...iconBtn, opacity: canMoveUp ? 1 : 0.3 }} aria-label="Sposta su">⬆</button>
+          <button onClick={onMoveDown} disabled={!canMoveDown} style={{ ...iconBtn, opacity: canMoveDown ? 1 : 0.3 }} aria-label="Sposta giù">⬇</button>
+          <button onClick={onRemove} style={{ ...iconBtn, color: "#EF4444" }} aria-label="Rimuovi">🗑</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", fontSize: "11px", color: "#94A3B8", alignItems: "center" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          Sets
+          <input type="number" inputMode="numeric" min={1} max={10} value={exercise.plannedSets}
+            onChange={e => onUpdate({ plannedSets: Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)) })}
+            style={inputStyle} />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          Reps
+          <input type="number" inputMode="numeric" min={1} max={50} value={repsAvg}
+            onChange={e => {
+              const r = Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1));
+              onUpdate({ repsTarget: { min: r, max: r } });
+            }}
+            style={inputStyle} />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          Peso (kg)
+          <input type="number" inputMode="decimal" min={0} max={500} step={0.5} value={exercise.weight_kg ?? ""}
+            placeholder="—"
+            onChange={e => {
+              const v = parseFloat(e.target.value);
+              onUpdate({ weight_kg: Number.isFinite(v) && v > 0 ? v : undefined });
+            }}
+            style={inputStyle} />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          Rest (s)
+          <input type="number" inputMode="numeric" min={30} max={600} value={exercise.rest_sec}
+            onChange={e => onUpdate({ rest_sec: Math.max(30, Math.min(600, parseInt(e.target.value, 10) || 60)) })}
+            style={inputStyle} />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function ExercisePickerModal({
+  sessionType, userEquipment, excludeIds, onPick, onClose,
+}: {
+  sessionType: string;
+  userEquipment: EquipmentTag[];
+  excludeIds: string[];
+  onPick: (exerciseId: string) => void;
+  onClose: () => void;
+}) {
+  // Filter del catalog: equipment compatibile + (se sessione forza_gambe/upper)
+  // pattern coerente. Esclude esercizi già nella scaletta corrente.
+  const filtered = useMemo(() => {
+    const equipSet = new Set<EquipmentTag>([...userEquipment, "bodyweight"]);
+    const isLower = sessionType === "forza_gambe";
+    const isUpper = sessionType === "forza_upper";
+    const allowedPatterns = isLower
+      ? new Set(["squat", "hinge", "lunge", "core_antiext", "core_antirot"])
+      : isUpper
+        ? new Set(["horizontal_push", "vertical_push", "horizontal_pull", "vertical_pull", "carry", "core_antirot"])
+        : null;
+    const exSet = new Set(excludeIds);
+    return EXERCISES.filter(ex => {
+      if (exSet.has(ex.id)) return false;
+      if (allowedPatterns && !allowedPatterns.has(ex.pattern)) return false;
+      for (const tag of ex.equipment) {
+        if (tag === "bodyweight") continue;
+        if (!equipSet.has(tag)) return false;
+      }
+      return true;
+    }).slice(0, 50);
+  }, [sessionType, userEquipment, excludeIds]);
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 70,
+      background: "rgba(11,15,26,0.92)",
+      display: "flex", alignItems: "flex-start", justifyContent: "center",
+      padding: "20px 12px", overflowY: "auto",
+    }}>
+      <div style={{ ...cardStyle, maxWidth: "420px", width: "100%" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <div style={{ fontSize: "16px", fontWeight: 700, color: "#E2E8F0" }}>
+            Aggiungi esercizio
+          </div>
+          <button onClick={onClose} style={{ ...secondaryBtnStyle, padding: "6px 10px", fontSize: "12px" }}>✕</button>
+        </div>
+        {filtered.length === 0 ? (
+          <div style={{ fontSize: "12px", color: "#94A3B8" }}>
+            Nessun esercizio compatibile con il tuo equipment per questo tipo di sessione.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "60vh", overflowY: "auto" }}>
+            {filtered.map(ex => (
+              <button
+                key={ex.id}
+                onClick={() => onPick(ex.id)}
+                style={{
+                  textAlign: "left", padding: "10px 12px",
+                  background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: "8px", color: "#E2E8F0", cursor: "pointer",
+                }}
+              >
+                <div style={{ fontSize: "13px", fontWeight: 700 }}>{ex.name}</div>
+                <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "2px" }}>
+                  {ex.pattern} · {ex.level} · {ex.equipment.join("/")}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

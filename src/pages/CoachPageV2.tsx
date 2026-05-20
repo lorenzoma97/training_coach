@@ -494,7 +494,7 @@ function SessionDetailCard({
 
       {/* Guided Player full-screen modal */}
       {playerOpen && session && (
-        <GuidedPlayer
+        <SessionPlayerWrapper
           session={session}
           onClose={() => setPlayerOpen(false)}
           onComplete={handlePlayerComplete}
@@ -524,6 +524,33 @@ function SessionDetailCard({
       )}
 
     </div>
+  );
+}
+
+// Wrapper che carica profile.equipment al mount per passarlo al GuidedPlayer
+// (filter dell'add-esercizio nel pre-flight editor).
+function SessionPlayerWrapper({
+  session, onClose, onComplete,
+}: {
+  session: PlannedSession;
+  onClose: () => void;
+  onComplete: (performances: ExercisePerformance[]) => void;
+}) {
+  const [equipment, setEquipment] = useState<string[] | null>(null);
+  useEffect(() => {
+    (async () => {
+      const p = await getJSON<UserProfile | null>("user-profile", null);
+      setEquipment(p?.equipment ?? []);
+    })();
+  }, []);
+  if (equipment === null) return null;
+  return (
+    <GuidedPlayer
+      session={session}
+      userEquipment={equipment}
+      onClose={onClose}
+      onComplete={onComplete}
+    />
   );
 }
 
