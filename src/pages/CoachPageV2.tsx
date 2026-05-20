@@ -34,6 +34,8 @@ import { generateSessionDetail, type SessionDetailResult } from "../lib/coach/se
 import { EXERCISES_BY_ID } from "../lib/catalog/exercises";
 import { setJSON } from "../lib/storage";
 import type { UserGoal, PlannedSession } from "../lib/types";
+import type { ExercisePerformance } from "../lib/types/strength";
+import GuidedPlayer from "../components/coach/GuidedPlayer";
 
 type Tab = "today" | "plan" | "chat" | "tools";
 
@@ -261,6 +263,7 @@ function SessionDetailCard({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<SessionDetailResult["meta"] | null>(null);
+  const [playerOpen, setPlayerOpen] = useState(false);
 
   if (!session) {
     return (
@@ -325,6 +328,25 @@ function SessionDetailCard({
     } finally {
       setGenerating(false);
     }
+  }
+
+  function handlePlayerComplete(performances: ExercisePerformance[]) {
+    setPlayerOpen(false);
+    if (!session) return;
+    // Pattern allineato a "Copia in diario": emit diary:openAdd con prefill che
+    // include le ExercisePerformance reali (sets compilati) invece di sets vuoti.
+    // L'utente vede il form pre-popolato con i valori reali e conferma il save.
+    const prefill: Record<string, unknown> = {
+      subtype: session.subtype,
+      durata_totale: session.duration_min,
+      exercises: performances,
+    };
+    events.emit("diary:openAdd", {
+      type: session.type,
+      prefill,
+      notes: `Allenamento guidato completato (${performances.reduce((a, p) => a + p.sets.length, 0)} set).`,
+    });
+    events.emit("nav:goto", { tab: "diary" });
   }
 
   function handleCopyToDiary() {
@@ -425,6 +447,22 @@ function SessionDetailCard({
             </div>
           )}
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+            {/* Bottone primario per sessioni forza: Allenamento guidato.
+                Non disponibile per cardio (player è solo strength scope). */}
+            {isStrength && session.exercises && session.exercises.length > 0 && (
+              <button
+                onClick={() => setPlayerOpen(true)}
+                style={{
+                  padding: "12px 18px",
+                  background: "linear-gradient(135deg, #22C55E 0%, #15803D 100%)",
+                  border: "none", borderRadius: "10px",
+                  color: "#FFF", fontSize: "14px", fontWeight: 800, cursor: "pointer",
+                  flex: "1 1 auto", minWidth: "180px",
+                }}
+              >
+                ▶ Inizia allenamento
+              </button>
+            )}
             <button
               onClick={handleCopyToDiary}
               style={{
@@ -452,6 +490,15 @@ function SessionDetailCard({
             </button>
           </div>
         </>
+      )}
+
+      {/* Guided Player full-screen modal */}
+      {playerOpen && session && (
+        <GuidedPlayer
+          session={session}
+          onClose={() => setPlayerOpen(false)}
+          onComplete={handlePlayerComplete}
+        />
       )}
 
       {!hasDetail && !supportsDetail && (
