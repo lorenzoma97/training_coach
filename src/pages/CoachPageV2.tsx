@@ -261,6 +261,10 @@ function SessionDetailCard({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<SessionDetailResult["meta"] | null>(null);
+  // 2026-05-20 debug: traccia ogni click + ultimo step async per diagnosticare
+  // bug "Genera dettaglio" su mobile dove non c'è console accessibile.
+  const [debugTrace, setDebugTrace] = useState<string>("idle");
+  const [clickCount, setClickCount] = useState(0);
 
   if (!session) {
     return (
@@ -279,18 +283,26 @@ function SessionDetailCard({
   const isStrength = session.type.startsWith("forza_");
 
   async function handleGenerate() {
-    if (generating) return;
+    setClickCount(c => c + 1);
+    setDebugTrace("click ricevuto");
+    if (generating) {
+      setDebugTrace("BLOCKED: gia in generazione");
+      return;
+    }
     console.info("[SessionDetailCard] handleGenerate start", { day: session?.day, type: session?.type });
     setGenerating(true);
     setError(null);
+    setDebugTrace("loading profile...");
     try {
       const profile = await getJSON<UserProfile | null>("user-profile", null);
       const goals = await getJSON<UserGoal[]>("user-goals", []);
+      setDebugTrace(profile ? `profile OK (${profile.equipment?.length ?? 0} equip), chiamo LLM...` : "profile NULL");
       if (!profile) {
         setError("Profilo mancante. Completa l'onboarding.");
         return;
       }
       const result = await generateSessionDetail({ session: session!, profile, goals });
+      setDebugTrace(`LLM OK, kind=${result.meta.kind}, ex=${result.session.exercises?.length ?? 0}, int=${result.session.intervals?.length ?? 0}`);
       console.info("[SessionDetailCard] generated", {
         kind: result.meta.kind,
         exercises: result.session.exercises?.length ?? 0,
@@ -317,7 +329,9 @@ function SessionDetailCard({
       onSessionUpdated();
     } catch (e) {
       console.error("[SessionDetailCard] generation failed:", e);
-      setError((e as Error)?.message ?? "Errore di generazione. Riprova.");
+      const msg = (e as Error)?.message ?? "Errore di generazione. Riprova.";
+      setError(msg);
+      setDebugTrace(`CATCH: ${msg.slice(0, 80)}`);
     } finally {
       setGenerating(false);
     }
@@ -463,6 +477,18 @@ function SessionDetailCard({
           Vai al piano →
         </button>
       )}
+
+      {/* 2026-05-20 debug temporaneo per diagnosticare bug "Genera dettaglio"
+          su mobile dove non c'è console. Mostra clickCount + ultimo step async. */}
+      <div style={{
+        marginTop: "12px", padding: "8px 10px",
+        background: "rgba(255,255,255,0.04)",
+        border: "1px dashed rgba(255,255,255,0.12)", borderRadius: "8px",
+        fontSize: "10px", color: "#94A3B8",
+        fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.5,
+      }}>
+        DEBUG: clicks={clickCount} · gen={String(generating)} · trace=&quot;{debugTrace}&quot;{error ? ` · err="${error.slice(0, 60)}"` : ""}
+      </div>
     </div>
   );
 }
