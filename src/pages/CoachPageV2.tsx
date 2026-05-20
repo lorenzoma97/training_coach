@@ -280,6 +280,7 @@ function SessionDetailCard({
 
   async function handleGenerate() {
     if (generating) return;
+    console.info("[SessionDetailCard] handleGenerate start", { day: session?.day, type: session?.type });
     setGenerating(true);
     setError(null);
     try {
@@ -290,6 +291,11 @@ function SessionDetailCard({
         return;
       }
       const result = await generateSessionDetail({ session: session!, profile, goals });
+      console.info("[SessionDetailCard] generated", {
+        kind: result.meta.kind,
+        exercises: result.session.exercises?.length ?? 0,
+        intervals: result.session.intervals?.length ?? 0,
+      });
       // Mutiamo il piano in storage sostituendo la session corrispondente.
       const plan = await getJSON<TrainingPlan | null>("training-plan", null);
       if (plan && plan.weeks[0]) {
@@ -302,10 +308,15 @@ function SessionDetailCard({
         };
         await setJSON("training-plan", updatedPlan);
         events.emit("plan:updated", { at: new Date().toISOString() });
+      } else {
+        // Edge: detail generato ma nessun piano in storage. Almeno mostra il
+        // risultato in UI per non sembrare "non fa niente".
+        console.warn("[SessionDetailCard] no plan in storage, session detail orphaned");
       }
       setMeta(result.meta);
       onSessionUpdated();
     } catch (e) {
+      console.error("[SessionDetailCard] generation failed:", e);
       setError((e as Error)?.message ?? "Errore di generazione. Riprova.");
     } finally {
       setGenerating(false);
@@ -403,6 +414,12 @@ function SessionDetailCard({
               ⚠ {meta.mathCheck.note}
             </div>
           )}
+          {/* Error visible anche con hasDetail (es. errore durante rigenera) */}
+          {error && (
+            <div style={{ fontSize: "12px", color: "#EF4444", marginTop: "8px", lineHeight: 1.4 }}>
+              ⚠ {error}
+            </div>
+          )}
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
             <button
               onClick={handleCopyToDiary}
@@ -427,7 +444,7 @@ function SessionDetailCard({
                 opacity: generating ? 0.6 : 1,
               }}
             >
-              {generating ? "⏳" : "🔄 Rigenera"}
+              {generating ? "⏳ Rigenero…" : "🔄 Rigenera"}
             </button>
           </div>
         </>
@@ -614,6 +631,14 @@ export default function CoachPageV2() {
       const p = await getJSON<UserProfile | null>("user-profile", null);
       setProfile(p);
     })();
+  }, []);
+
+  // Deep link: "Chiedi al coach" da TrainingPlanView emette chat:openWith.
+  // V2 ha sub-tab Chat → dobbiamo switchare lì così CoachChat è montato e
+  // riceve l'evento (altrimenti si perde, listener pattern identico a V1).
+  useEffect(() => {
+    const off = events.on("chat:openWith", () => setTab("chat"));
+    return off;
   }, []);
 
   if (!profile) {
