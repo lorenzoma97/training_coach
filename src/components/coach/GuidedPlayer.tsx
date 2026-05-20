@@ -9,6 +9,7 @@
 // Steps E (pre-flight editor) e F (recovery banner) sono feature successive.
 
 import { useEffect, useMemo, useState } from "react";
+import { setJSON, getJSON } from "../../lib/storage";
 import type { PlannedSession, PlannedExercise } from "../../lib/types";
 import type { ExercisePerformance, ExerciseSet } from "../../lib/types/strength";
 import type { MobilityRoutine } from "../../lib/types/mobility";
@@ -24,9 +25,46 @@ type Stage =
   | "cooldown-intro" | "cooldown-run"
   | "done";
 
+// ─── Snapshot storage (Step F: recovery sessione interrotta) ──────────────
+// Persistito in localStorage ad ogni evento (set completato, stage change).
+// Letto a mount per ripristinare lo stato se l'utente ha chiuso a metà.
+
+const SNAPSHOT_KEY = "guided-session-in-progress";
+const SNAPSHOT_TTL_MS = 24 * 3600 * 1000; // 24h: oltre → auto-discarded
+
+export interface GuidedSessionSnapshot {
+  sessionDay: string;
+  sessionType: string;
+  startedAt: string;
+  exercises: PlannedExercise[];
+  completed: ExercisePerformance[];
+  stage: Stage;
+  exerciseIdx: number;
+  setIdx: number;
+  routineStepIdx: number;
+}
+
+export async function loadGuidedSessionSnapshot(): Promise<GuidedSessionSnapshot | null> {
+  const snap = await getJSON<GuidedSessionSnapshot | null>(SNAPSHOT_KEY, null);
+  if (!snap) return null;
+  // TTL check: snapshot >24h fa → scarto silently
+  const startedTs = new Date(snap.startedAt).getTime();
+  if (!Number.isFinite(startedTs) || Date.now() - startedTs > SNAPSHOT_TTL_MS) {
+    await setJSON(SNAPSHOT_KEY, null);
+    return null;
+  }
+  return snap;
+}
+
+export async function clearGuidedSessionSnapshot(): Promise<void> {
+  await setJSON(SNAPSHOT_KEY, null);
+}
+
 interface GuidedPlayerProps {
   session: PlannedSession;
   userEquipment?: string[];
+  /** Snapshot per ripristinare una sessione interrotta (Step F). */
+  resumeFromSnapshot?: GuidedSessionSnapshot | null;
   onClose: () => void;
   onComplete: (performances: ExercisePerformance[]) => void;
 }
@@ -107,7 +145,7 @@ const cardStyle: React.CSSProperties = {
 
 // ─── Main component ───────────────────────────────────────────────────────
 
-export default function GuidedPlayer({ session, userEquipment, onClose, onComplete }: GuidedPlayerProps) {
+export default function GuidedPlayer({ session, userEquipment, resumeFromSnapshot, onClose, onComplete }: GuidedPlayerProps) {
   // Editable scaletta: lo stato iniziale è la scaletta dal SessionDetail; il
   // pre-flight editor (Step E) permette modifica peso/sets/reps + reorder +
   // add/remove prima di avviare l'allenamento. Una volta partito, la scaletta
@@ -116,12 +154,25 @@ export default function GuidedPlayer({ session, userEquipment, onClose, onComple
   const warmupRoutine = pickWarmupForSession(session);
   const cooldownRoutine = pickCooldownForSession(session);
 
-  const [exercises, setExercises] = useState<PlannedExercise[]>(initialExercises);
-  const [stage, setStage] = useState<Stage>(warmupRoutine ? "warmup-intro" : "preflight");
-  const [exerciseIdx, setExerciseIdx] = useState(0);
-  const [setIdx, setSetIdx] = useState(0);
+  // Snapshot resume: se presente E coerente con questa sessione (stesso day+type),
+  // ripristina lo state. Altrimenti partenza fresh.
+  const canResume = resumeFromSnapshot &&
+    resumeFromSnapshot.sessionDay === session.day &&
+    resumeFromSnapshot.sessionType === session.type;
+  const startedAtRef = useMemo(() => canResume ? resumeFromSnapshot!.startedAt : new Date().toISOString(), [canResume]);
+
+  const [exercises, setExercises] = useState<PlannedExercise[]>(
+    canResume ? resumeFromSnapshot!.exercises : initialExercises,
+  );
+  const [stage, setStage] = useState<Stage>(
+    canResume ? resumeFromSnapshot!.stage : (warmupRoutine ? "warmup-intro" : "preflight"),
+  );
+  const [exerciseIdx, setExerciseIdx] = useState(canResume ? resumeFromSnapshot!.exerciseIdx : 0);
+  const [setIdx, setSetIdx] = useState(canResume ? resumeFromSnapshot!.setIdx : 0);
   const [completed, setCompleted] = useState<ExercisePerformance[]>(() =>
-    initialExercises.map(ex => ({ exerciseId: ex.effectiveExerciseId ?? ex.exerciseId, sets: [] })),
+    canResume
+      ? resumeFromSnapshot!.completed
+      : initialExercises.map(ex => ({ exerciseId: ex.effectiveExerciseId ?? ex.exerciseId, sets: [] })),
   );
   const [currentReps, setCurrentReps] = useState<string>("");
   const [currentWeight, setCurrentWeight] = useState<string>("");
@@ -129,7 +180,20 @@ export default function GuidedPlayer({ session, userEquipment, onClose, onComple
   const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   // Warmup/cooldown step tracking
-  const [routineStepIdx, setRoutineStepIdx] = useState(0);
+  const [routineStepIdx, setRoutineStepIdx] = useState(canResume ? resumeFromSnapshot!.routineStepIdx : 0);
+
+  // Snapshot persistence (Step F): salva ad ogni cambio di stage/completed/idx.
+  // Skip "warmup-intro" e "done" (non rilevanti per recovery).
+  useEffect(() => {
+    if (stage === "warmup-intro" || stage === "done") return;
+    const snap: GuidedSessionSnapshot = {
+      sessionDay: session.day, sessionType: session.type,
+      startedAt: startedAtRef,
+      exercises, completed,
+      stage, exerciseIdx, setIdx, routineStepIdx,
+    };
+    void setJSON(SNAPSHOT_KEY, snap);
+  }, [stage, exercises, completed, exerciseIdx, setIdx, routineStepIdx, session.day, session.type, startedAtRef]);
 
   const currentExercise = exercises[exerciseIdx];
   const currentCatEx = currentExercise ? EXERCISES_BY_ID[currentExercise.effectiveExerciseId ?? currentExercise.exerciseId] : null;
@@ -274,18 +338,26 @@ export default function GuidedPlayer({ session, userEquipment, onClose, onComple
   function finishSession() {
     playCompletionBeep();
     setStage("done");
+    void clearGuidedSessionSnapshot();
     // Filter perf con almeno 1 set eseguito (utente potrebbe aver skippato qualche esercizio)
     const validPerformances = completed.filter(p => p.sets.length > 0);
     onComplete(validPerformances);
   }
 
-  function handleExitConfirm(action: "discard" | "save") {
+  function handleExitConfirm(action: "discard" | "save" | "pause") {
     setShowExitConfirm(false);
     if (action === "discard") {
+      void clearGuidedSessionSnapshot();
       onClose();
-    } else {
+    } else if (action === "save") {
+      // Save: salva nel diario E pulisci snapshot (sessione chiusa).
+      void clearGuidedSessionSnapshot();
       const validPerformances = completed.filter(p => p.sets.length > 0);
       onComplete(validPerformances);
+    } else {
+      // Pause: NON pulisce lo snapshot — l'utente torna nel TodayTab e
+      // vede il banner "Riprendi" per continuare in seguito.
+      onClose();
     }
   }
 
@@ -445,7 +517,12 @@ export default function GuidedPlayer({ session, userEquipment, onClose, onComple
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               <button onClick={() => handleExitConfirm("save")} style={ctaStyle}>
-                💾 Salva progresso e chiudi
+                💾 Salva progresso nel diario
+              </button>
+              <button onClick={() => handleExitConfirm("pause")} style={{
+                ...secondaryBtnStyle, color: "#0891B2", borderColor: "#0891B266",
+              }}>
+                ⏸ Pausa (riprendi dopo dal banner)
               </button>
               <button onClick={() => handleExitConfirm("discard")} style={{
                 ...secondaryBtnStyle, color: "#EF4444", borderColor: "#EF444466",
