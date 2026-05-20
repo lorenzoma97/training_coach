@@ -617,7 +617,7 @@ function ToolsTab() {
       </details>
 
       <details style={sectionDetailsStyle}>
-        <summary style={sectionSummaryStyle}><span style={{ flex: 1 }}>🧘 Warm-up library</span></summary>
+        <summary style={sectionSummaryStyle}><span style={{ flex: 1 }}>🧘 Mobility & Recovery</span></summary>
         <div style={{ padding: "0 16px 16px" }}>
           <MobilityLibrary />
         </div>

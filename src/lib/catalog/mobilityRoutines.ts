@@ -151,6 +151,77 @@ export const MOBILITY_ROUTINES: MobilityRoutine[] = [
       { name: "Pain monitoring check", duration_sec: 30, cue: "Valutazione dolore 0-10 secondo Silbernagel: ≤5 OK continuare, deve tornare a baseline entro 24h. ≥6 = stop e rivalutare." },
     ],
   },
+
+  // ===========================================================================
+  // 7. Cooldown Post-Corsa (cooldown, 6 min)
+  // ===========================================================================
+  {
+    id: "cooldown-post-corsa",
+    name: "Cool-down post-corsa",
+    purpose: "cooldown",
+    duration_min: 6,
+    sport: "corsa",
+    citation: "Van Hooren & Peake Sports Med 2018 (static stretching post-exercise non aumenta recupero ma riduce muscle tension percepita); ACSM Position Stand 2011 (cool-down attivo 5-10min Z1 facilita clearance lattato).",
+    steps: [
+      { name: "Camminata Z1", duration_sec: 180, cue: "3 minuti camminata brisk a respiro nasale, abbassa progressivamente FC verso baseline." },
+      { name: "Stretching polpacci al muro", duration_sec: 60, cue: "Affondo posteriore, tallone a terra, gamba tesa per gastrocnemio (30s/lato). Sensazione di stretch, NON dolore." },
+      { name: "Stretching femorali in piedi", duration_sec: 60, cue: "Piede su superficie bassa, busto inclinato avanti mantenendo schiena lunga, 30s/lato. Mira ischio-crurali." },
+      { name: "Stretching quadricipiti in piedi", duration_sec: 60, cue: "Tieni caviglia con mano omolaterale, ginocchia vicine, bacino in avanti. 30s/lato per quadricipite + flessori anca." },
+    ],
+  },
+
+  // ===========================================================================
+  // 8. Cooldown Post-Forza Lower (cooldown, 8 min)
+  // ===========================================================================
+  {
+    id: "cooldown-post-forza-lower",
+    name: "Cool-down post-forza (gambe)",
+    purpose: "cooldown",
+    duration_min: 8,
+    citation: "Behm & Chaouachi Eur J Appl Physiol 2011 (stretching statico post-allenamento NON peggiora performance se >30s post hoc); Apostolopoulos et al. J Bodyw Mov Ther 2015 (sub-DOMS recovery con stretching moderato).",
+    steps: [
+      { name: "Camminata leggera + scuotere gambe", duration_sec: 120, cue: "2 min cammino lento + scuotere alternatamente le gambe per dissipare tensione muscolare." },
+      { name: "Stretching glutei (figura 4 supina)", duration_sec: 90, cue: "Sdraiato, caviglia su ginocchio opposto, tira la coscia verso il petto. 45s/lato. Apre il gluteo profondo." },
+      { name: "Stretching flessori anca (low lunge)", duration_sec: 90, cue: "Affondo basso con ginocchio posteriore a terra, bacino spinto in avanti. 45s/lato. Critico post-squat/stacco." },
+      { name: "Stretching adduttori (butterfly)", duration_sec: 60, cue: "Seduto, piante piedi unite, ginocchia aperte. Inclina busto leggermente avanti senza forzare. Rilascia tensione interna coscia." },
+      { name: "Child pose finale", duration_sec: 120, cue: "Ginocchia aperte, fronte a terra, braccia estese avanti. 2 minuti di respirazione diaframmatica per attivare parasimpatico." },
+    ],
+  },
+
+  // ===========================================================================
+  // 9. Cooldown Post-Forza Upper (cooldown, 6 min)
+  // ===========================================================================
+  {
+    id: "cooldown-post-forza-upper",
+    name: "Cool-down post-forza (busto)",
+    purpose: "cooldown",
+    duration_min: 6,
+    citation: "Sands et al. J Strength Cond Res 2013 (static stretching shoulder post-pressing protocol); Page Int J Sports Phys Ther 2012 (current concepts stretching).",
+    steps: [
+      { name: "Spalle: shoulder rolls", reps: 10, cue: "10 rotazioni lente delle spalle indietro, ampiezza massima. Drena tensione cervicale-trapezi." },
+      { name: "Stretching pettorali (corner stretch)", duration_sec: 60, cue: "Avambraccio appoggiato a stipite/angolo muro a 90°, ruotare il busto via. 30s/lato. Apre pettorali post-bench." },
+      { name: "Stretching dorsali (lat stretch al muro)", duration_sec: 60, cue: "In piedi, mani al muro alte, ancanche indietro mantenendo braccia tese. 30s/2 ripetizioni. Stretching lats post-row/pull." },
+      { name: "Stretching tricipiti dietro la testa", duration_sec: 60, cue: "Braccio sopra la testa, mano dietro il collo, tira gomito col braccio opposto. 30s/lato. Post-OHP/press." },
+      { name: "Doorway chest opener + collo", duration_sec: 120, cue: "Mani su stipite alto, busto avanti per pettorali (60s). Poi lateroflessioni cervicali (30s/lato)." },
+    ],
+  },
+
+  // ===========================================================================
+  // 10. Cooldown Generale Breve (cooldown, 4 min)
+  // ===========================================================================
+  {
+    id: "cooldown-generale-breve",
+    name: "Cool-down generale (breve)",
+    purpose: "cooldown",
+    duration_min: 4,
+    citation: "Hotfiel et al. Sportverletz Sportschaden 2018 (active cool-down 5min Z1 efficace per lactate clearance); usato come fallback default quando non ci sono routine sport-specific.",
+    steps: [
+      { name: "Camminata respirazione profonda", duration_sec: 90, cue: "90s cammino lento + respirazione 4-7-8 (inspira 4s, trattieni 7s, espira 8s). Attiva parasimpatico." },
+      { name: "Stretching catena posteriore (forward fold)", duration_sec: 60, cue: "In piedi, piega busto avanti rilassato, lascia pendere braccia/testa. Stretching globale catena posteriore." },
+      { name: "Stretching catena anteriore (cobra/upward dog)", duration_sec: 60, cue: "Prono, mani a terra sotto spalle, estensione dorsale. 2× 30s. Apre catena anteriore." },
+      { name: "Box breathing finale", duration_sec: 30, cue: "4 cicli 4-4-4-4 (inspira 4s, trattieni 4s, espira 4s, trattieni 4s). HRV boost finale." },
+    ],
+  },
 ];
 
 /**
