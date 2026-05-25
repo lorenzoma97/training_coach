@@ -2583,7 +2583,7 @@ export const EXERCISES: Exercise[] = [
       "Errori comuni: giocare in modo conservativo (perde valore intensità), evitare i duelli, non recuperare attivamente, lasciare la pressione difensiva.",
       "Sicurezza: gesto sport-specific con contatto. Stretching dinamico pre-game obbligatorio. Cool-down camminata + stretching post. Stop se dolore. Ideale dopo warm-up FIFA 11+.",
     ],
-    alternatives: ["ssg-1v1-football", "ssg-3v3-football"],
+    alternatives: ["ssg-1v1-football", "mirror-drill-reactive"],
     loadable: false,
   },
   {
@@ -2627,7 +2627,7 @@ export const EXERCISES: Exercise[] = [
       "Errori comuni: piegare le ginocchia (diventa squat jump), atterraggio sul tallone (perde elasticità), salti troppo alti (perde rapidità ciclo), assorbire l'atterraggio.",
       "Sicurezza: il salto più semplice e sicuro per iniziare la pliometria. NO se tendinopatia achillea acuta o fascite plantare. Inizia con 3×8 reps e progredisci.",
     ],
-    alternatives: ["jump-rope-bodyweight", "broad-jump", "box-jump"],
+    alternatives: ["broad-jump", "box-jump"],
     loadable: false,
   },
 ];
