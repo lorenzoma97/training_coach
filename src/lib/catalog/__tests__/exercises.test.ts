@@ -79,6 +79,13 @@ describe("Exercise catalog", () => {
     plyometric: 4,
     isometric: 3,
     mobility: 0, // mobility tracked separately in mobilityRoutines.ts
+    // Sport-specific patterns (Sprint 1 macroprogramma) - copertura iniziale modesta.
+    // Estensione futura via Tier 3 auto-add quando importi programmi Claude.
+    agility: 3,    // T-test, 5-10-5, 505
+    reactive: 3,   // mirror, go/no-go, compass
+    sprint: 1,     // sprint progressivo lineare
+    rsa: 2,        // 6x30m, navetta 15+15
+    ssg: 2,        // 4v4, 1v1
   };
 
   for (const [pattern, minimum] of Object.entries(PATTERN_MINIMUMS)) {

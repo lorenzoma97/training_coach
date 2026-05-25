@@ -8,10 +8,13 @@
 
 import { z } from "zod";
 
+import type { Zone } from "../types/macroprogram";
+
 const DAY_LABEL = z.enum(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]);
 const SESSION_TYPE = z.enum(["corsa", "forza_gambe", "forza_upper", "sport", "mobilita"]);
 const INTERVAL_KIND = z.enum(["warmup", "main", "cooldown", "repetition", "recovery"]);
-const ZONE = z.coerce.number().int().min(1).max(5);
+// ZONE: coerce a number 1-5 + cast a Zone literal type (consistency con types/macroprogram.ts).
+const ZONE = z.coerce.number().int().min(1).max(5).transform(n => n as Zone);
 
 const EXERCISE_PATTERN = z.enum([
   "squat", "hinge", "lunge",

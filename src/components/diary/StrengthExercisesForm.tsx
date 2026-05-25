@@ -197,6 +197,12 @@ const PATTERN_LABELS: Record<ExercisePattern, string> = {
   plyometric: "Pliometria",
   isometric: "Isometria",
   mobility: "Mobilità",
+  // Sport-specific patterns (2026-05-25 Sprint 1 macroprogramma)
+  agility: "Agility (CoD)",
+  reactive: "Agility reattiva",
+  sprint: "Sprint",
+  rsa: "RSA",
+  ssg: "SSG (calcio)",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
