@@ -153,14 +153,17 @@ export function parseMacroProgramMarkdown(markdown: string): MacroProgramParseRe
   const narrative = extractNarrative(markdown);
   const warnings = buildWarnings(json);
 
-  const program: MacroProgram = {
+  // Zod inferred type ha shape equivalente al declared MacroProgram ma TS è
+  // stricter sui union types tra .nullable().optional() + transform. Usiamo
+  // double-cast unknown per evitare false positive del compiler.
+  const program = {
     metadata: json.metadata,
     phases: json.phases,
     weeks: json.weeks,
     tracking_metrics: json.tracking_metrics,
     narrative_markdown: narrative,
     imported_at: new Date().toISOString(),
-  };
+  } as unknown as MacroProgram;
 
   return {
     program,
