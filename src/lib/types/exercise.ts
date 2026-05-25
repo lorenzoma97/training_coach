@@ -23,7 +23,13 @@ export type ExercisePattern =
   | "core_antirot"
   | "plyometric"
   | "isometric"
-  | "mobility";
+  | "mobility"
+  // 2026-05-25 — Sport-specific patterns (Sprint 1 macroprogramma)
+  | "agility"        // change-of-direction drill pre-pianificati (T-test, 5-10-5, 505)
+  | "reactive"       // CoD con stimolo (mirror drill, go/no-go, compass)
+  | "sprint"         // sprint lineari massimali/sub-massimali (20-40m progressivi)
+  | "rsa"            // Repeated Sprint Ability (6×30m, navetta 15+15)
+  | "ssg";           // Small-Sided Games + 1v1 calcistici (decision-making in-situ)
 
 /**
  * Livello tecnico minimo per eseguire l'esercizio in sicurezza.
