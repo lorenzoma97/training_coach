@@ -8,6 +8,7 @@ import type { MacroProgram, MacroProgramSession, DayLabel } from "../../lib/type
 import { computeMacroProgress } from "../../lib/macroprogram/storage";
 import { lookupExerciseHybrid } from "../../lib/macroprogram/customCatalog";
 import { useSwipeNavigation } from "./useSwipeNavigation";
+import ReferencesDrawer from "./ReferencesDrawer";
 
 // ─── Phase color theme ────────────────────────────────────────────────────
 
@@ -71,6 +72,7 @@ export default function ProgramView({
   const macroCurrentWeek = progress?.currentWeek ?? 1;
   const initialViewWeek = Math.max(1, Math.min(program.metadata.weeks_total, macroCurrentWeek));
   const [viewWeek, setViewWeek] = useState(initialViewWeek);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const swipeRef = useRef<HTMLDivElement>(null);
   useSwipeNavigation(
@@ -115,8 +117,19 @@ export default function ProgramView({
         <div style={{ fontSize: "11px", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.1em" }}>
           Programma
         </div>
-        <div style={{ width: "60px" }} /> {/* spacer simmetria */}
+        <button
+          onClick={() => setDrawerOpen(true)}
+          style={{
+            background: "transparent", border: "1px solid rgba(255,255,255,0.16)",
+            borderRadius: "8px", padding: "6px 10px",
+            color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
+          }}
+          aria-label="Apri riferimenti"
+        >🔖 Riferimenti</button>
       </div>
+
+      {/* Drawer riferimenti */}
+      <ReferencesDrawer program={program} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
       {/* Content */}
       <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>

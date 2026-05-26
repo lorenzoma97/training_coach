@@ -39,6 +39,9 @@ import GuidedPlayer, {
   loadGuidedSessionSnapshot, clearGuidedSessionSnapshot,
   type GuidedSessionSnapshot,
 } from "../components/coach/GuidedPlayer";
+import { loadActiveMacroProgram, computeMacroProgress } from "../lib/macroprogram/storage";
+import type { MacroProgram } from "../lib/types/macroprogram";
+import ProgramView from "../components/macroprogram/ProgramView";
 
 type Tab = "today" | "plan" | "chat" | "tools";
 
@@ -133,6 +136,8 @@ const TSB_BAND_META: Record<TrainingLoadSnapshot["band"], { color: string; label
 function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [resumeSnapshot, setResumeSnapshot] = useState<GuidedSessionSnapshot | null>(null);
+  const [macroProgram, setMacroProgram] = useState<MacroProgram | null>(null);
+  const [macroViewerOpen, setMacroViewerOpen] = useState(false);
   useEffect(() => {
     const off = events.on("plan:updated", () => setRefreshKey(k => k + 1));
     return () => { off(); };
@@ -142,6 +147,13 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
     (async () => {
       const snap = await loadGuidedSessionSnapshot();
       setResumeSnapshot(snap);
+    })();
+  }, [refreshKey]);
+  // Sprint 4.4: check macroprogramma attivo
+  useEffect(() => {
+    (async () => {
+      const p = await loadActiveMacroProgram();
+      setMacroProgram(p);
     })();
   }, [refreshKey]);
   const s = useTodayState(refreshKey);
@@ -170,9 +182,49 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
     setResumeSnapshot(null);
   }
 
+  // Sprint 4.4: progress macroprogramma (settimana corrente + fase)
+  const macroProgress = macroProgram ? computeMacroProgress(macroProgram) : null;
+
   // ─── Render ──────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      {/* Sprint 4.4: banner macroprogramma attivo */}
+      {macroProgram && (
+        <div
+          onClick={() => setMacroViewerOpen(true)}
+          style={{
+            background: "linear-gradient(135deg, #16213E 0%, #1E2746 100%)",
+            border: "1px solid #E8553A66",
+            borderRadius: "12px",
+            padding: "12px 14px",
+            cursor: "pointer",
+            display: "flex", flexDirection: "column", gap: "6px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+            <div style={{ fontSize: "10px", color: "#E8553A", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+              📋 Programma attivo
+            </div>
+            <span style={{ fontSize: "11px", color: "#94A3B8" }}>Apri →</span>
+          </div>
+          <div style={{ fontSize: "14px", fontWeight: 700, color: "#E2E8F0", lineHeight: 1.3 }}>
+            {macroProgram.metadata.title}
+          </div>
+          {macroProgress && (
+            <div style={{ fontSize: "11px", color: "#0891B2", fontWeight: 600 }}>
+              {macroProgress.currentWeek === 0
+                ? `⏳ Inizio tra ${Math.abs(macroProgress.daysFromStart)} giorni`
+                : macroProgress.currentWeek > macroProgram.metadata.weeks_total
+                  ? "✓ Programma concluso"
+                  : `Settimana ${macroProgress.currentWeek} di ${macroProgram.metadata.weeks_total}${macroProgress.currentPhase ? ` · ${macroProgress.currentPhase}` : ""}`}
+            </div>
+          )}
+        </div>
+      )}
+      {macroProgram && macroViewerOpen && (
+        <ProgramView program={macroProgram} onClose={() => setMacroViewerOpen(false)} />
+      )}
+
       {/* Step F: banner Riprendi sessione interrotta */}
       {resumeSnapshot && (
         <ResumeSessionBanner
