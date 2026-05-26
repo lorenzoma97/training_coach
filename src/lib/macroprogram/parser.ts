@@ -188,54 +188,88 @@ export function parseMacroProgramMarkdown(markdown: string): MacroProgramParseRe
  * - Tier 3 incompleto (mancano metadata): l'esercizio NON è aggiungibile,
  *   l'id rimane come-è e warning viene aggiunto.
  *
+ * Robust dedup (2026-05-26): per ogni orphan id presente in più sessioni,
+ * scegliamo il payload PIÙ COMPLETO (con più metadata) — non solo il primo.
+ * Necessario perché Claude tende a popolare i metadata (technique+guidance)
+ * SOLO nella prima occorrenza e lascia vuote le successive (o viceversa).
+ *
  * IMPORTANTE: questa funzione modifica `result.program.weeks[*].sessions[*].exercises[*].id`
  * in-place per gli esercizi matchati a catalog esistente. Side-effect: scrive
  * su localStorage `user-custom-exercises` per orphan validi.
  */
+function payloadCompletenessScore(ex: {
+  name?: string; pattern?: string; equipment?: unknown[];
+  technique?: string; guidance?: string[];
+}): number {
+  // Score 0-5: +1 per ogni campo metadata significativo presente.
+  let s = 0;
+  if (ex.name && ex.name.trim().length > 0) s++;
+  if (ex.pattern && (ex.pattern as string).trim().length > 0) s++;
+  if (ex.equipment && ex.equipment.length > 0) s++;
+  if (ex.technique && ex.technique.trim().length > 0) s++;
+  if (ex.guidance && ex.guidance.length >= 3) s++;
+  return s;
+}
+
 export async function resolveExercisesAgainstCatalog(
   result: MacroProgramParseResult,
 ): Promise<MacroProgramParseResult> {
   const orphansToAdd: Exercise[] = [];
   const orphanReport: MacroProgramParseResult["orphanExercises"] = [];
   const extraWarnings: string[] = [];
-  const seenOrphanIds = new Set<string>(); // dedup tra multiple sessions
+
+  // STEP 1: riscrivi id Tier 1/2 in-place + colleziona TUTTE le occorrenze
+  // orphan per id (per scegliere payload più completo in step 2).
+  const orphanOccurrencesById = new Map<string, typeof result.program.weeks[number]["sessions"][number]["exercises"]>();
 
   for (const week of result.program.weeks) {
     for (const session of week.sessions) {
       for (const ex of session.exercises) {
         const match = matchExerciseId(ex.id, ex.name);
         if (match) {
-          // Tier 1/2: riscriviamo l'id col canonico (consistency downstream)
-          if (match.matchedId !== ex.id) {
-            ex.id = match.matchedId;
-          }
+          if (match.matchedId !== ex.id) ex.id = match.matchedId;
           continue;
         }
-        // Tier 3: orphan
-        if (seenOrphanIds.has(ex.id)) continue;
-        seenOrphanIds.add(ex.id);
-
-        const built = buildExerciseFromMacroPayload({
-          id: ex.id,
-          name: ex.name,
-          pattern: ex.pattern as ExercisePattern | undefined,
-          equipment: ex.equipment as Exercise["equipment"] | undefined,
-          technique: ex.technique,
-          guidance: ex.guidance,
-        });
-        if (built) {
-          orphansToAdd.push(built);
-          orphanReport.push({
-            exerciseId: ex.id,
-            name: ex.name,
-            pattern: ex.pattern as ExercisePattern | undefined,
-          });
-        } else {
-          extraWarnings.push(
-            `Esercizio "${ex.id}" non in catalog e metadata incompleti (richiesti: name, pattern, equipment). NON aggiunto al catalog custom; il Player potrebbe non mostrarlo correttamente.`,
-          );
-        }
+        // Orphan: colleziona tutte le occorrenze
+        const list = orphanOccurrencesById.get(ex.id) ?? [];
+        list.push(ex);
+        orphanOccurrencesById.set(ex.id, list);
       }
+    }
+  }
+
+  // STEP 2: per ogni orphan id, scegli payload più completo e auto-add
+  for (const [id, occurrences] of orphanOccurrencesById) {
+    // Trova l'occorrenza con score più alto (più metadata)
+    let best = occurrences[0];
+    let bestScore = payloadCompletenessScore(best);
+    for (let i = 1; i < occurrences.length; i++) {
+      const s = payloadCompletenessScore(occurrences[i]);
+      if (s > bestScore) {
+        best = occurrences[i];
+        bestScore = s;
+      }
+    }
+
+    const built = buildExerciseFromMacroPayload({
+      id,
+      name: best.name,
+      pattern: best.pattern as ExercisePattern | undefined,
+      equipment: best.equipment as Exercise["equipment"] | undefined,
+      technique: best.technique,
+      guidance: best.guidance,
+    });
+    if (built) {
+      orphansToAdd.push(built);
+      orphanReport.push({
+        exerciseId: id,
+        name: best.name,
+        pattern: best.pattern as ExercisePattern | undefined,
+      });
+    } else {
+      extraWarnings.push(
+        `Esercizio "${id}" non in catalog e metadata incompleti (richiesti: name, pattern, equipment). NON aggiunto al catalog custom; il Player potrebbe non mostrarlo correttamente.`,
+      );
     }
   }
 

@@ -103,6 +103,38 @@ describe("parseAndResolveMacroProgram — integration mixed", () => {
     expect(customs.some(c => c.id === "orphan-no-metadata")).toBe(false);
   });
 
+  it("orphan: prima occorrenza VUOTA + seconda COMPLETA → usa la completa (robust dedup)", async () => {
+    // Simula pattern Claude: prima occorrenza technique="" guidance=[], seconda piena.
+    const md = `\`\`\`json
+{
+  "metadata": { "title": "t", "goal": "g", "sport": "x", "weeks_total": 2 },
+  "phases": [{ "name": "p", "weeks": [1, 2], "focus": "f" }],
+  "weeks": [
+    {
+      "week": 1,
+      "sessions": [{ "day": "lun", "type": "forza_gambe", "duration_min": 60, "intervals": [], "exercises": [
+        { "id": "cmj-bodyweight", "name": "CMJ", "pattern": "plyometric", "equipment": ["bodyweight"], "sets": 3, "reps_min": 5, "reps_max": 5, "rest_sec": 120, "technique": "", "guidance": [] }
+      ] }]
+    },
+    {
+      "week": 2,
+      "sessions": [{ "day": "lun", "type": "forza_gambe", "duration_min": 60, "intervals": [], "exercises": [
+        { "id": "cmj-bodyweight", "name": "CMJ Counter-Movement Jump", "pattern": "plyometric", "equipment": ["bodyweight"], "sets": 4, "reps_min": 5, "reps_max": 5, "rest_sec": 120, "technique": "Contromovimento rapido + swing braccia", "guidance": ["Setup: piedi spalla", "Esecuzione: scendi rapido + esplodi", "Respirazione: espira nell'esplosione", "Errori: salto lento", "Sicurezza: atterraggio morbido"] }
+      ] }]
+    }
+  ]
+}
+\`\`\``;
+    const r = await parseAndResolveMacroProgram(md);
+    const customs = await loadCustomExercises();
+    const cmj = customs.find(c => c.id === "cmj-bodyweight");
+    expect(cmj).toBeDefined();
+    // Deve aver usato la SECONDA occorrenza (con guidance + technique)
+    expect(cmj!.technique).toContain("Contromovimento");
+    expect(cmj!.guidance).toHaveLength(5);
+    expect(cmj!.name).toBe("CMJ Counter-Movement Jump");
+  });
+
   it("dedup orphan: stesso id in più sessioni → 1 sola entry in orphanExercises", async () => {
     const dupMd = MIXED_PROGRAM_MD.replace(
       '"intervals": []',
