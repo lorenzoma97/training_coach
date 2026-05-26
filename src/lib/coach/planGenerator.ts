@@ -845,6 +845,12 @@ async function loadGenerationContext(input: LoadGenerationContextInput): Promise
   // adattare a signal daily (readiness low → downgrade, pain → swap, ecc.).
   const macroProgram = await loadActiveMacroProgram().catch(() => null);
   const macroProgramBlock = macroProgram ? buildMacroProgramBlock(macroProgram) : "";
+  if (macroProgramBlock) {
+    console.info("[planGen:diag] macroprogramma attivo: %s, week=%d/%d",
+      macroProgram!.metadata.title,
+      computeMacroProgress(macroProgram!)?.currentWeek ?? 0,
+      macroProgram!.metadata.weeks_total);
+  }
 
   return {
     recentDays,

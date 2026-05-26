@@ -581,6 +581,68 @@ describe("schema tolerance — variations Gemini reali tollerate", () => {
     expect(plan.weeks[0].sessions[0].type).toBe("corsa"); // softened
   });
 
+  it("Sprint 5: macroprogramma attivo → blocco MACROPROGRAMMA ATTIVO iniettato nel prompt", async () => {
+    // Setup: macroprogramma in storage con start_date oggi → siamo in week 1
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const macroProgram = {
+      metadata: {
+        title: "Test Macro Calcio",
+        goal: "ritorno performance",
+        sport: "calcio",
+        weeks_total: 5,
+        start_date: todayIso,
+      },
+      phases: [{
+        name: "Attivazione",
+        weeks: [1, 2],
+        focus: "base intermittente",
+        rpe_target_min: 6,
+        rpe_target_max: 7.5,
+        notes: "No sprint massimali",
+      }],
+      weeks: [{
+        week: 1,
+        notes: "Adattamento",
+        sessions: [{
+          day: "lun",
+          type: "forza_gambe",
+          duration_min: 73,
+          notes_text: "Tecnica palla in coda",
+          exercises: [
+            { id: "goblet-squat-kettlebell", name: "Goblet Squat", sets: 3, reps_min: 10, reps_max: 10, rest_sec: 90 },
+          ],
+          intervals: [],
+        }],
+      }],
+      narrative_markdown: "",
+      imported_at: new Date().toISOString(),
+    };
+    localStorage.setItem("user-macroprogram", JSON.stringify(macroProgram));
+
+    mockGenerateJSON.mockResolvedValue(buildMockResponse({
+      totalMin: 400, days: daysFor(lorenzo),
+    }));
+    await generateInitialPlan(lorenzo, [goalRunning]);
+    const { userPrompt } = capturePromptArgs();
+
+    // Il blocco deve essere presente con il titolo + settimana + fase
+    expect(userPrompt).toContain("MACROPROGRAMMA ATTIVO");
+    expect(userPrompt).toContain("Test Macro Calcio");
+    expect(userPrompt).toContain("settimana 1 di 5");
+    expect(userPrompt).toContain("Attivazione");
+    expect(userPrompt).toContain("base intermittente");
+    expect(userPrompt).toContain("goblet-squat-kettlebell");
+  });
+
+  it("Sprint 5: NESSUN macroprogramma → no blocco macroprogramma nel prompt", async () => {
+    mockGenerateJSON.mockResolvedValue(buildMockResponse({
+      totalMin: 500, days: daysFor(lorenzo),
+    }));
+    await generateInitialPlan(lorenzo, [goalRunning]);
+    const { userPrompt } = capturePromptArgs();
+    expect(userPrompt).not.toContain("MACROPROGRAMMA ATTIVO");
+  });
+
   it("rationale come array di stringhe → joinato in bullet list", async () => {
     mockGenerateJSON.mockResolvedValue({
       weeks: [{
