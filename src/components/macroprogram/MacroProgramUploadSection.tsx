@@ -17,7 +17,9 @@ import {
   computeMacroProgress,
   type MacroProgressInfo,
 } from "../../lib/macroprogram/storage";
+import { refreshCustomCache } from "../../lib/macroprogram/customCatalog";
 import type { MacroProgram, MacroProgramParseResult } from "../../lib/types/macroprogram";
+import ProgramView from "./ProgramView";
 
 const cardStyle: React.CSSProperties = {
   background: "#16213E",
@@ -52,12 +54,15 @@ export default function MacroProgramUploadSection() {
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
       const p = await loadActiveMacroProgram();
       setActiveProgram(p);
       if (p) setProgress(computeMacroProgress(p));
+      // Refresh custom catalog cache al mount per consistency
+      await refreshCustomCache();
     })();
   }, []);
 
@@ -136,10 +141,20 @@ export default function MacroProgramUploadSection() {
                   : `Settimana ${progress.currentWeek} di ${activeProgram.metadata.weeks_total}${progress.currentPhase ? ` · Fase ${progress.currentPhase}` : ""}`}
             </div>
           )}
-          <button onClick={handleClear} disabled={busy} style={{ ...secondaryBtnStyle, color: "#EF4444", borderColor: "#EF444466" }}>
-            🗑 Rimuovi programma
-          </button>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button onClick={() => setViewerOpen(true)} disabled={busy} style={ctaStyle}>
+              📖 Apri programma
+            </button>
+            <button onClick={handleClear} disabled={busy} style={{ ...secondaryBtnStyle, color: "#EF4444", borderColor: "#EF444466" }}>
+              🗑 Rimuovi
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Full-screen ProgramView */}
+      {activeProgram && viewerOpen && (
+        <ProgramView program={activeProgram} onClose={() => setViewerOpen(false)} />
       )}
 
       {/* Upload section */}
