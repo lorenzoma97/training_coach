@@ -12,6 +12,9 @@ import { workoutSubtypesForPrompt, isCanonicalSubtype } from "../workoutCatalog"
 import { loadActiveMacroContext } from "./macroLookup";
 import { getCurrentReadiness } from "./readinessScoring";
 import { sanitizePII } from "../promptSanitizer";
+import { loadActiveMacroProgram, computeMacroProgress } from "../macroprogram/storage";
+import { lookupExerciseHybrid } from "../macroprogram/customCatalog";
+import type { MacroProgram, MacroProgramSession } from "../types/macroprogram";
 // Sprint 2 (2026-05-18): kill multi-pass dormant. L'orchestrator multi-pass
 // (passes/) era già disattivato (MULTI_PASS_ENABLED=false) dopo regressione
 // live su Pass-1 skeleton schema vs Gemini Flash output variabile. I cue
@@ -445,10 +448,11 @@ export async function generateInitialPlan(
     readinessLine,
     availableDaysBlock,
     goalConflictHint,
+    macroProgramBlock,
   } = ctx;
 
   const userPrompt = `
-${prescriptionBlock}
+${macroProgramBlock ? macroProgramBlock + "\n\n" : ""}${prescriptionBlock}
 
 ${volumeLandmarksBlock}
 
@@ -796,6 +800,8 @@ interface GenerationContext {
   loadBlock: string;
   readinessLine: string;
   availableDaysBlock: string;
+  /** Sprint 5: blocco prompt MACROPROGRAMMA ATTIVO se utente ha caricato uno; "" altrimenti. */
+  macroProgramBlock: string;
   goalConflictHint: string;
 }
 
@@ -832,6 +838,14 @@ async function loadGenerationContext(input: LoadGenerationContextInput): Promise
   const availableDaysBlock = buildAvailableDaysBlock(effectiveDays, "GIORNI ALLENABILI");
   const goalConflictHint = goals.length >= 2 ? GOAL_CONFLICT_HINT : "";
 
+  // Sprint 5 (2026-05-26): macroprogramma vincolante. Se l'utente ha caricato
+  // un macroprogramma e siamo nel range temporale valido, iniettiamo blocco
+  // "MACROPROGRAMMA ATTIVO" con: settimana corrente, fase target, sessioni
+  // pianificate. Tier 2 (questo planGenerator) le usa come VINCOLO ma può
+  // adattare a signal daily (readiness low → downgrade, pain → swap, ecc.).
+  const macroProgram = await loadActiveMacroProgram().catch(() => null);
+  const macroProgramBlock = macroProgram ? buildMacroProgramBlock(macroProgram) : "";
+
   return {
     recentDays,
     zonesCtx,
@@ -845,7 +859,78 @@ async function loadGenerationContext(input: LoadGenerationContextInput): Promise
     readinessLine,
     availableDaysBlock,
     goalConflictHint,
+    macroProgramBlock,
   };
+}
+
+/**
+ * Costruisce il blocco prompt "MACROPROGRAMMA ATTIVO" per Tier 2.
+ *
+ * Pattern: settimana corrente del macroprogramma + fase target + sessioni
+ * pianificate per quella settimana (sintesi: type/day/duration + esercizi
+ * top-3 con sets×reps). L'LLM deve generare la settimana mantenendo
+ * coerenza col macro ma adattando a signal daily.
+ *
+ * Ritorna stringa vuota se:
+ * - Macroprogramma non in range (pre-start o concluso)
+ * - Settimana corrente non trovata nei weeks[]
+ */
+function buildMacroProgramBlock(program: MacroProgram): string {
+  const progress = computeMacroProgress(program);
+  if (!progress) return ""; // start_date non settata
+  const wk = progress.currentWeek;
+  if (wk < 1 || wk > program.metadata.weeks_total) return "";
+
+  const weekData = program.weeks.find(w => w.week === wk);
+  if (!weekData) return "";
+
+  // Fase target
+  let phaseInfo = "";
+  for (const p of program.phases) {
+    const isRange = p.weeks.length === 2 && p.weeks[0] <= p.weeks[1];
+    const inPhase = isRange ? (wk >= p.weeks[0] && wk <= p.weeks[1]) : p.weeks.includes(wk);
+    if (inPhase) {
+      const rpe = (p.rpe_target_min && p.rpe_target_max) ? ` RPE target ${p.rpe_target_min}-${p.rpe_target_max}.` : "";
+      phaseInfo = `Fase: ${p.name}. Focus: ${p.focus}.${rpe}`;
+      if (p.notes) phaseInfo += ` Note fase: ${p.notes}.`;
+      break;
+    }
+  }
+
+  // Sessioni pianificate (sintesi)
+  const sessionLines = weekData.sessions.map(s => formatSessionSynth(s));
+
+  const lines: string[] = [
+    "═══ MACROPROGRAMMA ATTIVO — vincolo top-priority ═══",
+    `Programma "${program.metadata.title}" (sport: ${program.metadata.sport}).`,
+    `Sei nella settimana ${wk} di ${program.metadata.weeks_total}. ${phaseInfo}`,
+  ];
+  if (weekData.notes) lines.push(`Note settimana: ${weekData.notes}.`);
+  lines.push("");
+  lines.push("Sessioni pianificate dal macro per questa settimana:");
+  for (const l of sessionLines) lines.push(`  ${l}`);
+  lines.push("");
+  lines.push("VINCOLO: genera la settimana RISPETTANDO struttura del macro (giorni, type, durate, esercizi target). Adatta solo se signal daily (readiness=low, pain attivo, ACWR spike) lo richiedono — in tal caso esplicita la deviazione nel rationale.");
+  return lines.join("\n");
+}
+
+function formatSessionSynth(s: MacroProgramSession): string {
+  let bits = `${s.day} ${s.type} ${s.duration_min}min`;
+  if (s.exercises.length > 0) {
+    const top = s.exercises.slice(0, 3).map(ex => {
+      const catEx = lookupExerciseHybrid(ex.id);
+      const name = ex.name ?? catEx?.name ?? ex.id;
+      const reps = ex.reps_min === ex.reps_max ? `${ex.reps_min}` : `${ex.reps_min}-${ex.reps_max}`;
+      return `${name} ${ex.sets}x${reps}`;
+    }).join(" | ");
+    bits += ` — ${top}`;
+    if (s.exercises.length > 3) bits += ` (+${s.exercises.length - 3} altri)`;
+  } else if (s.intervals.length > 0) {
+    const summary = s.intervals.map(iv => iv.kind === "main" && iv.reps ? `${iv.reps}×${iv.duration_min}min` : iv.duration_min ? `${iv.kind} ${iv.duration_min}min` : iv.kind).join(" + ");
+    bits += ` — ${summary}`;
+  }
+  if (s.notes_text) bits += ` [${s.notes_text}]`;
+  return bits;
 }
 
 /**
@@ -979,6 +1064,7 @@ non includere sessioni per essi.${minimalWindowGuard}
     readinessLine,
     availableDaysBlock,
     goalConflictHint,
+    macroProgramBlock,
   } = ctx;
 
   // Sprint 1 fix #1: closed-loop. Se previousReport è disponibile, iniettiamo
@@ -989,7 +1075,7 @@ non includere sessioni per essi.${minimalWindowGuard}
     : "";
 
   const userPrompt = `
-${prescriptionBlock}
+${macroProgramBlock ? macroProgramBlock + "\n\n" : ""}${prescriptionBlock}
 
 ${previousReportBlock}
 
@@ -1130,11 +1216,12 @@ export async function adaptPlan(
     readinessLine,
     availableDaysBlock,
     goalConflictHint,
+    macroProgramBlock,
   } = ctx;
 
   // Sprint 2: branch multi-pass rimosso (kill dormant). Single-pass è l'unico path.
   const userPrompt = `
-${prescriptionBlock}
+${macroProgramBlock ? macroProgramBlock + "\n\n" : ""}${prescriptionBlock}
 
 ${volumeLandmarksBlock}
 
