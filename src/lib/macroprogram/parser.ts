@@ -15,6 +15,9 @@
 
 import { MacroProgramJsonSchema, type MacroProgramJson } from "../schemas/macroprogram";
 import type { MacroProgram, MacroProgramParseResult } from "../types/macroprogram";
+import type { Exercise, ExercisePattern } from "../types/exercise";
+import { matchExerciseId } from "./exerciseMatcher";
+import { buildExerciseFromMacroPayload, saveCustomExercisesBatch, refreshCustomCache } from "./customCatalog";
 
 export class MacroProgramParseError extends Error {
   details: string[];
@@ -170,4 +173,89 @@ export function parseMacroProgramMarkdown(markdown: string): MacroProgramParseRe
     orphanExercises: [],
     warnings,
   };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Sprint 3: post-parse resolution with fuzzy matcher + Tier 3 auto-add.
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Risolve gli exerciseId del macroprogramma applicando il matcher in cascade:
+ * - Tier 1/2: matchedId valido → riscriviamo l'id nel programma con quello canonico
+ * - Tier 3 (orphan): se il payload ha name+pattern+equipment+technique+guidance,
+ *   costruiamo un Exercise e lo salviamo nel user-custom catalog. L'id originale
+ *   è preservato. Aggiunto a result.orphanExercises[] per UI notification.
+ * - Tier 3 incompleto (mancano metadata): l'esercizio NON è aggiungibile,
+ *   l'id rimane come-è e warning viene aggiunto.
+ *
+ * IMPORTANTE: questa funzione modifica `result.program.weeks[*].sessions[*].exercises[*].id`
+ * in-place per gli esercizi matchati a catalog esistente. Side-effect: scrive
+ * su localStorage `user-custom-exercises` per orphan validi.
+ */
+export async function resolveExercisesAgainstCatalog(
+  result: MacroProgramParseResult,
+): Promise<MacroProgramParseResult> {
+  const orphansToAdd: Exercise[] = [];
+  const orphanReport: MacroProgramParseResult["orphanExercises"] = [];
+  const extraWarnings: string[] = [];
+  const seenOrphanIds = new Set<string>(); // dedup tra multiple sessions
+
+  for (const week of result.program.weeks) {
+    for (const session of week.sessions) {
+      for (const ex of session.exercises) {
+        const match = matchExerciseId(ex.id, ex.name);
+        if (match) {
+          // Tier 1/2: riscriviamo l'id col canonico (consistency downstream)
+          if (match.matchedId !== ex.id) {
+            ex.id = match.matchedId;
+          }
+          continue;
+        }
+        // Tier 3: orphan
+        if (seenOrphanIds.has(ex.id)) continue;
+        seenOrphanIds.add(ex.id);
+
+        const built = buildExerciseFromMacroPayload({
+          id: ex.id,
+          name: ex.name,
+          pattern: ex.pattern as ExercisePattern | undefined,
+          equipment: ex.equipment as Exercise["equipment"] | undefined,
+          technique: ex.technique,
+          guidance: ex.guidance,
+        });
+        if (built) {
+          orphansToAdd.push(built);
+          orphanReport.push({
+            exerciseId: ex.id,
+            name: ex.name,
+            pattern: ex.pattern as ExercisePattern | undefined,
+          });
+        } else {
+          extraWarnings.push(
+            `Esercizio "${ex.id}" non in catalog e metadata incompleti (richiesti: name, pattern, equipment). NON aggiunto al catalog custom; il Player potrebbe non mostrarlo correttamente.`,
+          );
+        }
+      }
+    }
+  }
+
+  if (orphansToAdd.length > 0) {
+    await saveCustomExercisesBatch(orphansToAdd);
+    await refreshCustomCache();
+  }
+
+  return {
+    ...result,
+    orphanExercises: orphanReport,
+    warnings: [...result.warnings, ...extraWarnings],
+  };
+}
+
+/**
+ * Convenience: parse + resolve in unica chiamata async.
+ * Da usare nell'UI Upload (Sprint 4).
+ */
+export async function parseAndResolveMacroProgram(markdown: string): Promise<MacroProgramParseResult> {
+  const parsed = parseMacroProgramMarkdown(markdown);
+  return resolveExercisesAgainstCatalog(parsed);
 }
