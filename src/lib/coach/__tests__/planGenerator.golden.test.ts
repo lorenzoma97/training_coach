@@ -631,7 +631,8 @@ describe("schema tolerance — variations Gemini reali tollerate", () => {
     expect(userPrompt).toContain("settimana 1 di 5");
     expect(userPrompt).toContain("Attivazione");
     expect(userPrompt).toContain("base intermittente");
-    expect(userPrompt).toContain("goblet-squat-kettlebell");
+    // formatSessionSynth usa name (preferito su id per leggibilità LLM)
+    expect(userPrompt).toContain("Goblet Squat 3x10");
   });
 
   it("Sprint 5: NESSUN macroprogramma → no blocco macroprogramma nel prompt", async () => {
