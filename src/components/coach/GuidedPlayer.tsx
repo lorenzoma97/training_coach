@@ -17,6 +17,7 @@ import type { Exercise, EquipmentTag } from "../../lib/types/exercise";
 import { EXERCISES, EXERCISES_BY_ID } from "../../lib/catalog/exercises";
 import { ROUTINES_BY_ID, MOBILITY_ROUTINES } from "../../lib/catalog/mobilityRoutines";
 import { primeAudio, playCountdownBeep, playCompletionBeep } from "../../lib/audio";
+import { useModalBackButton } from "../../lib/useModalBackButton";
 
 type Stage =
   | "warmup-intro" | "warmup-run"
@@ -178,6 +179,9 @@ export default function GuidedPlayer({ session, userEquipment, resumeFromSnapsho
   const [currentWeight, setCurrentWeight] = useState<string>("");
   const [restSec, setRestSec] = useState<number>(0);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  // Sprint E: tasto indietro Android → apri l'exit-confirm (c'è progresso da
+  // proteggere) invece di chiudere brutalmente la sessione.
+  useModalBackButton(true, () => setShowExitConfirm(true));
 
   // Warmup/cooldown step tracking
   const [routineStepIdx, setRoutineStepIdx] = useState(canResume ? resumeFromSnapshot!.routineStepIdx : 0);

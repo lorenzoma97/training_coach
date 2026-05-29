@@ -9,6 +9,7 @@ import { computeMacroProgress } from "../../lib/macroprogram/storage";
 import { lookupExerciseHybrid } from "../../lib/macroprogram/customCatalog";
 import { useSwipeNavigation } from "./useSwipeNavigation";
 import ReferencesDrawer from "./ReferencesDrawer";
+import { useModalBackButton } from "../../lib/useModalBackButton";
 
 // ─── Phase color theme ────────────────────────────────────────────────────
 
@@ -73,6 +74,8 @@ export default function ProgramView({
   const initialViewWeek = Math.max(1, Math.min(program.metadata.weeks_total, macroCurrentWeek));
   const [viewWeek, setViewWeek] = useState(initialViewWeek);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Sprint E: tasto indietro Android chiude ProgramView (montato = aperto).
+  useModalBackButton(true, onClose);
 
   const swipeRef = useRef<HTMLDivElement>(null);
   useSwipeNavigation(

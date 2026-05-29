@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MacroProgram, MacroProgramTrackingMetric } from "../../lib/types/macroprogram";
 import MarkdownLite from "./MarkdownLite";
 import { getJSON, setJSON } from "../../lib/storage";
+import { useModalBackButton } from "../../lib/useModalBackButton";
 
 interface ReferencesDrawerProps {
   program: MacroProgram;
@@ -126,6 +127,7 @@ const tabBtnActiveStyle: React.CSSProperties = {
 export default function ReferencesDrawer({ program, open, onClose }: ReferencesDrawerProps) {
   const [tab, setTab] = useState<TabId>("glossary");
   const [trackingEntries, setTrackingEntries] = useState<TrackingEntry[]>([]);
+  useModalBackButton(open, onClose);
   useEffect(() => {
     if (!open) return;
     loadTrackingEntries().then(setTrackingEntries);

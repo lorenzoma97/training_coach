@@ -528,7 +528,13 @@ function SessionDetailCard({
               ⚠ {error}
             </div>
           )}
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+          {/* Sprint E: caption che chiarisce il flusso delle azioni sotto. */}
+          <div style={{ fontSize: "11px", color: "#64748B", marginTop: "12px", lineHeight: 1.4 }}>
+            {isStrength && session.exercises && session.exercises.length > 0
+              ? "Rivedi la scaletta, poi avvia l'allenamento guidato (salva da solo nel diario a fine sessione). Oppure copia in diario per registrare a mano."
+              : "Copia in diario per registrare la sessione, oppure rigenera il dettaglio."}
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
             {/* Bottone primario per sessioni forza: Allenamento guidato.
                 Non disponibile per cardio (player è solo strength scope). */}
             {isStrength && session.exercises && session.exercises.length > 0 && (
