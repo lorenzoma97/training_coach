@@ -9,7 +9,7 @@
 //   4. 📊 Tools — collapsibles: Zone FC, Obiettivi, Feed, Warm-up, Diagnostica
 
 import { useEffect, useState } from "react";
-import TrainingPlanView from "../components/TrainingPlanView";
+import PlanTab from "../components/macroprogram/PlanTab";
 import CoachFeedList from "../components/CoachFeedList";
 import CoachChat from "../components/CoachChat";
 import GoalsEditor from "../components/GoalsEditor";
@@ -943,7 +943,7 @@ export default function CoachPageV2() {
 
       {/* Tab content */}
       {tab === "today" && <TodayTab onGoToPlan={() => setTab("plan")} />}
-      {tab === "plan" && <TrainingPlanView />}
+      {tab === "plan" && <PlanTab />}
       {tab === "chat" && <CoachChat />}
       {tab === "tools" && <ToolsTab />}
     </div>

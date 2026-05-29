@@ -848,6 +848,39 @@ export default function TrainingPlanView() {
         />
       )}
 
+      {/* Sprint B (2026-05-27): indicatore concordanza col macroprogramma.
+          Se il piano è proiettato dal macro (sourceMacro), mostralo esplicito:
+          "Da programma · Settimana N · Fase X" + eventuali adattamenti daily.
+          Risolve "il piano non concorda col .md": la provenienza è visibile. */}
+      {plan.sourceMacro && (
+        <div style={{
+          background: "#0891B215",
+          border: "1px solid #0891B266",
+          borderRadius: "12px", padding: "10px 14px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "11px", color: "#38BDF8", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              📋 Da programma
+            </span>
+            <span style={{ fontSize: "12px", color: "#E2E8F0", fontWeight: 600 }}>
+              Settimana {plan.sourceMacro.weekNumber}{plan.sourceMacro.phaseName ? ` · ${plan.sourceMacro.phaseName}` : ""}
+            </span>
+          </div>
+          {plan.sourceMacro.adaptations.length > 0 ? (
+            <div style={{ marginTop: "6px", fontSize: "11px", color: "#F59E0B", lineHeight: 1.5 }}>
+              ⚠ {plan.sourceMacro.adaptations.length} adattamenti per readiness bassa:
+              <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
+                {plan.sourceMacro.adaptations.map((a, i) => <li key={i}>{a}</li>)}
+              </ul>
+            </div>
+          ) : (
+            <div style={{ marginTop: "4px", fontSize: "11px", color: "#94A3B8" }}>
+              Proiezione fedele del programma, nessun adattamento necessario.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Z2 in cima per avere il range bpm sempre visibile */}
       <ZonesCard compact highlightZone={2} />
 
