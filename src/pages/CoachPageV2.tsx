@@ -16,7 +16,6 @@ import ZonesAnalytics from "../components/ZonesAnalytics";
 import FCMaxTestSection from "../components/FCMaxTestSection";
 import LTThresholdSection from "../components/LTThresholdSection";
 import MobilityLibrary from "../components/mobility/MobilityLibrary";
-import PlanDiagnosticPanel from "../components/PlanDiagnosticPanel";
 import { getJSON } from "../lib/storage";
 import type { UserProfile, TrainingPlan } from "../lib/types";
 import { events } from "../lib/events";
@@ -859,13 +858,7 @@ function ToolsTab() {
           <MobilityLibrary />
         </div>
       </details>
-
-      <details style={sectionDetailsStyle}>
-        <summary style={sectionSummaryStyle}><span style={{ flex: 1 }}>🔍 Diagnostica ultima rigenerazione</span></summary>
-        <div style={{ padding: "0 16px 16px" }}>
-          <PlanDiagnosticPanel />
-        </div>
-      </details>
+      {/* Sprint D: Diagnostica rimossa da qui (è debug) — resta in Settings. */}
     </div>
   );
 }

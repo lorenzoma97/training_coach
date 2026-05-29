@@ -10,7 +10,6 @@ import { getRagCache } from "../lib/ragStorage";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { events } from "../lib/events";
 import BackupSection from "../components/BackupSection";
-import MacroProgramUploadSection from "../components/macroprogram/MacroProgramUploadSection";
 import PlanDiagnosticPanel from "../components/PlanDiagnosticPanel";
 import GoalsEditor from "../components/GoalsEditor";
 import ProfileEditor from "../components/ProfileEditor";
@@ -716,15 +715,8 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
       {/* ─── Calendario gare (componente separato) ───────────────────── */}
       <RaceCalendarSection />
 
-      {/* ─── Macroprogramma (Sprint 4, 2026-05-26) ────────────────────── */}
-      <details style={sectionDetailsStyle}>
-        <summary style={sectionSummaryStyle} aria-label="Macroprogramma multi-settimanale">
-          <span style={{ flex: 1 }}>📋 Macroprogramma multi-settimanale</span>
-        </summary>
-        <div style={{ padding: "0 16px 16px" }}>
-          <MacroProgramUploadSection />
-        </div>
-      </details>
+      {/* Sprint D: il Macroprogramma è un'azione operativa, non una
+          impostazione → spostato nel Coach (tab Piano). Non più qui. */}
 
       {/* ─── Knowledge base RAG (collapsible) ─────────────────────────── */}
       <details style={sectionDetailsStyle}>

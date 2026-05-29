@@ -31,6 +31,7 @@ export default function PlanTab() {
   const [loaded, setLoaded] = useState(false);
   const [programOpen, setProgramOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -53,11 +54,29 @@ export default function PlanTab() {
     <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
       {/* Banner strategia (se macro attivo) */}
       {macro && (
-        <MacroStrategyBanner
-          program={macro}
-          progress={progress}
-          onOpenProgram={() => setProgramOpen(true)}
-        />
+        <>
+          <MacroStrategyBanner
+            program={macro}
+            progress={progress}
+            onOpenProgram={() => setProgramOpen(true)}
+          />
+          <button
+            onClick={() => setManageOpen(v => !v)}
+            style={{
+              alignSelf: "flex-start",
+              padding: "6px 12px", background: "transparent",
+              border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+              color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            {manageOpen ? "Chiudi gestione" : "⚙ Gestisci / sostituisci programma"}
+          </button>
+          {manageOpen && (
+            <div style={cardStyle}>
+              <MacroProgramUploadSection />
+            </div>
+          )}
+        </>
       )}
 
       {/* Entry-point import (se NESSUN macro) — discovery fuori da Settings */}
