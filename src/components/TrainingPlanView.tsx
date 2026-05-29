@@ -6,6 +6,7 @@ import { setJSON } from "../lib/storage";
 import { planStateHash } from "../lib/coach/planValidator";
 import { buildCoachContext, getLastNDays } from "../lib/diaryContext";
 import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach/planGenerator";
+import { tryProjectMacroPlan } from "../lib/coach/macroWeekPlan";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { savePlanWithHistory, getPlanHistory, getNextPlan, saveNextPlan, clearNextPlan, maybePromoteNextPlan } from "../lib/coach/planHistory";
 import ZonesCard from "./ZonesCard";
@@ -553,7 +554,18 @@ export default function TrainingPlanView() {
       const opts = effectiveOverride ? { availableDaysOverride: effectiveOverride } : undefined;
       let next: TrainingPlan;
       let title: string;
-      if (plan) {
+      // Sprint A (2026-05-27): se c'è un macroprogramma attivo che copre la
+      // settimana corrente, il piano è una PROIEZIONE deterministica del macro
+      // (+ adattamento readiness), NON una rigenerazione LLM. Garantisce
+      // concordanza piano↔macro per costruzione.
+      const macroPlan = await tryProjectMacroPlan(profile);
+      if (macroPlan) {
+        next = macroPlan;
+        const adaptN = macroPlan.sourceMacro?.adaptations.length ?? 0;
+        title = adaptN > 0
+          ? `✓ Settimana ${macroPlan.sourceMacro?.weekNumber} proiettata dal programma (${adaptN} adattamenti per readiness)`
+          : `✓ Settimana ${macroPlan.sourceMacro?.weekNumber} proiettata dal programma`;
+      } else if (plan) {
         const ctx = await buildCoachContext({ daysBack: 14 });
         next = await regenerateNextWeek(profile, goals, plan, ctx.recentDaysText, mode, opts);
         title = mode === "rest-of-week"

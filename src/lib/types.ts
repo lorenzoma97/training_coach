@@ -352,6 +352,22 @@ export interface TrainingPlan {
   staleReason?: "macro_changed" | "profile_changed" | "goals_changed";
   /** ISO datetime in cui è stato marcato stale. */
   staleAt?: string;
+  /**
+   * Sprint A (2026-05-27): provenienza da macroprogramma importato (Tier 1).
+   * Se presente, il piano è stato PROIETTATO deterministicamente dalla
+   * settimana `weekNumber` del macroprogramma `programId`, NON rigenerato
+   * a caso dall'LLM. `adaptations` elenca gli scostamenti applicati dal pass
+   * di adattamento daily (readiness/dolore/ACWR) — vuoto se proiezione pura.
+   *
+   * Questo è il meccanismo che garantisce "il piano concorda col macro per
+   * costruzione": la UI può mostrare "Settimana N/M · Fase X · K adattamenti".
+   */
+  sourceMacro?: {
+    programId: string;          // metadata.title (identificatore del macroprogramma)
+    weekNumber: number;         // settimana del macro proiettata (1..weeks_total)
+    phaseName?: string;         // nome fase corrispondente
+    adaptations: string[];      // scostamenti dal macro applicati per signal daily
+  };
 }
 
 export type FeedType = "session-feedback" | "weekly-report" | "alert" | "motivation" | "plan-update";
