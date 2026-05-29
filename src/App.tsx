@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import DiaryApp from "./components/DiaryApp";
-import CoachPage from "./pages/CoachPage";
 import CoachPageV2 from "./pages/CoachPageV2";
 import SettingsPage from "./pages/SettingsPage";
 import OnboardingWizard from "./pages/OnboardingWizard";
@@ -36,10 +35,6 @@ function AppShell() {
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("diary");
   const [unreadCoach, setUnreadCoach] = useState(0);
-  // 2026-05-18 — feature flag UI Coach V2 (beta opt-in via Settings)
-  const [useCoachV2, setUseCoachV2] = useState<boolean>(() => {
-    try { return localStorage.getItem("ui-coach-v2") === "true"; } catch { return false; }
-  });
   const { notify } = useNotify();
 
   // Toast globali per eventi di sistema (migrazione modello, fallback LLM).
@@ -59,10 +54,7 @@ function AppShell() {
         message: `Modello ${p.primary} momentaneamente occupato — uso ${p.fallback}.`,
       });
     });
-    const offUi = events.on("ui:coachV2Changed", (p) => {
-      setUseCoachV2(!!p.enabled);
-    });
-    return () => { offMig(); offFb(); offUi(); };
+    return () => { offMig(); offFb(); };
   }, [notify]);
 
   useEffect(() => {
@@ -231,9 +223,7 @@ function AppShell() {
           <ErrorBoundary label="TrendsPage"><TrendsPage /></ErrorBoundary>
         )}
         {tab === "coach" && (
-          <ErrorBoundary label={useCoachV2 ? "CoachPageV2" : "CoachPage"}>
-            {useCoachV2 ? <CoachPageV2 /> : <CoachPage />}
-          </ErrorBoundary>
+          <ErrorBoundary label="CoachPageV2"><CoachPageV2 /></ErrorBoundary>
         )}
         {tab === "settings" && (
           <ErrorBoundary label="SettingsPage">

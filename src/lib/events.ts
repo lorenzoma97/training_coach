@@ -24,9 +24,6 @@ export type EventMap = {
   "llm:migrated": { fromModelId: string; toModelId: string; reason: string };
   /** Emesso quando il modello primario LLM fallisce e si passa al fallback. */
   "llm:fallbackActivated": { primary: string; fallback: string; reason: string };
-  /** 2026-05-18 — toggle UI Coach V2 cambiato in Settings. Permette hot-switch
-   *  senza refresh: App ascolta e ri-renderizza CoachPage o CoachPageV2. */
-  "ui:coachV2Changed": { enabled: boolean };
   /** Emesso quando la chat history cambia (per sync cross-tab/componente). */
   "chat:historyChanged": { length: number };
   /** Apre la chat Coach pre-compilando l'input con un prompt contestuale

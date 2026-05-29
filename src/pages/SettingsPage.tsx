@@ -49,62 +49,6 @@ const PROVIDER_PLACEHOLDER: Record<ProviderId, string> = {
   ollama: "(non richiesta — locale)",
 };
 
-// 2026-05-18 — Toggle UI Coach V2 (beta).
-// Persisti in localStorage e emette evento per hot-switch senza refresh.
-function CoachV2Toggle() {
-  const [enabled, setEnabled] = useState<boolean>(() => {
-    try { return localStorage.getItem("ui-coach-v2") === "true"; } catch { return false; }
-  });
-  const toggle = () => {
-    const next = !enabled;
-    try { localStorage.setItem("ui-coach-v2", next ? "true" : "false"); } catch { /* ignore */ }
-    setEnabled(next);
-    events.emit("ui:coachV2Changed", { enabled: next });
-  };
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: "13px", fontWeight: 700, color: "#E2E8F0", marginBottom: "3px" }}>
-            Nuova UI Coach (V2)
-          </div>
-          <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5 }}>
-            Dashboard today-first con 4 tab (Oggi · Piano · Chat · Tools). Status corpo, CTL/ATL/TSB, sessione di oggi, alert in cima. Side-by-side con UI classica — puoi tornare indietro in qualsiasi momento.
-          </div>
-        </div>
-        <button
-          onClick={toggle}
-          role="switch"
-          aria-checked={enabled}
-          style={{
-            width: "52px", height: "30px",
-            background: enabled ? "linear-gradient(135deg, #22C55E 0%, #16A34A 100%)" : "#1A1A2E",
-            border: `1px solid ${enabled ? "#22C55E" : "rgba(255,255,255,0.15)"}`,
-            borderRadius: "999px",
-            position: "relative",
-            cursor: "pointer",
-            transition: "background 200ms",
-            flexShrink: 0,
-          }}
-        >
-          <div style={{
-            position: "absolute",
-            top: "3px",
-            left: enabled ? "24px" : "3px",
-            width: "22px", height: "22px",
-            background: "#FFF",
-            borderRadius: "50%",
-            transition: "left 200ms",
-          }} />
-        </button>
-      </div>
-      <div style={{ fontSize: "10px", color: "#64748B" }}>
-        Stato: <b style={{ color: enabled ? "#22C55E" : "#94A3B8" }}>{enabled ? "ATTIVO (V2)" : "DISATTIVO (V1 classica)"}</b>
-      </div>
-    </div>
-  );
-}
-
 export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding: () => void }) {
   const [provider, setProvider] = useState<ProviderId>("gemini");
   const [apiKey, setApiKeyState] = useState("");
@@ -873,16 +817,6 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
         </summary>
         <div style={{ padding: "12px 16px 16px" }}>
           <PlanDiagnosticPanel />
-        </div>
-      </details>
-
-      {/* ─── 2026-05-18 — Beta features (collapsible) ────────────────── */}
-      <details style={sectionDetailsStyle}>
-        <summary style={sectionSummaryStyle} aria-label="Beta features sperimentali">
-          <span style={{ flex: 1 }}>🧪 Beta features</span>
-        </summary>
-        <div style={{ padding: "12px 16px 16px" }}>
-          <CoachV2Toggle />
         </div>
       </details>
 

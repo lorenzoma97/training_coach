@@ -1,18 +1,16 @@
-// CoachPageV2 (2026-05-18 — opt-in beta via Settings toggle).
-// Today-first dashboard. 4 tab vs 6 di V1.
-// Coexists con CoachPage V1 (default). Routing in App.tsx legge flag.
+// CoachPageV2 — l'unico Coach (V1 rimossa, Sprint C 2026-05-27).
+// Today-first dashboard. 4 sub-tab.
 //
-// Design (da audit architectural review):
-//   1. 🏠 Oggi  — status dashboard (readiness, CTL/ATL/TSB, sessione oggi, alert)
-//   2. 📅 Piano — riusa TrainingPlanView V1 invariato
-//   3. 💬 Chat  — riusa CoachChat V1 invariato
-//   4. 📊 Tools — collapsibles: Zone FC, Obiettivi, Feed, Warm-up, Diagnostica
+// Design:
+//   1. 🏠 Oggi  — status (readiness, CTL/ATL/TSB), sessione oggi, feed coach, alert
+//   2. 📅 Piano — PlanTab: banner strategia macro + settimana proiettata (fusione)
+//   3. 💬 Chat  — CoachChat
+//   4. 📊 Tools — collapsibles: Zone FC, Warm-up/Recovery, Diagnostica
 
 import { useEffect, useState } from "react";
 import PlanTab from "../components/macroprogram/PlanTab";
 import CoachFeedList from "../components/CoachFeedList";
 import CoachChat from "../components/CoachChat";
-import GoalsEditor from "../components/GoalsEditor";
 import ZonesCard from "../components/ZonesCard";
 import ZonesAnalytics from "../components/ZonesAnalytics";
 import FCMaxTestSection from "../components/FCMaxTestSection";
@@ -320,6 +318,13 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
         onGoToPlan={onGoToPlan}
         onSessionUpdated={() => setRefreshKey(k => k + 1)}
       />
+
+      {/* Sprint C: Feed coach — promosso da collapsible in Tools a card in Oggi.
+          "Cosa ti ha detto il coach": logico vederlo all'apertura. */}
+      <div style={cardStyle}>
+        <div style={labelStyle}>📬 Dal coach</div>
+        <CoachFeedList />
+      </div>
     </div>
   );
 }
@@ -845,19 +850,8 @@ function ToolsTab() {
         </div>
       </details>
 
-      <details style={sectionDetailsStyle}>
-        <summary style={sectionSummaryStyle}><span style={{ flex: 1 }}>🎯 Obiettivi (sola lettura — modifica in Settings)</span></summary>
-        <div style={{ padding: "0 16px 16px" }}>
-          <GoalsEditor variant="full" />
-        </div>
-      </details>
-
-      <details style={sectionDetailsStyle}>
-        <summary style={sectionSummaryStyle}><span style={{ flex: 1 }}>📬 Feed coach</span></summary>
-        <div style={{ padding: "0 16px 16px" }}>
-          <CoachFeedList />
-        </div>
-      </details>
+      {/* Sprint C: Obiettivi rimossi da qui — ora vivono SOLO in Settings (editabili).
+          Feed coach rimosso da qui — ora è una card in cima al tab Oggi. */}
 
       <details style={sectionDetailsStyle}>
         <summary style={sectionSummaryStyle}><span style={{ flex: 1 }}>🧘 Mobility & Recovery</span></summary>
