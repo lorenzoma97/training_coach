@@ -36,3 +36,33 @@ export type SemanticToken = "primary" | "info" | "attention" | "success" | "dang
 export function withAlpha(hex: string, alpha2: string): string {
   return `${hex}${alpha2}`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scala SPAZIATURE / RAGGI / TIPOGRAFIA (skill product-ui-system, 2026-06-09)
+// Regola: gap/padding/raggi/testo SOLO da qui → ritmo coerente, niente numeri
+// sparsi (prima: 6/10/14/18 misti, testo 10-13px ovunque = aspetto "denso").
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Ritmo spaziale 4/8px. */
+export const SPACE = {
+  xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32,
+} as const;
+
+/** Raggi: controlli, card, pill. */
+export const RADIUS = {
+  control: 8, card: 14, pill: 999,
+} as const;
+
+/**
+ * Scala tipografica con RUOLI espliciti (title > section > body > secondary >
+ * label). Spread direttamente in `style`. Corpo a 15px / 1.55 per leggibilità
+ * (prima molto testo a 12-13px). Le label restano piccole ma con tracking.
+ */
+export const TYPE = {
+  title:      { fontSize: "20px", fontWeight: 700, lineHeight: 1.25 },
+  section:    { fontSize: "15px", fontWeight: 700, lineHeight: 1.35 },
+  body:       { fontSize: "15px", fontWeight: 400, lineHeight: 1.55 },
+  bodyStrong: { fontSize: "15px", fontWeight: 600, lineHeight: 1.5 },
+  secondary:  { fontSize: "13px", fontWeight: 500, lineHeight: 1.5 },
+  label:      { fontSize: "11px", fontWeight: 700, lineHeight: 1.3, letterSpacing: "0.08em", textTransform: "uppercase" },
+} as const;

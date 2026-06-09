@@ -18,6 +18,7 @@ import { loadActiveMacroProgram, computeMacroProgress, setMacroStartDate, monday
 import { lookupExerciseHybrid } from "../../lib/macroprogram/customCatalog";
 import type { MacroProgram, MacroProgramSession } from "../../lib/types/macroprogram";
 import { events } from "../../lib/events";
+import { TOKENS, TYPE, SPACE, RADIUS } from "../../lib/theme";
 
 const DAY_ORDER = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const;
 
@@ -175,28 +176,29 @@ function ProgramHeader({
   return (
     <div style={{
       background: "linear-gradient(135deg, #16213E 0%, #1E2746 100%)",
-      border: "1px solid #E8553A55",
-      borderRadius: "14px", padding: "14px 16px",
-      display: "flex", flexDirection: "column", gap: "10px",
+      border: `1px solid ${TOKENS.primary}55`,
+      borderRadius: `${RADIUS.card}px`, padding: `${SPACE.lg}px`,
+      display: "flex", flexDirection: "column", gap: `${SPACE.md}px`,
     }}>
-      {/* Identità */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-        <div style={{ fontSize: "10px", color: "#E8553A", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" }}>
-          📋 Programma
+      {/* Identità — niente emoji come icona (skill product-ui-system), titolo
+          alla scala TYPE.title per gerarchia chiara invece dei 15px densi. */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: `${SPACE.sm}px` }}>
+        <div style={{ ...TYPE.label, color: TOKENS.primary }}>
+          Programma
         </div>
         <button
           onClick={onOpenNarrative}
           style={{
-            padding: "4px 8px", background: "transparent", border: "none",
-            color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
+            padding: `${SPACE.xs}px ${SPACE.sm}px`, background: "transparent", border: "none",
+            ...TYPE.secondary, color: TOKENS.neutral, cursor: "pointer",
             textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: "3px",
           }}
         >Narrativa →</button>
       </div>
-      <div style={{ fontSize: "15px", fontWeight: 700, color: "#E2E8F0", lineHeight: 1.3 }}>
+      <div style={{ ...TYPE.title, color: TOKENS.text }}>
         {program.metadata.title}
       </div>
-      <div style={{ fontSize: "12px", color: "#0891B2", fontWeight: 600 }}>{statusLine}</div>
+      <div style={{ ...TYPE.secondary, color: TOKENS.info, fontWeight: 600 }}>{statusLine}</div>
 
       {/* Timeline chip navigabili */}
       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
