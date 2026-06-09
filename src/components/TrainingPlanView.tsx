@@ -15,7 +15,6 @@ import { getCurrentReadiness } from "../lib/coach/readinessScoring";
 import { loadActiveMacroProgram } from "../lib/macroprogram/storage";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { savePlanWithHistory, getPlanHistory, getNextPlan, saveNextPlan, clearNextPlan, maybePromoteNextPlan } from "../lib/coach/planHistory";
-import ZonesCard from "./ZonesCard";
 import { computeZonesContext, inferSessionZone, stripInlineHRRange, type ZonesResult } from "../lib/coach/zones";
 import type { PlannedSession, PlannedExercise } from "../lib/types";
 import { useNotify } from "./Notification";
@@ -288,7 +287,25 @@ export default function TrainingPlanView() {
       getNextPlan(),
     ]);
     if (!mountedRef.current) return;
-    setPlan(p);
+
+    // Sprint M (2026-06-09): AUTO-PROIEZIONE nel load path — il fix-radice del
+    // disallineamento header↔piano. Se c'è un macro attivo e il piano salvato
+    // NON è della settimana corrente del macro (stale), riproietta
+    // deterministicamente (no LLM): header (settimana corrente) e piano
+    // combaciano SEMPRE → niente falso "PIANO SCADUTO" né banner stale/drift
+    // che ne derivavano. Se la settimana combacia, si tiene il piano salvato
+    // (preserva gli adattamenti utente già applicati questa settimana).
+    let effectivePlan = p;
+    if (profile) {
+      const projected = await tryProjectMacroPlan(profile).catch(() => null);
+      if (projected && p?.sourceMacro?.weekNumber !== projected.sourceMacro?.weekNumber) {
+        effectivePlan = projected;
+        await savePlanWithHistory(projected).catch(() => { /* best-effort */ });
+      }
+    }
+
+    if (!mountedRef.current) return;
+    setPlan(effectivePlan);
     setCurrentProfile(profile);
     setCurrentGoals(goals);
     setRecentDays(days);
@@ -1149,8 +1166,9 @@ export default function TrainingPlanView() {
         </div>
       )}
 
-      {/* Z2 in cima per avere il range bpm sempre visibile */}
-      <ZonesCard compact highlightZone={2} />
+      {/* Sprint M: ZonesCard Z2 rimossa dal tab Piano — le zone-target sono già
+          nei chip inline di ogni sessione cardio, e la reference Z1-Z5 completa
+          vive in Coach → Tools → Zone FC. Una sola fonte, meno doppioni. */}
 
       {/* Razionale piano — collassato di default (Sprint L: riduce l'altezza
           prima delle sessioni; chi vuole il dettaglio lo apre). */}
