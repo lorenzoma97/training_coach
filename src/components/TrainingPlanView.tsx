@@ -23,6 +23,7 @@ import { parseISODateLocal } from "../lib/dateFormatters";
 import { resolveSubstitution } from "../lib/coach/equipmentSubstitutor";
 import { normalizeEquipmentTags } from "../lib/equipment/equipmentNormalizer";
 import { EXERCISES } from "../lib/catalog/exercises";
+import { lookupExerciseHybrid } from "../lib/macroprogram/customCatalog";
 
 const ADAPT_QUICK_PROMPTS = [
   "Più intenso",
@@ -32,16 +33,44 @@ const ADAPT_QUICK_PROMPTS = [
   "Non posso allenarmi giovedì",
 ];
 
+/** Nome leggibile di un esercizio dal catalog (hardcoded + custom). Fallback id. */
+function exerciseName(id: string): string {
+  return lookupExerciseHybrid(id)?.name ?? EXERCISES.find(e => e.id === id)?.name ?? id;
+}
+
+/** Formatta il recupero: 120s → "2'", 90s → "1'30\"", 45s → "45\"". */
+function formatRest(sec: number | undefined): string {
+  if (!sec || sec <= 0) return "—";
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m === 0) return `${s}"`;
+  return s === 0 ? `${m}'` : `${m}'${s}"`;
+}
+
+/** Intensità prescritta: RPE / carico / %1RM / RIR. "—" se nessuna. */
+function intensityLabel(ex: PlannedExercise): string {
+  if (typeof ex.weight_kg === "number") return `${ex.weight_kg}kg`;
+  if (typeof ex.pct1RM === "number") return `${ex.pct1RM}%1RM`;
+  if (typeof ex.rpe_target === "number") return `RPE ${ex.rpe_target}`;
+  if (typeof ex.rir_target === "number") return `RIR ${ex.rir_target}`;
+  return "—";
+}
+
+const METRIC_CHIP: React.CSSProperties = {
+  fontSize: "11px", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+  padding: "3px 8px", borderRadius: "6px",
+  background: "#0F172A", border: "1px solid rgba(255,255,255,0.08)", color: "#CBD5E1",
+};
+
 /**
- * Wave 4.3 — Sub-componente per il render della lista esercizi forza con
- * SubstitutionBadge wired. Estratto da inline IIFE per evitare un quirk del
- * type checker su JSX dentro `{cond && (() => return JSX)()}`.
+ * Wave 4.3 → Sprint J (2026-06-09) — render esercizi forza STILE SCHEDA DA
+ * PALESTRA: una riga-card per esercizio con numero, nome leggibile (non l'id),
+ * chip Serie×Reps / Recupero / Intensità, e una riga nota tecnica (cue, es.
+ * tempo eccentrico dal macro). Mantiene SubstitutionBadge (equipment) + il
+ * badge rosso "non eseguibile".
  *
- * Pure render: per ogni `PlannedExercise.exerciseId` chiama `resolveSubstitution`
- * (pure, no async) e mostra:
- *  - hop=0   → solo nome esercizio
- *  - hop>0   → nome resolved + SubstitutionBadge ambra
- *  - null    → badge errore rosso "esercizio non eseguibile"
+ * resolveSubstitution è pure: hop=0 esegui com'è, hop>0 nome sostituito + badge,
+ * null = equipment insufficiente anche dopo 3 sostituzioni.
  */
 function ExercisesList({
   exercises,
@@ -50,84 +79,93 @@ function ExercisesList({
   exercises: PlannedExercise[];
   availableEquipment: ReturnType<typeof normalizeEquipmentTags>;
 }) {
-  // Collapsed di default: la lista esercizi pesa 30-100px per sessione forza.
-  // L'utente la apre quando deve guardarla in palestra. Touch target 44px sul
-  // summary garantito dal padding.
+  // Aperta di default: in palestra serve vederla subito. Touch target garantito.
   return (
-    <details style={{ marginTop: "8px" }}>
+    <details open style={{ marginTop: "8px" }}>
       <summary
         style={{
-          cursor: "pointer",
-          fontSize: "12px",
-          fontWeight: 700,
-          color: "#94A3B8",
-          padding: "6px 0",
-          minHeight: "32px",
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          listStyle: "none",
-          userSelect: "none",
+          cursor: "pointer", fontSize: "11px", fontWeight: 800,
+          color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase",
+          padding: "6px 0", minHeight: "32px",
+          display: "flex", alignItems: "center", gap: "6px",
+          listStyle: "none", userSelect: "none",
         }}
       >
-        <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
-        Vedi esercizi ({exercises.length})
+        <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▾</span>
+        Scheda esercizi ({exercises.length})
       </summary>
-      <ul style={{
-        margin: "6px 0 0", padding: 0, listStyle: "none",
-        display: "flex", flexDirection: "column", gap: "4px",
-      }}>
-      {exercises.map((ex, exIdx) => {
-        const result = resolveSubstitution(ex.exerciseId, availableEquipment, EXERCISES);
-        const repsLabel = ex.repsTarget.min === ex.repsTarget.max
-          ? `${ex.repsTarget.min}`
-          : `${ex.repsTarget.min}-${ex.repsTarget.max}`;
-        return (
-          <li
-            key={`${ex.exerciseId}-${exIdx}`}
-            style={{
-              fontSize: "12px", color: "#CBD5E1",
-              display: "flex", flexWrap: "wrap",
-              alignItems: "center", gap: "6px",
-              padding: "4px 0",
-            }}
-          >
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#94A3B8" }}>
-              {ex.plannedSets}x{repsLabel}
-            </span>
-            <span style={{ fontWeight: 600 }}>
-              {result && result.hop > 0 ? result.resolvedId : ex.exerciseId}
-            </span>
-            {result && result.hop > 0 && (
-              <SubstitutionBadge
-                original={result.originalId}
-                resolved={result.resolvedId}
-                reason={result.reason}
-              />
-            )}
-            {result === null && (
-              <span
-                role="alert"
-                title="Esercizio non eseguibile: il tuo profilo equipment non e' sufficiente nemmeno dopo 3 sostituzioni."
-                style={{
-                  backgroundColor: "#fee2e2", // red-100
-                  color: "#7f1d1d",           // red-900
-                  border: "1px solid #fca5a5", // red-300
-                  padding: "2px 8px",
-                  borderRadius: "4px",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  marginLeft: "6px",
-                  verticalAlign: "middle",
-                }}
-              >
-                esercizio non eseguibile, profilo equipment insufficiente
-              </span>
-            )}
-          </li>
-        );
-      })}
-      </ul>
+      <div style={{ margin: "8px 0 0", display: "flex", flexDirection: "column", gap: "8px" }}>
+        {exercises.map((ex, exIdx) => {
+          const result = resolveSubstitution(ex.exerciseId, availableEquipment, EXERCISES);
+          const displayId = result && result.hop > 0 ? result.resolvedId : ex.exerciseId;
+          const name = exerciseName(displayId);
+          const repsLabel = ex.repsTarget.min === ex.repsTarget.max
+            ? `${ex.repsTarget.min}`
+            : `${ex.repsTarget.min}-${ex.repsTarget.max}`;
+          const intensity = intensityLabel(ex);
+          return (
+            <div
+              key={`${ex.exerciseId}-${exIdx}`}
+              style={{
+                background: "#13203B", border: "1px solid rgba(255,255,255,0.06)",
+                borderRadius: "10px", padding: "10px 12px",
+                display: "flex", flexDirection: "column", gap: "8px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+                <span style={{
+                  fontSize: "11px", fontWeight: 800, color: "#64748B",
+                  fontFamily: "'JetBrains Mono', monospace", minWidth: "16px",
+                }}>{exIdx + 1}</span>
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "#E2E8F0", lineHeight: 1.3, flex: 1 }}>
+                  {name}
+                </span>
+                {result && result.hop > 0 && (
+                  <SubstitutionBadge
+                    original={result.originalId}
+                    resolved={result.resolvedId}
+                    reason={result.reason}
+                  />
+                )}
+              </div>
+
+              {/* Chip metriche stile scheda */}
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", paddingLeft: "24px" }}>
+                <span style={{ ...METRIC_CHIP, color: "#38BDF8", borderColor: "#38BDF833" }}>
+                  {ex.plannedSets}×{repsLabel}
+                </span>
+                <span style={METRIC_CHIP} title="Recupero tra le serie">rec {formatRest(ex.rest_sec)}</span>
+                {intensity !== "—" && (
+                  <span style={{ ...METRIC_CHIP, color: "#F59E0B", borderColor: "#F59E0B33" }} title="Intensità target">
+                    {intensity}
+                  </span>
+                )}
+              </div>
+
+              {/* Nota tecnica (cue): tempo eccentrico / pausa dal macro, ecc. */}
+              {ex.cue && (
+                <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.4, paddingLeft: "24px" }}>
+                  {ex.cue}
+                </div>
+              )}
+
+              {result === null && (
+                <div
+                  role="alert"
+                  title="Esercizio non eseguibile: il tuo profilo equipment non e' sufficiente nemmeno dopo 3 sostituzioni."
+                  style={{
+                    marginLeft: "24px",
+                    backgroundColor: "#fee2e2", color: "#7f1d1d", border: "1px solid #fca5a5",
+                    padding: "4px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 600,
+                  }}
+                >
+                  esercizio non eseguibile, profilo equipment insufficiente
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </details>
   );
 }
