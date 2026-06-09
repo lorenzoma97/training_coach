@@ -50,6 +50,20 @@ export interface WeekEvent {
 // Diff vincolato (output dell'adattatore)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Sostituto LEGGERO di una sessione intera: l'attività cambia (tipo/durata/zona)
+ * ma il giorno resta. Usato quando una sessione non è fattibile (es. partita di
+ * calcio impossibile → corsa a intervalli equivalente). Contenuto descritto in
+ * `details` (no esercizi/intervalli strutturati: l'utente la esegue ad hoc).
+ */
+export interface SubSession {
+  type: string;
+  subtype?: string;
+  duration_min: number;
+  zone?: 1 | 2 | 3 | 4 | 5;
+  details?: string;
+}
+
 export type AdaptationOp =
   /** Sposta la sessione di `day` su `toDay` (riprogrammazione per impegno). */
   | { op: "move"; day: DayLabel; toDay: DayLabel; reason: string }
@@ -59,8 +73,12 @@ export type AdaptationOp =
   | { op: "scaleIntensity"; day: DayLabel; deltaZone: number; reason: string }
   /** Sostituisce un esercizio (es. dolore). toExerciseId deve esistere. */
   | { op: "swapExercise"; day: DayLabel; exerciseId: string; toExerciseId: string; reason: string }
+  /** Sostituisce l'INTERA sessione con un'attività equivalente (cambia tipo). */
+  | { op: "substituteSession"; day: DayLabel; replacement: SubSession; reason: string }
   /** Rimuove la sessione (riposo forzato). */
   | { op: "dropSession"; day: DayLabel; reason: string };
+
+const VALID_SESSION_TYPES = ["corsa", "forza_gambe", "forza_upper", "sport", "mobilita"] as const;
 
 export interface AdaptationDiff {
   ops: AdaptationOp[];
@@ -215,7 +233,7 @@ export function applyAdaptationDiff(
 
   // Ordina le op per priorita' deterministica.
   const ORDER: Record<AdaptationOp["op"], number> = {
-    dropSession: 0, move: 1, scaleVolume: 2, scaleIntensity: 3, swapExercise: 4,
+    dropSession: 0, substituteSession: 1, move: 2, scaleVolume: 3, scaleIntensity: 4, swapExercise: 5,
   };
   const ops = [...(diff.ops ?? [])].sort((a, b) => ORDER[a.op] - ORDER[b.op]);
 
@@ -270,6 +288,36 @@ export function applyAdaptationDiff(
         }
         byDay.set(op.day, scaleSessionIntensity(target!, d, rpeMax));
         applied.push(`${op.day}: intensita' ${d > 0 ? "+" : ""}${d} (${op.reason}).`);
+        break;
+      }
+      case "substituteSession": {
+        const r = op.replacement;
+        if (!r || typeof r !== "object") { rejected.push({ op, reason: "replacement mancante" }); break; }
+        if (!(VALID_SESSION_TYPES as readonly string[]).includes(r.type)) {
+          rejected.push({ op, reason: `tipo sessione non valido: ${r.type}` });
+          break;
+        }
+        if (!Number.isFinite(r.duration_min)) { rejected.push({ op, reason: "durata sostituto non valida" }); break; }
+        // Guardrail: durata entro [0.5, 1.3]× l'originale (non stravolge il carico).
+        const origDur = target!.duration_min || r.duration_min;
+        const dur = Math.round(clamp(r.duration_min, origDur * 0.5, origDur * 1.3));
+        let zone = r.zone;
+        if (typeof zone === "number") {
+          if (ctx.readinessBand === "low" && zone > 3) zone = 3;
+          zone = clamp(zone, 1, 5) as 1 | 2 | 3 | 4 | 5;
+        }
+        const newSession: PlannedSession = {
+          day: op.day,
+          type: r.type,
+          subtype: r.subtype,
+          duration_min: dur,
+          details: r.details ?? "",
+          rationale: `Sostituzione sessione: ${op.reason}`,
+          readinessAdjusted: true,
+        };
+        if (typeof zone === "number") newSession.zone = zone;
+        byDay.set(op.day, newSession);
+        applied.push(`${op.day}: ${target!.type} → ${r.type} ${dur}min (${op.reason}).`);
         break;
       }
       case "swapExercise": {
@@ -361,6 +409,44 @@ export function gatherWeekEvents(input: {
   return events;
 }
 
+/**
+ * Alternative CURATE (deterministiche, no LLM) per sostituire una sessione che
+ * non si può fare. Per tipo di sessione: stesso stimolo, durata simile. Il menu
+ * UI mostra queste + "Riposo" (dropSession) + "Altro" (LLM con guardrail).
+ *
+ * Ritorna [] per tipi senza alternative curate (resta solo Altro/Riposo).
+ */
+export function sessionAlternatives(s: PlannedSession): Array<{ label: string; op: AdaptationOp }> {
+  const day = s.day as DayLabel;
+  const dur = s.duration_min || 45;
+  const mk = (label: string, r: SubSession): { label: string; op: AdaptationOp } => ({
+    label,
+    op: { op: "substituteSession", day, replacement: r, reason: `alternativa: ${label}` },
+  });
+
+  if (s.type === "sport") {
+    return [
+      mk("Partitella 5v5 / small-sided", { type: "sport", subtype: "Partitella", duration_min: dur, details: "Small-sided game (5v5 o meno): stesso stimolo tecnico e di condizionamento della partita." }),
+      mk("Corsa a intervalli equivalente", { type: "corsa", duration_min: Math.min(dur, 50), zone: 4, details: "Riscaldamento 10' + 6×3' in Z4 (rec 2' Z1) + defaticamento: simula gli scatti ripetuti della partita." }),
+      mk("Circuito condizionamento", { type: "forza_gambe", subtype: "Circuito Misto", duration_min: Math.min(dur, 45), details: "Circuito metabolico full-body 3-4 giri (squat, affondi, burpee, plank): condizionamento generale." }),
+    ];
+  }
+  if (s.type === "corsa") {
+    return [
+      mk("Corsa facile Z2", { type: "corsa", subtype: "Fondo Lento", duration_min: dur, zone: 2, details: "Fondo lento conversazionale in Z2, passo libero." }),
+      mk("Cardio basso impatto", { type: "sport", subtype: "Cardio", duration_min: dur, zone: 2, details: "Cyclette / ellittica / nuoto stesso tempo in Z2-3: cardio senza impatto." }),
+      mk("Camminata veloce + mobilità", { type: "mobilita", duration_min: Math.min(dur, 35), details: "Camminata veloce + 10' mobilità articolare: recupero attivo." }),
+    ];
+  }
+  if (s.type === "forza_gambe" || s.type === "forza_upper") {
+    return [
+      mk("Versione a corpo libero", { type: s.type, duration_min: dur, details: "Stessa sessione a corpo libero (squat, affondi, push-up, plank, hip thrust): se non hai i pesi." }),
+      mk("Mobilità + core", { type: "mobilita", duration_min: Math.min(dur, 30), details: "Mobilità articolare + core (plank, dead bug, bird dog)." }),
+    ];
+  }
+  return [];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GENERAZIONE DIFF VIA GEMINI (modalità adattatore)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -369,13 +455,20 @@ export function gatherWeekEvents(input: {
 // grossolana; la VALIDAZIONE SEMANTICA (magnitudine, double-book, catalog) la
 // fa applyAdaptationDiff per-op. Op malformate → rifiutate a valle, non crash.
 const opLooseSchema = z.object({
-  op: z.enum(["move", "scaleVolume", "scaleIntensity", "swapExercise", "dropSession"]),
+  op: z.enum(["move", "scaleVolume", "scaleIntensity", "swapExercise", "substituteSession", "dropSession"]),
   day: z.string(),
   toDay: z.string().optional(),
   factor: z.coerce.number().optional(),
   deltaZone: z.coerce.number().optional(),
   exerciseId: z.string().optional(),
   toExerciseId: z.string().optional(),
+  replacement: z.object({
+    type: z.string(),
+    subtype: z.string().optional(),
+    duration_min: z.coerce.number(),
+    zone: z.coerce.number().optional(),
+    details: z.string().optional(),
+  }).optional(),
   reason: z.string().optional().default(""),
 });
 const diffLooseSchema = z.object({
@@ -390,6 +483,7 @@ const DIFF_SCHEMA_HINT = `
     { "op": "scaleVolume", "day": "lun", "factor": 0.8, "reason": "breve" },
     { "op": "scaleIntensity", "day": "mer", "deltaZone": -1, "reason": "breve" },
     { "op": "swapExercise", "day": "lun", "exerciseId": "id-attuale", "toExerciseId": "id-catalog", "reason": "breve" },
+    { "op": "substituteSession", "day": "dom", "replacement": { "type": "corsa", "duration_min": 45, "zone": 4, "details": "6x3' Z4 rec 2', simula gli scatti ripetuti della partita" }, "reason": "breve" },
     { "op": "dropSession", "day": "ven", "reason": "breve" }
   ],
   "summary": "1 frase sintetica delle modifiche"
@@ -455,6 +549,7 @@ export async function generateAdaptationDiff(input: {
     "- scaleVolume {day,factor 0.5-1.1}: riduci/aumenta leggermente volume (durata+set) per fatica, aderenza bassa, recupero.",
     "- scaleIntensity {day,deltaZone -2..+1}: abbassa (o alza max +1) l'intensità (zone cardio / RPE forza). L'upgrade è VIETATO se readiness bassa.",
     "- swapExercise {day,exerciseId,toExerciseId}: sostituisci un esercizio per DOLORE. toExerciseId DEVE essere un id realmente esistente nel catalog; se non sei certo, usa scaleVolume o dropSession.",
+    "- substituteSession {day,replacement}: sostituisci l'INTERA sessione con un'attività equivalente quando quella pianificata non è fattibile (es. partita di calcio impossibile). replacement = {type, duration_min, zone?, details}. REGOLA: stesso STIMOLO della fase (se la partita allena il condizionamento, proponi intervalli/circuito che allenano il condizionamento), durata simile (±25%), descrivi il contenuto in details.",
     "- dropSession {day}: rimuovi una sessione (riposo forzato). Massimo 1.",
     "",
     "VINCOLI NON VIOLABILI:",

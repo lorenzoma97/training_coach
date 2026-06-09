@@ -3,7 +3,7 @@
 // magnitudine limitata) e che le op fuori vincolo vengano rifiutate.
 
 import { describe, it, expect } from "vitest";
-import { applyAdaptationDiff, type AdaptationDiff, type AdaptContext } from "../macroAdapter";
+import { applyAdaptationDiff, sessionAlternatives, type AdaptationDiff, type AdaptContext } from "../macroAdapter";
 import type { PlannedSession } from "../../types";
 import type { MacroProgram } from "../../types/macroprogram";
 
@@ -203,5 +203,68 @@ describe("applyAdaptationDiff — dropSession + invarianti", () => {
     const r = applyAdaptationDiff(week(), { ops: [], summary: "" }, baseCtx);
     expect(r.applied).toHaveLength(0);
     expect(r.sessions).toHaveLength(3);
+  });
+});
+
+// ─── substituteSession ────────────────────────────────────────────────────────
+
+describe("applyAdaptationDiff — substituteSession", () => {
+  const sportWeek = (): PlannedSession[] => [
+    { day: "dom", type: "sport", subtype: "Partita", duration_min: 90, details: "partita", rationale: "macro" },
+  ];
+
+  it("sostituisce la partita con una corsa equivalente", () => {
+    const diff: AdaptationDiff = {
+      ops: [{ op: "substituteSession", day: "dom", replacement: { type: "corsa", duration_min: 50, zone: 4, details: "6x3' Z4" }, reason: "niente campo" }],
+      summary: "",
+    };
+    const r = applyAdaptationDiff(sportWeek(), diff, baseCtx);
+    const s = r.sessions[0];
+    expect(s.type).toBe("corsa");
+    expect(s.zone).toBe(4);
+    expect(s.duration_min).toBe(50);
+    expect(s.day).toBe("dom"); // giorno preservato
+  });
+
+  it("clampa la durata entro 1.3x l'originale", () => {
+    const diff: AdaptationDiff = {
+      ops: [{ op: "substituteSession", day: "dom", replacement: { type: "corsa", duration_min: 300 }, reason: "x" }],
+      summary: "",
+    };
+    const r = applyAdaptationDiff(sportWeek(), diff, baseCtx);
+    expect(r.sessions[0].duration_min).toBe(Math.round(90 * 1.3)); // 117
+  });
+
+  it("cappa la zona a 3 se readiness bassa", () => {
+    const diff: AdaptationDiff = {
+      ops: [{ op: "substituteSession", day: "dom", replacement: { type: "corsa", duration_min: 50, zone: 5 }, reason: "x" }],
+      summary: "",
+    };
+    const r = applyAdaptationDiff(sportWeek(), diff, { ...baseCtx, readinessBand: "low" });
+    expect(r.sessions[0].zone).toBe(3);
+  });
+
+  it("rifiuta tipo sessione non valido", () => {
+    const diff: AdaptationDiff = {
+      ops: [{ op: "substituteSession", day: "dom", replacement: { type: "yoga-strano", duration_min: 50 }, reason: "x" }],
+      summary: "",
+    };
+    const r = applyAdaptationDiff(sportWeek(), diff, baseCtx);
+    expect(r.applied).toHaveLength(0);
+    expect(r.rejected[0].reason).toMatch(/tipo sessione non valido/);
+  });
+});
+
+describe("sessionAlternatives", () => {
+  it("propone alternative per una sessione sport (partita)", () => {
+    const alts = sessionAlternatives({ day: "dom", type: "sport", duration_min: 90, details: "", rationale: "" });
+    expect(alts.length).toBeGreaterThanOrEqual(2);
+    expect(alts.every(a => a.op.op === "substituteSession")).toBe(true);
+    expect(alts.some(a => a.label.toLowerCase().includes("intervalli"))).toBe(true);
+  });
+
+  it("nessuna alternativa curata per mobilita", () => {
+    const alts = sessionAlternatives({ day: "lun", type: "mobilita", duration_min: 30, details: "", rationale: "" });
+    expect(alts).toHaveLength(0);
   });
 });

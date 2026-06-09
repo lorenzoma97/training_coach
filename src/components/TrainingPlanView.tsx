@@ -7,8 +7,12 @@ import { planStateHash } from "../lib/coach/planValidator";
 import { buildCoachContext, getLastNDays } from "../lib/diaryContext";
 import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach/planGenerator";
 import { tryProjectMacroPlan, adaptMacroWeek } from "../lib/coach/macroWeekPlan";
-import { gatherWeekEvents, type WeekEvent } from "../lib/coach/macroAdapter";
+import {
+  gatherWeekEvents, applyAdaptationDiff, generateAdaptationDiff, sessionAlternatives,
+  type WeekEvent, type AdaptationOp, type AdaptContext, type ApplyResult,
+} from "../lib/coach/macroAdapter";
 import { getCurrentReadiness } from "../lib/coach/readinessScoring";
+import { loadActiveMacroProgram } from "../lib/macroprogram/storage";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { savePlanWithHistory, getPlanHistory, getNextPlan, saveNextPlan, clearNextPlan, maybePromoteNextPlan } from "../lib/coach/planHistory";
 import ZonesCard from "./ZonesCard";
@@ -60,6 +64,12 @@ const METRIC_CHIP: React.CSSProperties = {
   fontSize: "11px", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
   padding: "3px 8px", borderRadius: "6px",
   background: "#0F172A", border: "1px solid rgba(255,255,255,0.08)", color: "#CBD5E1",
+};
+
+const ALT_BTN_STYLE: React.CSSProperties = {
+  textAlign: "left", padding: "10px 12px", background: "#16213E",
+  border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+  color: "#E2E8F0", fontSize: "12px", fontWeight: 600, cursor: "pointer",
 };
 
 /**
@@ -255,6 +265,12 @@ export default function TrainingPlanView() {
   // + dismiss del banner "eventi rilevati". Il banner ricompare al cambio piano.
   const [readinessBand, setReadinessBand] = useState<"low" | "moderate" | "high" | undefined>(undefined);
   const [eventsBannerDismissed, setEventsBannerDismissed] = useState(false);
+
+  // Sprint K (2026-06-09): menu "sostituisci sessione" per-sessione (quale è
+  // aperto) + stato del path "Altro" (LLM con guardrail).
+  const [subMenuKey, setSubMenuKey] = useState<string | null>(null);
+  const [subAltroOpen, setSubAltroOpen] = useState(false);
+  const [subAltroText, setSubAltroText] = useState("");
 
   const load = async () => {
     // Auto-promote prima di caricare: se la settimana del preview è iniziata,
@@ -805,6 +821,76 @@ export default function TrainingPlanView() {
     }
     if (!mountedRef.current) return;
     setAdapting(false);
+  };
+
+  // Sprint K (2026-06-09): sostituzione di una SINGOLA sessione (es. partita che
+  // non puoi fare). Applica le op al piano CORRENTE (no re-proiezione → preserva
+  // gli altri adattamenti della settimana). Deterministico per il menu curato.
+  const persistAdapted = async (res: ApplyResult): Promise<boolean> => {
+    if (!plan?.weeks[0]) return false;
+    if (res.applied.length === 0) {
+      setAdaptError("Nessuna modifica applicata" + (res.rejected[0] ? `: ${res.rejected[0].reason}` : "."));
+      return false;
+    }
+    const next: TrainingPlan = {
+      ...plan,
+      weeks: [{ ...plan.weeks[0], sessions: res.sessions }],
+      sourceMacro: plan.sourceMacro
+        ? { ...plan.sourceMacro, adaptations: [...plan.sourceMacro.adaptations, ...res.applied] }
+        : plan.sourceMacro,
+    };
+    await savePlanWithHistory(next);
+    events.emit("plan:updated", { at: new Date().toISOString() });
+    if (!mountedRef.current) return true;
+    setPlan(next);
+    setSubMenuKey(null); setSubAltroOpen(false); setSubAltroText("");
+    showSuccess("✓ Sessione sostituita", res.applied.join(" "));
+    return true;
+  };
+
+  // Menu curato (deterministico, no LLM): applica un'alternativa pre-vetted.
+  const handleSubstitute = async (ops: AdaptationOp[]) => {
+    if (!plan?.weeks[0] || adapting || regenerating) return;
+    setAdapting(true); setAdaptError(null);
+    try {
+      const ctx: AdaptContext = { program: null, weekNumber: plan.sourceMacro?.weekNumber ?? 1, readinessBand };
+      const res = applyAdaptationDiff(plan.weeks[0].sessions, { ops, summary: "" }, ctx);
+      await persistAdapted(res);
+    } catch (e) {
+      if (mountedRef.current) setAdaptError(translateGeminiError(e));
+    }
+    if (mountedRef.current) setAdapting(false);
+  };
+
+  // "Altro": Gemini propone una substituteSession con guardrail (stesso stimolo
+  // della fase, durata simile), validata da applyAdaptationDiff.
+  const handleSubstituteAltro = async (s: PlannedSession) => {
+    if (!plan?.weeks[0] || adapting || regenerating) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setAdaptError("Offline. Riconnettiti per chiedere un'alternativa."); return;
+    }
+    setAdapting(true); setAdaptError(null);
+    try {
+      const profile = await getJSON<UserProfile | null>("user-profile", null);
+      const program = await loadActiveMacroProgram().catch(() => null);
+      if (!program) throw new Error("Programma non disponibile.");
+      const weekNumber = plan.sourceMacro?.weekNumber ?? 1;
+      const note = subAltroText.trim();
+      const evt: WeekEvent = {
+        kind: "user_request",
+        day: s.day as WeekEvent["day"],
+        detail: `Non posso fare la sessione di ${s.day} (${s.type}${s.subtype ? ` ${s.subtype}` : ""}). ${note || "Proponi un'alternativa equivalente."} Usa substituteSession con lo stesso stimolo della fase e durata simile.`,
+      };
+      const diff = await generateAdaptationDiff({ sessions: plan.weeks[0].sessions, events: [evt], program, weekNumber, profile, readinessBand });
+      const ops = (diff.ops as AdaptationOp[]).filter(o => o.day === s.day);
+      if (ops.length === 0) throw new Error("Il coach non ha proposto un'alternativa applicabile. Riprova con piu' dettagli.");
+      const ctx: AdaptContext = { program, weekNumber, readinessBand };
+      const res = applyAdaptationDiff(plan.weeks[0].sessions, { ops, summary: "" }, ctx);
+      await persistAdapted(res);
+    } catch (e) {
+      if (mountedRef.current) setAdaptError(translateGeminiError(e));
+    }
+    if (mountedRef.current) setAdapting(false);
   };
 
   const regenerateBtn = (
@@ -1825,7 +1911,59 @@ export default function TrainingPlanView() {
                     >
                       💬 Chiedi al coach
                     </button>
+                    {plan.sourceMacro && !isCompleted && (
+                      <button
+                        onClick={() => { const k = `${w.weekNumber}-${s.day}`; setSubMenuKey(subMenuKey === k ? null : k); setSubAltroOpen(false); }}
+                        title="Non puoi farla? Sostituiscila con un'alternativa equivalente"
+                        style={{
+                          padding: "9px 14px", background: "transparent",
+                          border: "1px solid rgba(245,158,11,0.5)", borderRadius: "10px",
+                          color: "#F59E0B", fontSize: "13px", fontWeight: 700, cursor: "pointer",
+                          display: "flex", alignItems: "center", gap: "6px", minHeight: "40px",
+                        }}
+                      >
+                        🔁 Non posso / sostituisci
+                      </button>
+                    )}
                   </div>
+                  {plan.sourceMacro && subMenuKey === `${w.weekNumber}-${s.day}` && (
+                    <div style={{ marginTop: "10px", padding: "12px", background: "#0F172A", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <div style={{ fontSize: "11px", color: "#F59E0B", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                        Sostituisci con un'alternativa equivalente
+                      </div>
+                      {sessionAlternatives(s).map((alt, ai) => (
+                        <button key={ai} onClick={() => void handleSubstitute([alt.op])} disabled={adapting} style={ALT_BTN_STYLE}>
+                          {alt.label}
+                        </button>
+                      ))}
+                      <button onClick={() => void handleSubstitute([{ op: "dropSession", day: s.day as AdaptationOp["day"], reason: "non disponibile" }])} disabled={adapting} style={ALT_BTN_STYLE}>
+                        Riposo (togli la sessione)
+                      </button>
+                      <button onClick={() => setSubAltroOpen(v => !v)} disabled={adapting} style={{ ...ALT_BTN_STYLE, borderStyle: "dashed" }}>
+                        ✦ Altro (chiedi al coach)
+                      </button>
+                      {subAltroOpen && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                          <input
+                            value={subAltroText}
+                            onChange={e => setSubAltroText(e.target.value)}
+                            placeholder="Opzionale: es. ho solo la palestra, niente campo"
+                            style={{ padding: "8px 10px", background: "#16213E", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px", color: "#E2E8F0", fontSize: "12px" }}
+                          />
+                          <button
+                            onClick={() => void handleSubstituteAltro(s)}
+                            disabled={adapting}
+                            style={{ padding: "9px 12px", background: "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border: "none", borderRadius: "8px", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: adapting ? "wait" : "pointer" }}
+                          >
+                            {adapting ? `⏳ Il coach propone… ${llmElapsedSec}s` : "Proponi alternativa"}
+                          </button>
+                        </div>
+                      )}
+                      {adaptError && (
+                        <div style={{ fontSize: "11px", color: "#EF4444" }}>{adaptError}</div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
               });
