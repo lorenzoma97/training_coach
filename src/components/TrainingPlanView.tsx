@@ -1702,7 +1702,12 @@ export default function TrainingPlanView() {
         return (
         <div key={w.weekNumber} style={{ background: "#16213E", borderRadius: "14px", padding: "18px 20px", border: "1px solid rgba(255,255,255,0.06)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "4px", flexWrap: "wrap" }}>
-            <div style={{ fontSize: "11px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase" }}>Settimana {w.weekNumber}</div>
+            {/* Sprint N fix: l'etichetta mostra il numero di settimana del MACRO
+                (sourceMacro.weekNumber), non l'indice interno weeks[0].weekNumber
+                che è sempre 1 (serve al calcolo date). Così card e header
+                programma combaciano ("Settimana 2"), niente più "Settimana 1"
+                fantasma. Senza macro: fallback all'indice interno. */}
+            <div style={{ fontSize: "11px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase" }}>Settimana {plan.sourceMacro?.weekNumber ?? w.weekNumber}</div>
             {weekRangeLabel && (
               <div style={{ fontSize: "12px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
                 {weekRangeLabel}
