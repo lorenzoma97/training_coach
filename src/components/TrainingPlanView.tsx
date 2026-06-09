@@ -13,6 +13,7 @@ import {
 } from "../lib/coach/macroAdapter";
 import { getCurrentReadiness } from "../lib/coach/readinessScoring";
 import { loadActiveMacroProgram } from "../lib/macroprogram/storage";
+import { TOKENS } from "../lib/theme";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { savePlanWithHistory, getPlanHistory, getNextPlan, saveNextPlan, clearNextPlan, maybePromoteNextPlan } from "../lib/coach/planHistory";
 import { computeZonesContext, inferSessionZone, stripInlineHRRange, type ZonesResult } from "../lib/coach/zones";
@@ -20,7 +21,6 @@ import type { PlannedSession, PlannedExercise } from "../lib/types";
 import { useNotify } from "./Notification";
 import ReadinessBanner from "./coach/ReadinessBanner";
 import MacroUpdatedBanner from "./coach/MacroUpdatedBanner";
-import StalePlanBanner from "./coach/StalePlanBanner";
 import SubstitutionBadge from "./coach/SubstitutionBadge";
 import { parseISODateLocal } from "../lib/dateFormatters";
 import { resolveSubstitution } from "../lib/coach/equipmentSubstitutor";
@@ -70,6 +70,47 @@ const ALT_BTN_STYLE: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
   color: "#E2E8F0", fontSize: "12px", fontWeight: 600, cursor: "pointer",
 };
+
+/**
+ * StatoBanner (Sprint N) — banner di STATO PIANO unico, a priorità. Sostituisce
+ * i 3 banner amber sparsi (stale / in scadenza / profilo cambiato) che potevano
+ * impilarsi. tone=danger (critico) o attention (da aggiornare). CTA opzionale.
+ */
+function StatoBanner({ tone, title, body, cta, onCta, disabled, busyLabel }: {
+  tone: "danger" | "attention";
+  title: string;
+  body: string;
+  cta?: string;
+  onCta?: () => void;
+  disabled?: boolean;
+  busyLabel?: string;
+}) {
+  const c = tone === "danger" ? TOKENS.danger : TOKENS.attention;
+  return (
+    <div style={{ background: `${c}15`, border: `1px solid ${c}66`, borderRadius: "12px", padding: "12px 14px" }}>
+      <div style={{ fontSize: "12px", color: c, fontWeight: 700, marginBottom: "4px" }}>
+        {tone === "danger" ? "⚠ " : "⏰ "}{title}
+      </div>
+      <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5, marginBottom: cta ? "10px" : 0 }}>{body}</div>
+      {cta && onCta && (
+        <button
+          onClick={onCta}
+          disabled={disabled}
+          aria-busy={disabled || undefined}
+          style={{
+            padding: "10px 14px",
+            background: disabled ? "#1E293B" : `linear-gradient(135deg, ${TOKENS.primary} 0%, #D4452F 100%)`,
+            border: "none", borderRadius: "10px", color: "#FFF",
+            fontSize: "13px", fontWeight: 700,
+            cursor: disabled ? "wait" : "pointer", opacity: disabled ? 0.5 : 1,
+          }}
+        >
+          {disabled && busyLabel ? busyLabel : cta}
+        </button>
+      )}
+    </div>
+  );
+}
 
 /**
  * Wave 4.3 → Sprint J (2026-06-09) — render esercizi forza STILE SCHEDA DA
@@ -1080,20 +1121,42 @@ export default function TrainingPlanView() {
           snapshot. MacroUpdatedBanner è dismissibile per macroId. */}
       <ReadinessBanner />
       <MacroUpdatedBanner onRegenerate={() => handleRegenerate("next-week")} />
-      {/* Fix 1 — Banner amber "piano scaduto" se startDate > 7gg fa. Non
-          dismissibile: l'utente deve rigenerare per ripristinare uno stato
-          allineato alla settimana corrente.
-          UX redesign #3: la CTA del banner non rigenera direttamente, ma
-          apre il picker primario unificato (stesso entry-point del bottone
-          "Rigenera piano" in header) così l'utente sceglie esplicitamente
-          fra "Riparti da oggi" / "Settimana prossima" / "Adatta deviazioni". */}
-      {isPlanStale && plan.startDate && !isExpired && (
-        <StalePlanBanner
-          startDate={plan.startDate}
-          onRegenerate={() => { setRegenPickerOpen(true); setAdaptOpen(false); }}
-          disabled={regenerating}
-        />
-      )}
+      {/* Sprint N: StatoPiano — UN solo banner di stato a priorità (danger >
+          attention). Con l'auto-proiezione macro (Sprint M) gli stati da drift
+          settimanale non scattano se c'è un programma attivo → con macro il
+          banner resta assente. Resta per piani senza macro o realmente scaduti.
+          CTA unica → apre il picker di aggiornamento. */}
+      {(() => {
+        if (isExpired) {
+          return (
+            <StatoBanner
+              tone="danger"
+              title="Piano scaduto"
+              body="Il microciclo è terminato: rigenera per riallinearti alla settimana corrente."
+              cta="Rigenera ora"
+              busyLabel={`⏳ Rigenerazione… ${llmElapsedSec}s`}
+              onCta={() => { setRegenPickerOpen(true); setAdaptOpen(false); }}
+              disabled={regenerating}
+            />
+          );
+        }
+        const reasons: string[] = [];
+        if (isPlanStale && plan.startDate) reasons.push("piano di una settimana passata");
+        if (isExpiringSoon) reasons.push(`in scadenza tra ${daysLeft} giorni`);
+        if (profileDrift) reasons.push("profilo/obiettivi cambiati dopo la generazione");
+        if (reasons.length === 0) return null;
+        const body = `${reasons[0].charAt(0).toUpperCase()}${reasons[0].slice(1)}${reasons.length > 1 ? ` (+${reasons.length - 1})` : ""}. Aggiorna per riallinearti.`;
+        return (
+          <StatoBanner
+            tone="attention"
+            title="Piano da aggiornare"
+            body={body}
+            cta="Aggiorna piano"
+            onCta={() => { setRegenPickerOpen(true); setAdaptOpen(false); }}
+            disabled={regenerating}
+          />
+        );
+      })()}
 
       {/* Sprint B (2026-05-27): indicatore concordanza col macroprogramma.
           Se il piano è proiettato dal macro (sourceMacro), mostralo esplicito:
@@ -1211,42 +1274,7 @@ export default function TrainingPlanView() {
         </div>
       </details>
 
-      {(isExpiringSoon || isExpired) && (
-        <div style={{
-          background: isExpired ? "#EF444415" : "#F59E0B15",
-          border: `1px solid ${isExpired ? "#EF444466" : "#F59E0B66"}`,
-          borderRadius: "12px", padding: "12px 14px",
-        }}>
-          <div style={{ fontSize: "12px", color: isExpired ? "#EF4444" : "#F59E0B", fontWeight: 700, marginBottom: "4px" }}>
-            {isExpired ? "⚠ Piano scaduto" : `⏰ Piano in scadenza (${daysLeft} giorni)`}
-          </div>
-          <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5, marginBottom: isExpired ? "10px" : 0 }}>
-            {isExpired ? "Il piano sottostante non viene più mostrato per evitare confusione. Rigenera o adatta per riceverne uno aggiornato." : "Presto il coach dovrà produrre il microciclo successivo."}
-          </div>
-          {isExpired && (
-            // UX redesign #3: anche la CTA "Piano scaduto" apre il picker
-            // primario invece di rigenerare diretta. Coerente con StalePlanBanner
-            // e con il bottone header "Rigenera piano".
-            <button
-              onClick={() => { setRegenPickerOpen(true); setAdaptOpen(false); }}
-              disabled={regenerating}
-              aria-busy={regenerating || undefined}
-              role={regenerating ? "status" : undefined}
-              aria-label={regenerating ? "Rigenerazione piano in corso" : undefined}
-              style={{
-                padding: "10px 14px",
-                background: regenerating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
-                border: "none", borderRadius: "10px", color: "#FFF",
-                fontSize: "13px", fontWeight: 700,
-                cursor: regenerating ? "wait" : "pointer",
-                opacity: regenerating ? 0.5 : 1,
-              }}
-            >
-              {regenerating ? `⏳ Rigenerazione… ${llmElapsedSec}s` : "🔁 Rigenera ora"}
-            </button>
-          )}
-        </div>
-      )}
+      {/* (Banner scaduto/in-scadenza consolidato in StatoPiano, in cima.) */}
 
       {/* Banner anteprima prossima settimana — visibile se nextPlan esiste */}
       {nextPlan && (
@@ -1341,19 +1369,7 @@ export default function TrainingPlanView() {
         </div>
       )}
 
-      {profileDrift && !isExpired && (
-        <div style={{
-          background: "#F59E0B15", border: "1px solid #F59E0B66",
-          borderRadius: "12px", padding: "12px 14px",
-        }}>
-          <div style={{ fontSize: "12px", color: "#F59E0B", fontWeight: 700, marginBottom: "4px" }}>
-            ⚠ Profilo o obiettivi cambiati dopo la generazione
-          </div>
-          <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>
-            Profilo (età, esperienza, infortuni, disponibilità, aree dolore) oppure obiettivi sono stati modificati dopo la generazione del piano. Il piano corrente potrebbe non essere più ottimale — considera una rigenerazione.
-          </div>
-        </div>
-      )}
+      {/* (Banner "profilo cambiato" consolidato in StatoPiano, in cima.) */}
 
       {/* UX redesign #4 (2026-05-14) — Bottone smart con dettaglio + link
           "Altre opzioni" che apre il picker tradizionale.
