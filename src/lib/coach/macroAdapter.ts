@@ -16,9 +16,11 @@
 // Questo modulo (applier + validator) e' PURO: nessun LLM, nessun storage.
 // La chiamata Gemini (generateAdaptationDiff) e' separata in fondo, opzionale.
 
-import type { PlannedSession, PlannedExercise, CardioInterval } from "../types";
+import { z } from "zod";
+import type { PlannedSession, PlannedExercise, CardioInterval, UserProfile } from "../types";
 import type { MacroProgram } from "../types/macroprogram";
 import { lookupExerciseHybrid } from "../macroprogram/customCatalog";
+import { generateJSON } from "../gemini";
 
 const DAY_ORDER = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const;
 export type DayLabel = typeof DAY_ORDER[number];
@@ -250,6 +252,7 @@ export function applyAdaptationDiff(
         break;
       }
       case "scaleVolume": {
+        if (!Number.isFinite(op.factor)) { rejected.push({ op, reason: "factor non valido" }); break; }
         const f = clamp(op.factor, 0.5, 1.1);
         if (Math.abs(f - 1) < 0.01) { rejected.push({ op, reason: "factor ~1 (no-op)" }); break; }
         byDay.set(op.day, scaleSessionVolume(target!, f));
@@ -258,7 +261,8 @@ export function applyAdaptationDiff(
         break;
       }
       case "scaleIntensity": {
-        let d = clamp(Math.round(op.deltaZone), -2, 1);
+        if (!Number.isFinite(op.deltaZone)) { rejected.push({ op, reason: "deltaZone non valido" }); break; }
+        const d = clamp(Math.round(op.deltaZone), -2, 1);
         if (d === 0) { rejected.push({ op, reason: "deltaZone 0 (no-op)" }); break; }
         if (d > 0 && ctx.readinessBand === "low") {
           rejected.push({ op, reason: "upgrade intensita' bloccato: readiness bassa" });
@@ -293,4 +297,203 @@ export function applyAdaptationDiff(
   );
 
   return { sessions: out, applied, rejected };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RILEVAMENTO EVENTI (puro)
+// ─────────────────────────────────────────────────────────────────────────────
+
+type RecentDay = { date: string; daily?: unknown; workouts: unknown[] };
+
+/**
+ * Scansiona il diario per dolori segnalati (campo `w.pain`). Supporta sia il
+ * formato legacy {pre,during,post} (polpaccio implicito) sia il nuovo
+ * {[area]:{pre,during,post}}. Emette un evento "pain" per area con intensità
+ * during/post ≥ soglia (default 3 su scala 0-10). Una sola entry per area.
+ */
+export function detectPainEvents(recentDays: RecentDay[], threshold = 3): WeekEvent[] {
+  const out: WeekEvent[] = [];
+  const seen = new Set<string>();
+  for (const d of recentDays) {
+    for (const w of d.workouts || []) {
+      const pain = (w as { pain?: unknown })?.pain;
+      if (!pain || typeof pain !== "object") continue;
+      const p = pain as Record<string, unknown>;
+      const isLegacy = "pre" in p || "during" in p || "post" in p;
+      const entries: Array<[string, unknown]> = isLegacy ? [["polpaccio", p]] : Object.entries(p);
+      for (const [area, v] of entries) {
+        if (!v || typeof v !== "object") continue;
+        const vv = v as Record<string, unknown>;
+        const nums = [vv.during, vv.post].filter((x): x is number => typeof x === "number");
+        const maxVal = nums.length ? Math.max(...nums) : 0;
+        if (maxVal >= threshold && !seen.has(area.toLowerCase())) {
+          seen.add(area.toLowerCase());
+          out.push({ kind: "pain", detail: `Dolore ${area} intensità ${maxVal}/10 (${d.date})` });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Raccoglie TUTTI gli eventi della settimana (puro, no LLM). Usato sia dalla UI
+ * (per il banner "N eventi rilevati") sia dall'orchestratore. Le deviazioni
+ * piano↔diario (saltate/variazioni/autonomi) sono calcolate dal chiamante
+ * (TrainingPlanView ha già il matching) e passate come `deviationEvents`.
+ */
+export function gatherWeekEvents(input: {
+  recentDays: RecentDay[];
+  readinessBand?: "low" | "moderate" | "high";
+  deviationEvents?: WeekEvent[];
+  userRequest?: string;
+}): WeekEvent[] {
+  const events: WeekEvent[] = [];
+  events.push(...detectPainEvents(input.recentDays));
+  if (input.readinessBand === "low") {
+    events.push({ kind: "readiness_low", detail: "Readiness bassa oggi: meglio ridurre intensità." });
+  } else if (input.readinessBand === "high") {
+    events.push({ kind: "readiness_high", detail: "Readiness alta oggi: c'è margine per spingere un po'." });
+  }
+  if (input.deviationEvents) events.push(...input.deviationEvents);
+  const req = input.userRequest?.trim();
+  if (req) events.push({ kind: "user_request", detail: req });
+  return events;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GENERAZIONE DIFF VIA GEMINI (modalità adattatore)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Schema TOLLERANTE: Gemini puo' variare i campi. Validiamo qui solo la shape
+// grossolana; la VALIDAZIONE SEMANTICA (magnitudine, double-book, catalog) la
+// fa applyAdaptationDiff per-op. Op malformate → rifiutate a valle, non crash.
+const opLooseSchema = z.object({
+  op: z.enum(["move", "scaleVolume", "scaleIntensity", "swapExercise", "dropSession"]),
+  day: z.string(),
+  toDay: z.string().optional(),
+  factor: z.coerce.number().optional(),
+  deltaZone: z.coerce.number().optional(),
+  exerciseId: z.string().optional(),
+  toExerciseId: z.string().optional(),
+  reason: z.string().optional().default(""),
+});
+const diffLooseSchema = z.object({
+  ops: z.array(opLooseSchema).default([]),
+  summary: z.string().optional().default(""),
+});
+
+const DIFF_SCHEMA_HINT = `
+{
+  "ops": [
+    { "op": "move", "day": "gio", "toDay": "sab", "reason": "breve" },
+    { "op": "scaleVolume", "day": "lun", "factor": 0.8, "reason": "breve" },
+    { "op": "scaleIntensity", "day": "mer", "deltaZone": -1, "reason": "breve" },
+    { "op": "swapExercise", "day": "lun", "exerciseId": "id-attuale", "toExerciseId": "id-catalog", "reason": "breve" },
+    { "op": "dropSession", "day": "ven", "reason": "breve" }
+  ],
+  "summary": "1 frase sintetica delle modifiche"
+}
+IMPORTANTE: restituisci SOLO questo JSON. Se nessuna modifica serve, "ops": [].
+`.trim();
+
+function phaseInfoFor(program: MacroProgram, weekNumber: number): string {
+  for (const p of program.phases) {
+    const isRange = p.weeks.length === 2 && p.weeks[0] <= p.weeks[1];
+    const inPhase = isRange ? (weekNumber >= p.weeks[0] && weekNumber <= p.weeks[1]) : p.weeks.includes(weekNumber);
+    if (inPhase) {
+      const rpe = (p.rpe_target_min && p.rpe_target_max) ? ` RPE ${p.rpe_target_min}-${p.rpe_target_max}.` : "";
+      return `Fase "${p.name}" — focus: ${p.focus}.${rpe}`;
+    }
+  }
+  return "";
+}
+
+/** Render compatto di una sessione per il prompt (no token sprecati). */
+function sessionLine(s: PlannedSession): string {
+  let bits = `${s.day} ${s.type} ${s.duration_min}min`;
+  if (typeof s.zone === "number") bits += ` Z${s.zone}`;
+  if (s.exercises && s.exercises.length > 0) {
+    const ex = s.exercises.map(e => {
+      const reps = e.repsTarget.min === e.repsTarget.max ? `${e.repsTarget.min}` : `${e.repsTarget.min}-${e.repsTarget.max}`;
+      return `${e.exerciseId} ${e.plannedSets}x${reps}`;
+    }).join(", ");
+    bits += ` [${ex}]`;
+  }
+  return bits;
+}
+
+/**
+ * Chiede a Gemini un DIFF VINCOLATO sulla settimana proiettata, dati gli eventi.
+ * NON rigenera il piano: produce solo modifiche fra le op permesse. L'output
+ * va poi passato ad applyAdaptationDiff (che valida + applica).
+ *
+ * Ritorna { ops: [], summary: "" } se l'LLM fallisce o non propone nulla:
+ * il chiamante terra' la proiezione fedele (fail-safe verso la fedeltà).
+ */
+export async function generateAdaptationDiff(input: {
+  sessions: PlannedSession[];
+  events: WeekEvent[];
+  program: MacroProgram;
+  weekNumber: number;
+  profile: UserProfile | null;
+  readinessBand?: "low" | "moderate" | "high";
+}): Promise<AdaptationDiff> {
+  const { sessions, events, program, weekNumber, profile, readinessBand } = input;
+  if (events.length === 0) return { ops: [], summary: "" };
+
+  const phaseInfo = phaseInfoFor(program, weekNumber);
+  const equipment = (profile?.equipment ?? []).join(", ") || "solo corpo libero";
+
+  const systemInstruction = [
+    "Sei un ADATTATORE di allenamenti VINCOLATO. NON generi un piano nuovo.",
+    "Ricevi la settimana GIÀ pianificata (fedele a un macroprogramma multi-settimana) e una lista di EVENTI accaduti durante la settimana.",
+    "Il tuo compito: proporre il DIFF MINIMO per gestire gli eventi, mantenendo lo scheletro del programma.",
+    "",
+    "OPERAZIONI PERMESSE (nessun'altra):",
+    "- move {day,toDay}: sposta una sessione su un altro giorno LIBERO (impegno/indisponibilità).",
+    "- scaleVolume {day,factor 0.5-1.1}: riduci/aumenta leggermente volume (durata+set) per fatica, aderenza bassa, recupero.",
+    "- scaleIntensity {day,deltaZone -2..+1}: abbassa (o alza max +1) l'intensità (zone cardio / RPE forza). L'upgrade è VIETATO se readiness bassa.",
+    "- swapExercise {day,exerciseId,toExerciseId}: sostituisci un esercizio per DOLORE. toExerciseId DEVE essere un id realmente esistente nel catalog; se non sei certo, usa scaleVolume o dropSession.",
+    "- dropSession {day}: rimuovi una sessione (riposo forzato). Massimo 1.",
+    "",
+    "VINCOLI NON VIOLABILI:",
+    "- NON aggiungere sessioni. NON cambiare il TIPO di una sessione. NON inventare giorni o esercizi.",
+    "- Cambia SOLO ciò che un evento richiede davvero. Se gli eventi non richiedono modifiche, restituisci ops vuoto.",
+    "- Preferisci la modifica più piccola che risolve l'evento.",
+  ].join("\n");
+
+  const userPrompt = [
+    phaseInfo ? `CONTESTO PROGRAMMA: settimana ${weekNumber}. ${phaseInfo}` : `Settimana ${weekNumber}.`,
+    readinessBand ? `READINESS OGGI: ${readinessBand}.` : "",
+    `EQUIPMENT UTENTE: ${equipment}.`,
+    "",
+    "SETTIMANA PIANIFICATA (fedele al macro):",
+    ...sessions.map(s => `  - ${sessionLine(s)}`),
+    "",
+    "EVENTI DA GESTIRE:",
+    ...events.map(e => `  - [${e.kind}]${e.day ? ` ${e.day}:` : ""} ${e.detail}`),
+    "",
+    "Produci il DIFF vincolato secondo lo schema.",
+  ].filter(Boolean).join("\n");
+
+  try {
+    const raw = await generateJSON<unknown>({
+      systemInstruction,
+      userPrompt,
+      schemaHint: DIFF_SCHEMA_HINT,
+      maxTokens: 1200,
+    });
+    const parsed = diffLooseSchema.safeParse(raw);
+    if (!parsed.success) {
+      console.warn("[macroAdapter] diff parse fallito:", parsed.error.message);
+      return { ops: [], summary: "" };
+    }
+    // Le op loose sono compatibili con AdaptationOp per shape; la validazione
+    // semantica + i campi mancanti sono gestiti da applyAdaptationDiff.
+    return { ops: parsed.data.ops as unknown as AdaptationOp[], summary: parsed.data.summary };
+  } catch (e) {
+    console.warn("[macroAdapter] generateAdaptationDiff errore:", e);
+    return { ops: [], summary: "" };
+  }
 }

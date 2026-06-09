@@ -6,7 +6,9 @@ import { setJSON } from "../lib/storage";
 import { planStateHash } from "../lib/coach/planValidator";
 import { buildCoachContext, getLastNDays } from "../lib/diaryContext";
 import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach/planGenerator";
-import { tryProjectMacroPlan } from "../lib/coach/macroWeekPlan";
+import { tryProjectMacroPlan, adaptMacroWeek } from "../lib/coach/macroWeekPlan";
+import { gatherWeekEvents, type WeekEvent } from "../lib/coach/macroAdapter";
+import { getCurrentReadiness } from "../lib/coach/readinessScoring";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { savePlanWithHistory, getPlanHistory, getNextPlan, saveNextPlan, clearNextPlan, maybePromoteNextPlan } from "../lib/coach/planHistory";
 import ZonesCard from "./ZonesCard";
@@ -211,6 +213,11 @@ export default function TrainingPlanView() {
   // Toggle visualizzazione: quando true mostra il preview invece del corrente.
   const [viewingNext, setViewingNext] = useState(false);
 
+  // Sprint H (2026-06-09): readiness band di oggi (per gli eventi adattamento)
+  // + dismiss del banner "eventi rilevati". Il banner ricompare al cambio piano.
+  const [readinessBand, setReadinessBand] = useState<"low" | "moderate" | "high" | undefined>(undefined);
+  const [eventsBannerDismissed, setEventsBannerDismissed] = useState(false);
+
   const load = async () => {
     // Auto-promote prima di caricare: se la settimana del preview è iniziata,
     // il preview diventa "corrente" e quello vecchio finisce in history.
@@ -237,6 +244,12 @@ export default function TrainingPlanView() {
     // Unica fonte di verità per i range bpm renderizzati nei chip delle sessioni.
     const ctx = profile ? computeZonesContext(profile, daysForZones) : null;
     setZonesCtx(ctx?.zones ?? null);
+    // Readiness di oggi: alimenta gli eventi dell'adattatore vincolato.
+    const readiness = await getCurrentReadiness().catch(() => null);
+    if (!mountedRef.current) return;
+    setReadinessBand(readiness?.band);
+    // Nuovo caricamento piano → riarma il banner eventi.
+    setEventsBannerDismissed(false);
   };
 
   useEffect(() => {
@@ -503,6 +516,51 @@ export default function TrainingPlanView() {
     return `Il piano ha avuto le seguenti deviazioni:\n${parts.join("\n")}\n\nAdatta le sessioni future del piano in base a ciò che è stato realmente fatto (evita carichi duplicati, aggiungi recovery se sessioni autonome erano intense, mantieni il percorso verso gli obiettivi).`;
   };
 
+  // Sprint H: versione STRUTTURATA delle deviazioni → WeekEvent[] per
+  // l'adattatore vincolato (quando c'è un macroprogramma attivo). Specchio di
+  // buildDeviationRequest ma tipizzato (l'LLM riceve eventi discreti, non testo).
+  const buildDeviationEvents = (): WeekEvent[] => {
+    if (!plan?.startDate) return [];
+    const out: WeekEvent[] = [];
+    const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+    const [sy, sm, sd] = plan.startDate.split("-").map(Number);
+    const start = new Date(sy, sm - 1, sd);
+    const asDay = (d: string): WeekEvent["day"] =>
+      (DAY_KEYS.includes(d) ? d : undefined) as WeekEvent["day"];
+    for (const week of plan.weeks) {
+      for (const s of week.sessions) {
+        const dayIdx = DAY_KEYS.indexOf(s.day);
+        if (dayIdx < 0) continue;
+        const sessionDate = new Date(start);
+        sessionDate.setDate(start.getDate() + (week.weekNumber - 1) * 7 + dayIdx);
+        const key = `${week.weekNumber}-${s.day}-${sessionDate.getTime()}`;
+        if (skippedSessions.has(key)) {
+          out.push({ kind: "skipped", day: asDay(s.day), detail: `Saltata ${s.day} ${s.type}${s.subtype ? ` (${s.subtype})` : ""}, ${s.duration_min}min` });
+        } else {
+          const c = completedSessions.get(key);
+          if (c && !c.strictMatch) {
+            const actual = c.actualType ? `${c.actualType}${c.actualSubtype ? ` (${c.actualSubtype})` : ""}` : (c.actualSubtype || "variante");
+            out.push({ kind: "variation", day: asDay(s.day), detail: `${s.day}: pianificato ${s.type}, fatto ${actual}` });
+          }
+        }
+      }
+    }
+    for (const e of extraWorkouts) {
+      const sub = e.workout.fields?.tipo || e.workout.fields?.sport || "";
+      out.push({ kind: "extra", detail: `Autonomo ${e.date} ${e.workout.type}${sub ? ` (${sub})` : ""} (non pianificato)` });
+    }
+    return out;
+  };
+
+  // Sprint H: eventi della settimana rilevati AUTOMATICAMENTE (puro, no LLM).
+  // Solo se c'è un macroprogramma attivo (sourceMacro): per il banner proattivo
+  // "N eventi rilevati → Adatta / Mantieni fedele". L'LLM scatta solo su conferma.
+  const pendingEvents = useMemo<WeekEvent[]>(() => {
+    if (!plan?.sourceMacro) return [];
+    return gatherWeekEvents({ recentDays, readinessBand, deviationEvents: buildDeviationEvents() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan, recentDays, readinessBand, completedSessions, extraWorkouts, skippedSessions]);
+
   // Picker stato: null = chiuso, "show" = aperto in attesa di scelta utente.
   // Le 2 modalità vengono passate a regenerateNextWeek.
   const [regenPickerOpen, setRegenPickerOpen] = useState(false);
@@ -632,11 +690,59 @@ export default function TrainingPlanView() {
     setRegenerating(false);
   };
 
+  // Sprint H (2026-06-09): adattamento VINCOLATO al macroprogramma. Riparte
+  // dalla proiezione FEDELE, chiede a Gemini un diff limitato e lo valida contro
+  // lo scheletro del macro. Usato dal banner eventi e dal path "Adatta" quando
+  // c'è un macro attivo. A differenza di adaptPlan, NON può divergere dal macro.
+  const handleAdaptMacro = async (opts: { userRequest?: string; includeDeviations?: boolean }) => {
+    if (adapting || regenerating || !plan) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setAdaptError("Offline. Riconnettiti per adattare il piano.");
+      return;
+    }
+    setAdapting(true);
+    setAdaptError(null);
+    try {
+      const profile = await getJSON<UserProfile | null>("user-profile", null);
+      if (!profile) throw new Error("Profilo mancante.");
+      const weekEvents = gatherWeekEvents({
+        recentDays,
+        readinessBand,
+        deviationEvents: opts.includeDeviations ? buildDeviationEvents() : undefined,
+        userRequest: opts.userRequest,
+      });
+      const res = await adaptMacroWeek(profile, weekEvents);
+      if (!res) { setAdaptError("Programma non disponibile per l'adattamento."); return; }
+      await savePlanWithHistory(res.plan);
+      events.emit("plan:updated", { at: new Date().toISOString() });
+      if (!mountedRef.current) return;
+      setPlan(res.plan);
+      setAdaptRequest("");
+      setAdaptOpen(false);
+      setEventsBannerDismissed(true);
+      const n = res.applied.length;
+      const title = n > 0
+        ? `✓ Settimana adattata al programma — ${n} modific${n === 1 ? "a" : "he"}`
+        : "✓ Settimana già fedele al programma — nessuna modifica necessaria";
+      showSuccess(title, res.plan.rationale);
+    } catch (e) {
+      if (!mountedRef.current) return;
+      setAdaptError(translateGeminiError(e));
+    }
+    if (!mountedRef.current) return;
+    setAdapting(false);
+  };
+
   const handleAdapt = async (requestText?: string) => {
     const req = (requestText ?? adaptRequest).trim();
     if (!req || adapting || !plan) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       setAdaptError("Offline. Riconnettiti per adattare il piano.");
+      return;
+    }
+    // Macro attivo → adattatore vincolato (diff sul macro). Altrimenti adaptPlan legacy.
+    if (plan.sourceMacro) {
+      void handleAdaptMacro({ userRequest: req });
       return;
     }
     setAdapting(true);
@@ -868,7 +974,7 @@ export default function TrainingPlanView() {
           </div>
           {plan.sourceMacro.adaptations.length > 0 ? (
             <div style={{ marginTop: "6px", fontSize: "11px", color: "#F59E0B", lineHeight: 1.5 }}>
-              ⚠ {plan.sourceMacro.adaptations.length} adattamenti per readiness bassa:
+              ⚙ {plan.sourceMacro.adaptations.length} adattament{plan.sourceMacro.adaptations.length === 1 ? "o" : "i"} alla settimana:
               <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
                 {plan.sourceMacro.adaptations.map((a, i) => <li key={i}>{a}</li>)}
               </ul>
@@ -878,6 +984,51 @@ export default function TrainingPlanView() {
               Proiezione fedele del programma, nessun adattamento necessario.
             </div>
           )}
+        </div>
+      )}
+
+      {/* Sprint H (2026-06-09): banner PROATTIVO eventi. Quando c'è un macro
+          attivo e si rilevano eventi (sessioni saltate, dolore, readiness,
+          variazioni), proponiamo l'adattamento VINCOLATO. L'LLM scatta solo se
+          l'utente conferma ("Entrambi": auto-rileva + segnala, applica su OK). */}
+      {plan.sourceMacro && pendingEvents.length > 0 && !eventsBannerDismissed && !adapting && (
+        <div style={{
+          background: "linear-gradient(135deg, #F59E0B18 0%, #E8553A12 100%)",
+          border: "1px solid #F59E0B66",
+          borderRadius: "12px", padding: "12px 14px",
+          display: "flex", flexDirection: "column", gap: "10px",
+        }}>
+          <div style={{ fontSize: "12px", color: "#F59E0B", fontWeight: 700 }}>
+            ⚡ {pendingEvents.length} evento{pendingEvents.length === 1 ? "" : " (i)"} nella settimana
+          </div>
+          <ul style={{ margin: 0, padding: "0 0 0 16px", fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>
+            {pendingEvents.slice(0, 4).map((e, i) => <li key={i}>{e.detail}</li>)}
+            {pendingEvents.length > 4 && <li>+{pendingEvents.length - 4} altri</li>}
+          </ul>
+          <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5 }}>
+            Il coach può adattare la settimana restando fedele al programma (sposta / scala / sostituisce, senza stravolgere lo scheletro).
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              onClick={() => void handleAdaptMacro({ includeDeviations: true })}
+              disabled={adapting || regenerating}
+              style={{
+                padding: "9px 14px",
+                background: "linear-gradient(135deg, #E8553A 0%, #D4452F 100%)",
+                border: "none", borderRadius: "9px", color: "#FFF",
+                fontSize: "13px", fontWeight: 700, cursor: "pointer", flex: 1, minWidth: "140px",
+              }}
+            >🔧 Adatta al programma</button>
+            <button
+              onClick={() => setEventsBannerDismissed(true)}
+              disabled={adapting || regenerating}
+              style={{
+                padding: "9px 14px", background: "transparent",
+                border: "1px solid rgba(255,255,255,0.15)", borderRadius: "9px",
+                color: "#94A3B8", fontSize: "13px", fontWeight: 600, cursor: "pointer",
+              }}
+            >Mantieni fedele</button>
+          </div>
         </div>
       )}
 
@@ -1102,8 +1253,13 @@ export default function TrainingPlanView() {
         const doSmartAction = () => {
           if (regenerating || adapting) return;
           setAdaptOpen(false);
-          if (smartRegen.useAdapt) void handleAdapt(buildDeviationRequest());
-          else void handleRegenerate(smartRegen.mode);
+          if (smartRegen.useAdapt) {
+            // Macro attivo → adattatore vincolato (deviazioni strutturate).
+            if (plan.sourceMacro) void handleAdaptMacro({ includeDeviations: true });
+            else void handleAdapt(buildDeviationRequest());
+          } else {
+            void handleRegenerate(smartRegen.mode);
+          }
         };
         return (
         <div style={{ background: "#16213E", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 18px", display: "flex", flexDirection: "column", gap: "10px" }}>

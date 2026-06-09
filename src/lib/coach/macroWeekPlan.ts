@@ -14,6 +14,7 @@ import type { TrainingPlan, UserProfile, PlannedSession } from "../types";
 import { loadActiveMacroProgram } from "../macroprogram/storage";
 import { projectCurrentMacroWeek } from "../macroprogram/projectToPlan";
 import { getCurrentReadiness } from "./readinessScoring";
+import { generateAdaptationDiff, applyAdaptationDiff, type WeekEvent } from "./macroAdapter";
 
 /**
  * Adattamento DETERMINISTICO per readiness bassa (Sprint A).
@@ -111,4 +112,63 @@ export async function tryProjectMacroPlan(profile: UserProfile | null): Promise<
     plan.sourceMacro?.adaptations.length ?? 0);
 
   return plan;
+}
+
+/**
+ * ADATTATORE VINCOLATO (Sprint G/H, 2026-06-09) — il path "adatta a metà
+ * settimana" quando c'è un macroprogramma attivo.
+ *
+ * A differenza di `adaptPlan` (LLM libero che diverge dal macro), questo:
+ *  1. Riparte SEMPRE dalla proiezione FEDELE della settimana corrente.
+ *  2. Chiede a Gemini un DIFF VINCOLATO dati gli eventi (no piano nuovo).
+ *  3. Applica + valida il diff contro lo scheletro del macro (applyAdaptationDiff).
+ *
+ * Risultato: la settimana resta concorde col macro per costruzione, ma si adatta
+ * a dolore / readiness / deviazioni / richieste. Ogni modifica è tracciata in
+ * sourceMacro.adaptations.
+ *
+ * Ritorna null se non c'è macro attivo (→ il chiamante usa adaptPlan legacy).
+ * Se non ci sono eventi, ritorna la proiezione fedele (applied vuoto).
+ */
+export async function adaptMacroWeek(
+  profile: UserProfile | null,
+  events: WeekEvent[],
+): Promise<{ plan: TrainingPlan; applied: string[]; rejectedCount: number } | null> {
+  const program = await loadActiveMacroProgram().catch(() => null);
+  if (!program) return null;
+
+  const projected = projectCurrentMacroWeek(program, profile);
+  if (!projected) return null;
+
+  const plan = projected.plan;
+  const weekNumber = plan.sourceMacro?.weekNumber ?? projected.meta.weekNumber;
+  if (!plan.weeks[0] || events.length === 0) {
+    return { plan, applied: [], rejectedCount: 0 };
+  }
+
+  const readiness = await getCurrentReadiness().catch(() => null);
+  const band = readiness?.band;
+
+  const diff = await generateAdaptationDiff({
+    sessions: plan.weeks[0].sessions,
+    events, program, weekNumber, profile, readinessBand: band,
+  });
+
+  const result = applyAdaptationDiff(plan.weeks[0].sessions, diff, {
+    program, weekNumber, readinessBand: band,
+  });
+
+  plan.weeks[0] = { ...plan.weeks[0], sessions: result.sessions };
+  plan.sourceMacro = {
+    ...plan.sourceMacro!,
+    adaptations: [...(plan.sourceMacro?.adaptations ?? []), ...result.applied],
+  };
+  if (result.applied.length > 0) {
+    plan.rationale += `\n\n[Adattamento settimana] ${result.applied.length} modifiche per eventi reali: ${result.applied.join(" ")}`;
+  }
+
+  console.info("[macroWeekPlan] adattatore vincolato: eventi=%d, applicate=%d, rifiutate=%d",
+    events.length, result.applied.length, result.rejected.length);
+
+  return { plan, applied: result.applied, rejectedCount: result.rejected.length };
 }
