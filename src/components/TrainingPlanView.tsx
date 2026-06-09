@@ -1082,33 +1082,26 @@ export default function TrainingPlanView() {
           Se il piano è proiettato dal macro (sourceMacro), mostralo esplicito:
           "Da programma · Settimana N · Fase X" + eventuali adattamenti daily.
           Risolve "il piano non concorda col .md": la provenienza è visibile. */}
-      {plan.sourceMacro && (
-        <div style={{
-          background: "#0891B215",
-          border: "1px solid #0891B266",
+      {/* Sprint L: "Settimana N · Fase" vive SOLO nell'header programma (PlanTab).
+          Qui resta solo lo STATO settimana: gli adattamenti, e solo se ce ne sono
+          (collassati). Se la settimana è fedele, nessuna card → meno rumore. */}
+      {plan.sourceMacro && plan.sourceMacro.adaptations.length > 0 && (
+        <details style={{
+          background: "#F59E0B12", border: "1px solid #F59E0B44",
           borderRadius: "12px", padding: "10px 14px",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "11px", color: "#38BDF8", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              📋 Da programma
-            </span>
-            <span style={{ fontSize: "12px", color: "#E2E8F0", fontWeight: 600 }}>
-              Settimana {plan.sourceMacro.weekNumber}{plan.sourceMacro.phaseName ? ` · ${plan.sourceMacro.phaseName}` : ""}
-            </span>
-          </div>
-          {plan.sourceMacro.adaptations.length > 0 ? (
-            <div style={{ marginTop: "6px", fontSize: "11px", color: "#F59E0B", lineHeight: 1.5 }}>
-              ⚙ {plan.sourceMacro.adaptations.length} adattament{plan.sourceMacro.adaptations.length === 1 ? "o" : "i"} alla settimana:
-              <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
-                {plan.sourceMacro.adaptations.map((a, i) => <li key={i}>{a}</li>)}
-              </ul>
-            </div>
-          ) : (
-            <div style={{ marginTop: "4px", fontSize: "11px", color: "#94A3B8" }}>
-              Proiezione fedele del programma, nessun adattamento necessario.
-            </div>
-          )}
-        </div>
+          <summary style={{
+            cursor: "pointer", listStyle: "none",
+            fontSize: "12px", color: "#F59E0B", fontWeight: 700,
+            display: "flex", alignItems: "center", gap: "6px", userSelect: "none",
+          }}>
+            <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
+            ⚙ {plan.sourceMacro.adaptations.length} adattament{plan.sourceMacro.adaptations.length === 1 ? "o" : "i"} alla settimana
+          </summary>
+          <ul style={{ margin: "8px 0 0 18px", padding: 0, fontSize: "11px", color: "#CBD5E1", lineHeight: 1.6 }}>
+            {plan.sourceMacro.adaptations.map((a, i) => <li key={i}>{a}</li>)}
+          </ul>
+        </details>
       )}
 
       {/* Sprint H (2026-06-09): banner PROATTIVO eventi. Quando c'è un macro
@@ -1159,9 +1152,9 @@ export default function TrainingPlanView() {
       {/* Z2 in cima per avere il range bpm sempre visibile */}
       <ZonesCard compact highlightZone={2} />
 
-      {/* Razionale piano — collapsable per chi vuole vedere il dettaglio. */}
+      {/* Razionale piano — collassato di default (Sprint L: riduce l'altezza
+          prima delle sessioni; chi vuole il dettaglio lo apre). */}
       <details
-        open
         style={{
           background: "#16213E", borderRadius: "12px",
           border: "1px solid rgba(232, 85, 58, 0.2)",
@@ -1178,7 +1171,7 @@ export default function TrainingPlanView() {
             userSelect: "none",
           }}
         >
-          <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▾</span>
+          <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
           Razionale del piano
         </summary>
         <div style={{ marginTop: "10px" }}>
@@ -1363,7 +1356,11 @@ export default function TrainingPlanView() {
         const restEnd = new Date(today); restEnd.setDate(today.getDate() + (6 - todayIdx));
         const remainLabels = labels.slice(todayIdx);
         const remainSessions = plan.weeks[0]?.sessions.filter(s => remainLabels.includes(s.day)) ?? [];
-        const useAdapt = totalDev > 0;
+        // Sprint L: se il banner eventi è visibile (macro + eventi pendenti), è
+        // LUI l'entry-point per adattare → il bottone smart resta "rigenera" per
+        // non duplicare la stessa azione.
+        const eventsBannerVisible = !!plan.sourceMacro && pendingEvents.length > 0 && !eventsBannerDismissed;
+        const useAdapt = totalDev > 0 && !eventsBannerVisible;
         const smartRegen = {
           mode: "rest-of-week" as const,
           useAdapt,
@@ -1917,8 +1914,8 @@ export default function TrainingPlanView() {
                         title="Non puoi farla? Sostituiscila con un'alternativa equivalente"
                         style={{
                           padding: "9px 14px", background: "transparent",
-                          border: "1px solid rgba(245,158,11,0.5)", borderRadius: "10px",
-                          color: "#F59E0B", fontSize: "13px", fontWeight: 700, cursor: "pointer",
+                          border: "1px solid rgba(255,255,255,0.18)", borderRadius: "10px",
+                          color: "#94A3B8", fontSize: "13px", fontWeight: 700, cursor: "pointer",
                           display: "flex", alignItems: "center", gap: "6px", minHeight: "40px",
                         }}
                       >

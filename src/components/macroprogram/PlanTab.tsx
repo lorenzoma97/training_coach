@@ -1,14 +1,14 @@
-// PlanTab (Sprint B → I, 2026-06-09) — il tab "Piano" del Coach.
+// PlanTab (Sprint B → L, 2026-06-09) — il tab "Piano" del Coach.
 //
-// UN SOLO posto per "cosa alleno": in cima un banner STRATEGIA (macrociclo) +
-// una TIMELINE INLINE navigabile (tutte le settimane del programma, tap per
-// vederne la struttura senza aprire un modale) + sotto la SETTIMANA CORRENTE
-// VIVA (TrainingPlanView: proiettata dal macro, adattabile da Gemini).
+// UN SOLO posto per "cosa alleno", con gerarchia visiva pulita:
+//   1. ProgramHeader: UNA card identità programma (titolo + "Settimana N/M ·
+//      Fase" UNA volta + timeline navigabile + link narrativa). Sfogliando una
+//      settimana diversa dalla corrente ne mostra l'anteprima inline.
+//   2. TrainingPlanView: la settimana CORRENTE viva (proiettata + adattabile).
 //
-// Sprint I: la navigazione settimana-per-settimana è ora INLINE (prima era un
-// modale fullscreen ProgramView). ProgramView resta accessibile solo per la
-// NARRATIVA completa + riferimenti (testo lungo), via link discreto nel banner.
-// Se non c'è macro attivo: solo TrainingPlanView + entry-point per caricarne uno.
+// Sprint L: prima c'erano DUE blocchi (banner strategia + timeline) che
+// ripetevano "Settimana N · Fase"; ora fusi in ProgramHeader → una sola fonte.
+// La concordanza/adattamenti restano dentro TrainingPlanView (stato settimana).
 
 import { useEffect, useMemo, useState } from "react";
 import TrainingPlanView from "../TrainingPlanView";
@@ -54,17 +54,14 @@ export default function PlanTab() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-      {/* Banner strategia + timeline inline (se macro attivo) */}
+      {/* Header programma unico (identità + timeline) */}
       {macro && (
         <>
-          <MacroStrategyBanner
+          <ProgramHeader
             program={macro}
             progress={progress}
-            onOpenNarrative={() => setNarrativeOpen(true)}
-          />
-          <MacroTimelineInline
-            program={macro}
             currentWeek={progress?.currentWeek ?? 0}
+            onOpenNarrative={() => setNarrativeOpen(true)}
           />
           <button
             onClick={() => setManageOpen(v => !v)}
@@ -116,8 +113,7 @@ export default function PlanTab() {
       {/* Settimana corrente (proiettata dal macro se attivo, adattabile) */}
       <TrainingPlanView />
 
-      {/* Narrativa completa + riferimenti (testo lungo): l'unico uso residuo del
-          modale fullscreen. La navigazione settimanale è inline qui sopra. */}
+      {/* Narrativa completa + riferimenti (testo lungo): unico uso del modale. */}
       {macro && narrativeOpen && (
         <ProgramView program={macro} onClose={() => setNarrativeOpen(false)} />
       )}
@@ -125,59 +121,7 @@ export default function PlanTab() {
   );
 }
 
-// ─── Banner strategia compatto ──────────────────────────────────────────────
-
-function MacroStrategyBanner({
-  program, progress, onOpenNarrative,
-}: {
-  program: MacroProgram;
-  progress: ReturnType<typeof computeMacroProgress>;
-  onOpenNarrative: () => void;
-}) {
-  const total = program.metadata.weeks_total;
-  const currentWeek = progress?.currentWeek ?? 0;
-  const phase = progress?.currentPhase;
-
-  const statusLine = currentWeek === 0
-    ? `Inizia tra ${Math.abs(progress?.daysFromStart ?? 0)} giorni`
-    : currentWeek > total
-      ? "Programma concluso"
-      : `Settimana ${currentWeek} di ${total}${phase ? ` · ${phase}` : ""}`;
-
-  return (
-    <div
-      style={{
-        background: "linear-gradient(135deg, #16213E 0%, #1E2746 100%)",
-        border: "1px solid #E8553A55",
-        borderRadius: "14px", padding: "14px 16px",
-        display: "flex", flexDirection: "column", gap: "8px",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-        <div style={{ fontSize: "10px", color: "#E8553A", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" }}>
-          📋 Programma
-        </div>
-        <button
-          onClick={onOpenNarrative}
-          style={{
-            padding: "4px 8px", background: "transparent", border: "none",
-            color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
-            textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: "3px",
-          }}
-        >Narrativa e riferimenti →</button>
-      </div>
-
-      <div style={{ fontSize: "15px", fontWeight: 700, color: "#E2E8F0", lineHeight: 1.3 }}>
-        {program.metadata.title}
-      </div>
-      <div style={{ fontSize: "12px", color: "#0891B2", fontWeight: 600 }}>
-        {statusLine}
-      </div>
-    </div>
-  );
-}
-
-// ─── Timeline inline navigabile ──────────────────────────────────────────────
+// ─── Header programma: identità + timeline navigabile (Sprint L: fuso) ────────
 
 function phaseForWeek(program: MacroProgram, week: number): string | undefined {
   for (const p of program.phases) {
@@ -188,11 +132,13 @@ function phaseForWeek(program: MacroProgram, week: number): string | undefined {
   return undefined;
 }
 
-function MacroTimelineInline({
-  program, currentWeek,
+function ProgramHeader({
+  program, currentWeek, progress, onOpenNarrative,
 }: {
   program: MacroProgram;
   currentWeek: number;
+  progress: ReturnType<typeof computeMacroProgress>;
+  onOpenNarrative: () => void;
 }) {
   const total = program.metadata.weeks_total;
   const weeks = useMemo(() => Array.from({ length: total }, (_, i) => i + 1), [total]);
@@ -205,6 +151,7 @@ function MacroTimelineInline({
   );
   const phaseName = phaseForWeek(program, selected);
   const isCurrent = selected === currentWeek;
+  const currentPhase = progress?.currentPhase;
 
   const sortedSessions = useMemo(() => {
     if (!weekData) return [];
@@ -213,14 +160,41 @@ function MacroTimelineInline({
     );
   }, [weekData]);
 
-  return (
-    <div style={cardStyle}>
-      <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>
-        Timeline programma
-      </div>
+  // UNICA fonte di "Settimana N/M · Fase" in tutta la schermata.
+  const statusLine = currentWeek === 0
+    ? `Inizia tra ${Math.abs(progress?.daysFromStart ?? 0)} giorni · ${total} settimane`
+    : currentWeek > total
+      ? "Programma concluso"
+      : `Settimana ${currentWeek}/${total}${currentPhase ? ` · ${currentPhase}` : ""}`;
 
-      {/* Chip settimane navigabili */}
-      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "12px" }}>
+  return (
+    <div style={{
+      background: "linear-gradient(135deg, #16213E 0%, #1E2746 100%)",
+      border: "1px solid #E8553A55",
+      borderRadius: "14px", padding: "14px 16px",
+      display: "flex", flexDirection: "column", gap: "10px",
+    }}>
+      {/* Identità */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+        <div style={{ fontSize: "10px", color: "#E8553A", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+          📋 Programma
+        </div>
+        <button
+          onClick={onOpenNarrative}
+          style={{
+            padding: "4px 8px", background: "transparent", border: "none",
+            color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
+            textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: "3px",
+          }}
+        >Narrativa →</button>
+      </div>
+      <div style={{ fontSize: "15px", fontWeight: 700, color: "#E2E8F0", lineHeight: 1.3 }}>
+        {program.metadata.title}
+      </div>
+      <div style={{ fontSize: "12px", color: "#0891B2", fontWeight: 600 }}>{statusLine}</div>
+
+      {/* Timeline chip navigabili */}
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
         {weeks.map(w => {
           const sel = w === selected;
           const cur = w === currentWeek;
@@ -232,7 +206,7 @@ function MacroTimelineInline({
               aria-pressed={sel}
               title={`Settimana ${w}${cur ? " (corrente)" : ""}`}
               style={{
-                minWidth: "38px", padding: "7px 9px",
+                minWidth: "36px", padding: "6px 9px",
                 background: sel ? "#E8553A" : cur ? "#E8553A22" : past ? "#0891B218" : "#1A1A2E",
                 border: sel ? "1px solid #E8553A" : cur ? "1px solid #E8553A66" : "1px solid rgba(255,255,255,0.1)",
                 borderRadius: "9px",
@@ -247,38 +221,24 @@ function MacroTimelineInline({
         })}
       </div>
 
-      {/* Header settimana selezionata */}
-      <div style={{ display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
-        <span style={{ fontSize: "14px", fontWeight: 700, color: "#E2E8F0" }}>
-          Settimana {selected}
-        </span>
-        {phaseName && <span style={{ fontSize: "12px", color: "#0891B2", fontWeight: 600 }}>· {phaseName}</span>}
-        {isCurrent && (
-          <span style={{ fontSize: "10px", color: "#E8553A", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-            corrente
-          </span>
-        )}
-      </div>
-      {weekData?.notes && (
-        <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.5, marginBottom: "8px" }}>
-          {weekData.notes}
-        </div>
-      )}
-
-      {/* Contenuto settimana */}
-      {isCurrent ? (
-        <div style={{
-          fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5,
-          background: "#0891B212", border: "1px solid #0891B233",
-          borderRadius: "9px", padding: "10px 12px",
-        }}>
-          Questa è la settimana corrente — la trovi viva e adattabile qui sotto ↓
-        </div>
-      ) : sortedSessions.length === 0 ? (
-        <div style={{ fontSize: "12px", color: "#64748B" }}>Nessuna sessione in questa settimana.</div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          {sortedSessions.map((s, i) => <SessionPreviewLine key={i} session={s} />)}
+      {/* Anteprima SOLO se sfogli una settimana diversa dalla corrente.
+          (La corrente è già viva e dettagliata sotto: niente doppione.) */}
+      {!isCurrent && (
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "13px", fontWeight: 700, color: "#E2E8F0" }}>Anteprima settimana {selected}</span>
+            {phaseName && <span style={{ fontSize: "12px", color: "#0891B2", fontWeight: 600 }}>· {phaseName}</span>}
+          </div>
+          {weekData?.notes && (
+            <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.5 }}>{weekData.notes}</div>
+          )}
+          {sortedSessions.length === 0 ? (
+            <div style={{ fontSize: "12px", color: "#64748B" }}>Nessuna sessione in questa settimana.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {sortedSessions.map((s, i) => <SessionPreviewLine key={i} session={s} />)}
+            </div>
+          )}
         </div>
       )}
     </div>
