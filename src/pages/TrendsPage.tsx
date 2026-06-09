@@ -363,39 +363,48 @@ export default function TrendsPage() {
                 </div>
               </div>
 
-              <div style={cardStyle}>
-                <SectionHeader title="Passo medio" hint="min:sec/km — basso = veloce, alto = lento" color="#E8553A" />
-                <Sparkline
-                  points={series.runPaceSeries}
-                  width={width - 32}
-                  color="#E8553A"
-                  formatValue={v => {
-                    if (!Number.isFinite(v) || v <= 0) return "—";
-                    const m = Math.floor(v / 60);
-                    const s = Math.round(v - m * 60);
-                    return `${m}:${s.toString().padStart(2, "0")}`;
-                  }}
-                />
-              </div>
-
-              <div style={cardStyle}>
-                <SectionHeader title="FC media corsa" hint="bpm — a parità di passo, più bassa = più fit" color="#DC2626" />
-                <Sparkline points={series.runHRSeries} width={width - 32} color="#DC2626" unit=" bpm" />
-              </div>
-
-              <div style={cardStyle}>
-                <SectionHeader title="Efficienza aerobica (EF)" hint="metri per battito — più alto = più economico" color="#22C55E" />
-                <Sparkline
-                  points={series.runEfSeries}
-                  width={width - 32}
-                  color="#22C55E"
-                  unit=" m/btt"
-                  showDots
-                />
-                <div style={{ fontSize: "10px", color: "#64748B", marginTop: "6px", lineHeight: 1.4 }}>
-                  EF = velocità (m/min) / FC media. A parità di intensità, salita dell'EF = economia di corsa migliorata.
+              {/* Sprint N: ogni metrica corsa è una card SOLO se ha dati. Quelle
+                  senza dati confluiscono nella riga "non disponibili" sotto,
+                  invece di una card "Nessun dato nel periodo" ciascuna. */}
+              {series.runPaceSeries.some(p => p?.value != null) && (
+                <div style={cardStyle}>
+                  <SectionHeader title="Passo medio" hint="min:sec/km — basso = veloce, alto = lento" color="#E8553A" />
+                  <Sparkline
+                    points={series.runPaceSeries}
+                    width={width - 32}
+                    color="#E8553A"
+                    formatValue={v => {
+                      if (!Number.isFinite(v) || v <= 0) return "—";
+                      const m = Math.floor(v / 60);
+                      const s = Math.round(v - m * 60);
+                      return `${m}:${s.toString().padStart(2, "0")}`;
+                    }}
+                  />
                 </div>
-              </div>
+              )}
+
+              {series.runHRSeries.some(p => p?.value != null) && (
+                <div style={cardStyle}>
+                  <SectionHeader title="FC media corsa" hint="bpm — a parità di passo, più bassa = più fit" color="#DC2626" />
+                  <Sparkline points={series.runHRSeries} width={width - 32} color="#DC2626" unit=" bpm" />
+                </div>
+              )}
+
+              {series.runEfSeries.some(p => p?.value != null) && (
+                <div style={cardStyle}>
+                  <SectionHeader title="Efficienza aerobica (EF)" hint="metri per battito — più alto = più economico" color="#22C55E" />
+                  <Sparkline
+                    points={series.runEfSeries}
+                    width={width - 32}
+                    color="#22C55E"
+                    unit=" m/btt"
+                    showDots
+                  />
+                  <div style={{ fontSize: "10px", color: "#64748B", marginTop: "6px", lineHeight: 1.4 }}>
+                    EF = velocità (m/min) / FC media. A parità di intensità, salita dell'EF = economia di corsa migliorata.
+                  </div>
+                </div>
+              )}
 
               {series.runCadenceSeries.some(p => p.value != null) && (
                 <div style={cardStyle}>
@@ -403,6 +412,23 @@ export default function TrendsPage() {
                   <Sparkline points={series.runCadenceSeries} width={width - 32} color="#8B5CF6" unit=" spm" />
                 </div>
               )}
+
+              {(() => {
+                const miss: string[] = [];
+                if (!series.runPaceSeries.some(p => p?.value != null)) miss.push("Passo medio");
+                if (!series.runHRSeries.some(p => p?.value != null)) miss.push("FC media corsa");
+                if (!series.runEfSeries.some(p => p?.value != null)) miss.push("Efficienza aerobica");
+                if (miss.length === 0) return null;
+                return (
+                  <div style={{ ...cardStyle, padding: "10px 12px" }}>
+                    <span style={{ fontSize: "11px", color: "#CBD5E1", fontWeight: 700 }}>Metriche corsa non disponibili:</span>
+                    <span style={{ fontSize: "11px", color: "#94A3B8" }}> {miss.join(" · ")}</span>
+                    <div style={{ fontSize: "10px", color: "#64748B", marginTop: "4px", lineHeight: 1.4 }}>
+                      Registra passo/distanza e FC nelle corse per popolarle.
+                    </div>
+                  </div>
+                );
+              })()}
             </>
           )}
 

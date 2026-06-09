@@ -132,17 +132,25 @@ export default function Sparkline({
   // altrimenti React crasha per hooks call-order mismatch quando period cambia.
   const xLabels = useMemo(() => {
     if (!Array.isArray(points) || points.length < 2) return [];
+    const n = points.length;
     const maxLabels = Math.min(5, Math.max(2, Math.floor(width / 70)));
-    const step = Math.max(1, Math.floor((points.length - 1) / (maxLabels - 1)));
-    const indices: number[] = [];
-    for (let i = 0; i < points.length; i += step) indices.push(i);
-    if (indices[indices.length - 1] !== points.length - 1) indices.push(points.length - 1);
-    while (indices.length > maxLabels) indices.splice(1, 1);
-    return indices.map(i => {
-      const p = points[i];
-      const pct = points.length > 1 ? (i / (points.length - 1)) * 100 : 50;
-      return { pct, label: p?.date ? fmtDate(p.date) : "" };
+    // Indici EQUISPAZIATI (primo→ultimo). Niente più dedup-splice che lasciava
+    // le ultime due label adiacenti → overlap "7 giu / 9 giu" (Sprint N fix).
+    const raw: number[] = [];
+    for (let k = 0; k < maxLabels; k++) raw.push(Math.round((k / (maxLabels - 1)) * (n - 1)));
+    const uniq = Array.from(new Set(raw)).sort((a, b) => a - b);
+    // Spaziatura minima in %: scarta label troppo vicine (tenendo sempre l'ultima).
+    const minGapPct = 16;
+    const out: Array<{ pct: number; label: string }> = [];
+    uniq.forEach((i, idx) => {
+      const pct = (i / (n - 1)) * 100;
+      const isLast = idx === uniq.length - 1;
+      const prev = out[out.length - 1];
+      if (!isLast && prev && pct - prev.pct < minGapPct) return;
+      if (isLast && prev && pct - prev.pct < minGapPct) out.pop(); // l'ultima ha priorità
+      out.push({ pct, label: points[i]?.date ? fmtDate(points[i].date) : "" });
     });
+    return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points, width]);
 
@@ -187,6 +195,22 @@ export default function Sparkline({
     return indices;
   })();
 
+  // Quali punti mostrano la value-label sopra il pallino: "endpoints" → max/min/
+  // last; "all" → con THINNING per distanza-x minima (evita l'overlap orizzontale
+  // "8 5 5" quando i punti sono ravvicinati); "none" → nessuno. (Sprint N)
+  const valueLabelIndices = (() => {
+    if (effectiveLabels === "none") return new Set<number>();
+    if (effectiveLabels === "endpoints") return endpointIndices;
+    const show = new Set<number>();
+    let lastX = -Infinity;
+    const minGapPx = 24;
+    for (const c of allCoords) {
+      if (!c) continue;
+      if (c.x - lastX >= minGapPx) { show.add(c.idx); lastX = c.x; }
+    }
+    return show;
+  })();
+
   return (
     <div style={{ position: "relative", width }}>
       <svg
@@ -219,7 +243,7 @@ export default function Sparkline({
           if (!c) return null;
           const v = points[c.idx]?.value;
           if (typeof v !== "number") return null;
-          if (effectiveLabels === "endpoints" && !endpointIndices.has(c.idx)) return null;
+          if (!valueLabelIndices.has(c.idx)) return null;
           // Posiziona sopra il pallino. Se troppo vicino al top (y<14), flip sotto.
           const aboveY = c.y - 8;
           const isFlipped = aboveY < 12;
