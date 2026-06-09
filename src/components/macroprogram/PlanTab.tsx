@@ -18,16 +18,11 @@ import { loadActiveMacroProgram, computeMacroProgress, setMacroStartDate, monday
 import { lookupExerciseHybrid } from "../../lib/macroprogram/customCatalog";
 import type { MacroProgram, MacroProgramSession } from "../../lib/types/macroprogram";
 import { events } from "../../lib/events";
-import { TOKENS, TYPE, SPACE, RADIUS } from "../../lib/theme";
+import { TOKENS, TYPE, SPACE, RADIUS, uiCard } from "../../lib/theme";
 
 const DAY_ORDER = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const;
 
-const cardStyle: React.CSSProperties = {
-  background: "#16213E",
-  border: "1px solid rgba(255,255,255,0.06)",
-  borderRadius: "14px",
-  padding: "14px 16px",
-};
+const cardStyle = uiCard; // design system (theme.ts)
 
 export default function PlanTab() {
   const [macro, setMacro] = useState<MacroProgram | null>(null);

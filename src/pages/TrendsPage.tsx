@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getAllDays } from "../lib/diaryContext";
 import { events } from "../lib/events";
+import { uiCard, TYPE } from "../lib/theme";
 import Sparkline, { type SparklinePoint } from "../components/Sparkline";
 import LoadingSpinner from "../components/LoadingSpinner";
 
@@ -285,10 +286,7 @@ export default function TrendsPage() {
   const series = seriesResult;
   const seriesError = seriesResult.error;
 
-  const cardStyle: Record<string, any> = {
-    background: "#16213E", border: "1px solid rgba(255,255,255,0.06)",
-    borderRadius: "14px", padding: "14px 16px",
-  };
+  const cardStyle = uiCard; // design system (theme.ts)
 
   const hasAnyData = series.stats.sessions > 0 || series.stats.checkins > 0;
 
@@ -567,9 +565,9 @@ function Stat({ label, value, delta }: { label: string; value: number | string; 
 
 function SectionHeader({ title, hint, color }: { title: string; hint: string; color: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "8px" }}>
-      <div style={{ fontSize: "13px", fontWeight: 700, color }}>{title}</div>
-      <div style={{ fontSize: "11px", color: "#64748B" }}>{hint}</div>
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "8px", marginBottom: "10px" }}>
+      <div style={{ ...TYPE.section, color }}>{title}</div>
+      <div style={{ fontSize: "11px", color: "#64748B", textAlign: "right" }}>{hint}</div>
     </div>
   );
 }

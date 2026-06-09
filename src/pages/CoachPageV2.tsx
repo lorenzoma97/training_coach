@@ -17,6 +17,7 @@ import FCMaxTestSection from "../components/FCMaxTestSection";
 import LTThresholdSection from "../components/LTThresholdSection";
 import MobilityLibrary from "../components/mobility/MobilityLibrary";
 import { getJSON } from "../lib/storage";
+import { uiCard, uiLabel, uiValue } from "../lib/theme";
 import type { UserProfile, TrainingPlan } from "../lib/types";
 import { events } from "../lib/events";
 import { getLastNDays } from "../lib/diaryContext";
@@ -96,22 +97,11 @@ function useTodayState(refreshKey: number): TodayState {
 
 // ─── Style helpers (dark theme, mobile-first 390) ──────────────────────────
 
-const cardStyle: React.CSSProperties = {
-  background: "#16213E",
-  border: "1px solid rgba(255,255,255,0.06)",
-  borderRadius: "14px",
-  padding: "14px 16px",
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: "10px", color: "#64748B", fontWeight: 700,
-  letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "6px",
-};
-
-const valueStyle: React.CSSProperties = {
-  fontSize: "20px", fontWeight: 800, color: "#E2E8F0",
-  fontFamily: "'JetBrains Mono', monospace",
-};
+// Stili condivisi dal design system (theme.ts) — un solo linguaggio card/label/
+// valore in tutta l'app, invece di ridefinirli per schermata.
+const cardStyle = uiCard;
+const labelStyle = uiLabel;
+const valueStyle = uiValue;
 
 const READINESS_META: Record<string, { color: string; label: string }> = {
   low: { color: "#EF4444", label: "BASSA" },

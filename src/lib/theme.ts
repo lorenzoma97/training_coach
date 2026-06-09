@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 // Sistema colore semantico (Sprint N, 2026-06-09).
 //
 // REGOLA: un colore = UN significato. Nasce dall'audit UX che ha trovato
@@ -66,3 +68,29 @@ export const TYPE = {
   secondary:  { fontSize: "13px", fontWeight: 500, lineHeight: 1.5 },
   label:      { fontSize: "11px", fontWeight: 700, lineHeight: 1.3, letterSpacing: "0.08em", textTransform: "uppercase" },
 } as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stili UI CONDIVISI (skill product-ui-system) — un solo linguaggio per card,
+// label di sezione e valori-metrica in tutta l'app. Le schermate importano
+// questi invece di ridefinirne uno proprio → consistenza per costruzione.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const uiCard: CSSProperties = {
+  background: TOKENS.surface,
+  border: "1px solid rgba(255,255,255,0.06)",
+  borderRadius: `${RADIUS.card}px`,
+  padding: `${SPACE.lg}px`,
+};
+
+export const uiLabel: CSSProperties = {
+  ...TYPE.label,
+  color: TOKENS.neutral,
+  marginBottom: `${SPACE.sm}px`,
+};
+
+export const uiValue: CSSProperties = {
+  fontSize: "20px",
+  fontWeight: 800,
+  color: TOKENS.text,
+  fontFamily: "'JetBrains Mono', monospace",
+};
