@@ -30,6 +30,37 @@ export async function saveActiveMacroProgram(program: MacroProgram): Promise<voi
   await setJSON(ACTIVE_KEY, program);
 }
 
+/** Normalizza una data (YYYY-MM-DD) al LUNEDÌ della sua settimana. null se invalida. */
+export function mondayOf(dateISO: string): string | null {
+  const parts = dateISO.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return null;
+  const [y, m, d] = parts;
+  const dt = new Date(y, m - 1, d);
+  if (Number.isNaN(dt.getTime())) return null;
+  const dow = (dt.getDay() + 6) % 7; // 0=lun ... 6=dom
+  dt.setDate(dt.getDate() - dow);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Aggiorna SOLO la data di inizio del macro attivo, normalizzata al lunedì
+ * (le settimane sono lun→dom: start_date non-lunedì romperebbe il mapping
+ * giorno→data). NON archivia in history: è una modifica di setting, non una
+ * sostituzione del programma. Ritorna il programma aggiornato o null.
+ */
+export async function setMacroStartDate(dateISO: string): Promise<MacroProgram | null> {
+  const program = await loadActiveMacroProgram();
+  if (!program) return null;
+  const monday = mondayOf(dateISO);
+  if (!monday) return null;
+  const updated: MacroProgram = {
+    ...program,
+    metadata: { ...program.metadata, start_date: monday },
+  };
+  await setJSON(ACTIVE_KEY, updated);
+  return updated;
+}
+
 export async function clearActiveMacroProgram(): Promise<void> {
   const current = await loadActiveMacroProgram();
   if (current) {

@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import TrainingPlanView from "../TrainingPlanView";
 import ProgramView from "./ProgramView";
 import MacroProgramUploadSection from "./MacroProgramUploadSection";
-import { loadActiveMacroProgram, computeMacroProgress } from "../../lib/macroprogram/storage";
+import { loadActiveMacroProgram, computeMacroProgress, setMacroStartDate, mondayOf } from "../../lib/macroprogram/storage";
 import { lookupExerciseHybrid } from "../../lib/macroprogram/customCatalog";
 import type { MacroProgram, MacroProgramSession } from "../../lib/types/macroprogram";
 import { events } from "../../lib/events";
@@ -75,9 +75,14 @@ export default function PlanTab() {
             {manageOpen ? "Chiudi gestione" : "⚙ Gestisci / sostituisci programma"}
           </button>
           {manageOpen && (
-            <div style={cardStyle}>
-              <MacroProgramUploadSection />
-            </div>
+            <>
+              <div style={cardStyle}>
+                <StartDateEditor program={macro} onChanged={() => setRefreshKey(k => k + 1)} />
+              </div>
+              <div style={cardStyle}>
+                <MacroProgramUploadSection />
+              </div>
+            </>
           )}
         </>
       )}
@@ -241,6 +246,96 @@ function ProgramHeader({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Editor data di inizio (Sprint, 2026-06-09) ───────────────────────────────
+
+function StartDateEditor({ program, onChanged }: { program: MacroProgram; onChanged: () => void }) {
+  const [val, setVal] = useState(program.metadata.start_date ?? "");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const progress = computeMacroProgress(program);
+  const total = program.metadata.weeks_total;
+
+  const fmtIT = (iso?: string) => {
+    if (!iso) return "—";
+    const [y, m, d] = iso.split("-").map(Number);
+    if (!y) return iso;
+    return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
+  };
+
+  const apply = async (dateISO: string) => {
+    if (!dateISO || saving) return;
+    setSaving(true); setMsg(null);
+    const updated = await setMacroStartDate(dateISO);
+    setSaving(false);
+    if (updated) {
+      setVal(updated.metadata.start_date ?? dateISO);
+      // plan:updated → TrainingPlanView riproietta sulla nuova settimana corrente.
+      events.emit("plan:updated", { at: new Date().toISOString() });
+      setMsg(`Inizio impostato a lun ${fmtIT(updated.metadata.start_date)}.`);
+      onChanged();
+    } else {
+      setMsg("Data non valida.");
+    }
+  };
+
+  const now = new Date();
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const thisMonday = mondayOf(todayISO);
+
+  const statusLine = !progress
+    ? "—"
+    : progress.currentWeek === 0
+      ? `inizia tra ${Math.abs(progress.daysFromStart)} giorni`
+      : progress.currentWeek > total
+        ? "concluso"
+        : `oggi: settimana ${progress.currentWeek}/${total}`;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div style={{ fontSize: "12px", fontWeight: 700, color: "#E2E8F0" }}>📅 Data di inizio</div>
+      <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5 }}>
+        Le settimane vanno lun→dom: la settimana 1 parte dal lunedì scelto (la data viene riportata al lunedì della sua settimana). Cambiala per ricominciare dopo uno stop, o per far partire il piano questa settimana.
+      </div>
+      <div style={{ fontSize: "12px", color: "#CBD5E1" }}>
+        Attuale: <b>lun {fmtIT(program.metadata.start_date)}</b> · {statusLine}
+      </div>
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          type="date"
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          style={{
+            padding: "8px 10px", background: "#0F172A",
+            border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+            color: "#E2E8F0", fontSize: "13px",
+          }}
+        />
+        <button
+          onClick={() => apply(val)}
+          disabled={saving || !val}
+          style={{
+            padding: "8px 14px", background: "linear-gradient(135deg, #E8553A 0%, #D4452F 100%)",
+            border: "none", borderRadius: "8px", color: "#FFF", fontSize: "13px", fontWeight: 700,
+            cursor: saving ? "wait" : "pointer", opacity: saving || !val ? 0.6 : 1,
+          }}
+        >Applica</button>
+      </div>
+      {thisMonday && (
+        <button
+          onClick={() => apply(thisMonday)}
+          disabled={saving}
+          style={{
+            alignSelf: "flex-start", padding: "8px 12px", background: "transparent",
+            border: "1px solid #0891B266", borderRadius: "8px",
+            color: "#0891B2", fontSize: "12px", fontWeight: 700, cursor: saving ? "wait" : "pointer",
+          }}
+        >↻ Ricomincia da questa settimana (lun {fmtIT(thisMonday)})</button>
+      )}
+      {msg && <div style={{ fontSize: "11px", color: "#22C55E" }}>{msg}</div>}
     </div>
   );
 }
