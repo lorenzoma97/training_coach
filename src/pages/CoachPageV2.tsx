@@ -182,6 +182,12 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
   // Sprint 4.4: progress macroprogramma (settimana corrente + fase)
   const macroProgress = macroProgram ? computeMacroProgress(macroProgram) : null;
 
+  // Sprint N: empty-state grouping. Le metriche senza dati NON occupano una card
+  // piena ciascuna: confluiscono in una riga "non ancora disponibili" in fondo.
+  const missing: string[] = [];
+  if (!s.readiness) missing.push("Stato corpo (manca il check di oggi)");
+  if (!(s.load && s.load.daysUsed >= 14)) missing.push("Carico settimanale (servono ≥14 giorni)");
+
   // ─── Render ──────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -251,10 +257,10 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
         </div>
       )}
 
-      {/* Stato corpo */}
-      <div style={cardStyle}>
-        <div style={labelStyle}>Stato corpo</div>
-        {s.readiness ? (
+      {/* Stato corpo — solo se c'è il check di oggi (altrimenti → riga "non disponibili") */}
+      {s.readiness && (
+        <div style={cardStyle}>
+          <div style={labelStyle}>Stato corpo</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: "10px", flexWrap: "wrap" }}>
             <span style={{
               ...valueStyle,
@@ -266,50 +272,40 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
               readiness score {Math.round(s.readiness.score)}/100
             </span>
           </div>
-        ) : (
-          <div style={{ fontSize: "12px", color: "#94A3B8" }}>
-            Nessun check oggi — registra un daily check per ricevere readiness.
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Carico settimanale */}
-      <div style={cardStyle}>
-        <div style={labelStyle}>Carico settimanale (TrainingPeaks PMC)</div>
-        {s.load && s.load.daysUsed >= 14 ? (
-          <>
-            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "6px" }}>
-              <div>
-                <div style={{ fontSize: "10px", color: "#64748B" }}>ATL (7gg)</div>
-                <div style={{ ...valueStyle, fontSize: "16px" }}>{s.load.atl}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: "10px", color: "#64748B" }}>CTL (42gg)</div>
-                <div style={{ ...valueStyle, fontSize: "16px" }}>{s.load.ctl}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: "10px", color: "#64748B" }}>TSB</div>
-                <div style={{ ...valueStyle, fontSize: "16px", color: TSB_BAND_META[s.load.band].color }}>
-                  {s.load.tsb >= 0 ? "+" : ""}{s.load.tsb}
-                </div>
+      {/* Carico settimanale — solo con ≥14 giorni (altrimenti → "non disponibili") */}
+      {s.load && s.load.daysUsed >= 14 && (
+        <div style={cardStyle}>
+          <div style={labelStyle}>Carico settimanale (TrainingPeaks PMC)</div>
+          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "6px" }}>
+            <div>
+              <div style={{ fontSize: "10px", color: "#64748B" }}>ATL (7gg)</div>
+              <div style={{ ...valueStyle, fontSize: "16px" }}>{s.load.atl}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: "10px", color: "#64748B" }}>CTL (42gg)</div>
+              <div style={{ ...valueStyle, fontSize: "16px" }}>{s.load.ctl}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: "10px", color: "#64748B" }}>TSB</div>
+              <div style={{ ...valueStyle, fontSize: "16px", color: TSB_BAND_META[s.load.band].color }}>
+                {s.load.tsb >= 0 ? "+" : ""}{s.load.tsb}
               </div>
             </div>
-            <div style={{
-              fontSize: "11px",
-              color: TSB_BAND_META[s.load.band].color,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-            }}>
-              {TSB_BAND_META[s.load.band].label} · <span style={{ color: "#94A3B8", fontWeight: 500, letterSpacing: 0, textTransform: "none" }}>{TSB_BAND_META[s.load.band].copy}</span>
-            </div>
-          </>
-        ) : (
-          <div style={{ fontSize: "12px", color: "#94A3B8" }}>
-            Servono ≥14 giorni di workout tracciati per CTL/ATL/TSB.
           </div>
-        )}
-      </div>
+          <div style={{
+            fontSize: "11px",
+            color: TSB_BAND_META[s.load.band].color,
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          }}>
+            {TSB_BAND_META[s.load.band].label} · <span style={{ color: "#94A3B8", fontWeight: 500, letterSpacing: 0, textTransform: "none" }}>{TSB_BAND_META[s.load.band].copy}</span>
+          </div>
+        </div>
+      )}
 
       {/* Sessione di oggi */}
       <SessionDetailCard
@@ -318,12 +314,22 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
         onSessionUpdated={() => setRefreshKey(k => k + 1)}
       />
 
-      {/* Sprint C: Feed coach — promosso da collapsible in Tools a card in Oggi.
-          "Cosa ti ha detto il coach": logico vederlo all'apertura. */}
-      <div style={cardStyle}>
-        <div style={labelStyle}>📬 Dal coach</div>
-        <CoachFeedList />
-      </div>
+      {/* Dal coach — collassato per non occupare una card piena quando è vuoto */}
+      <details style={cardStyle}>
+        <summary style={{ ...labelStyle, cursor: "pointer", listStyle: "none", marginBottom: 0 }}>📬 Dal coach</summary>
+        <div style={{ marginTop: "8px" }}><CoachFeedList /></div>
+      </details>
+
+      {/* Sprint N: metriche non ancora disponibili → UNA riga neutra, non N card piene */}
+      {missing.length > 0 && (
+        <div style={{
+          background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: "10px", padding: "10px 12px",
+          fontSize: "11px", color: "#94A3B8", lineHeight: 1.5,
+        }}>
+          <span style={{ fontWeight: 700, color: "#CBD5E1" }}>Non ancora disponibili ({missing.length}):</span> {missing.join(" · ")}
+        </div>
+      )}
     </div>
   );
 }
@@ -351,9 +357,17 @@ function SessionDetailCard({
     return (
       <div style={cardStyle}>
         <div style={labelStyle}>Sessione di oggi ({todayLabel()})</div>
-        <div style={{ fontSize: "12px", color: "#94A3B8" }}>
-          Riposo programmato oggi 🛌 — o nessun piano attivo.
+        <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.5 }}>
+          Nessuna sessione pianificata per oggi 🛌
         </div>
+        <button
+          onClick={onGoToPlan}
+          style={{
+            marginTop: "8px", padding: "7px 12px", background: "transparent",
+            border: "1px solid #0891B266", borderRadius: "8px",
+            color: "#0891B2", fontSize: "12px", fontWeight: 700, cursor: "pointer",
+          }}
+        >Vedi il piano →</button>
       </div>
     );
   }
