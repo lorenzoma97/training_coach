@@ -13,7 +13,7 @@ import {
 } from "../lib/coach/macroAdapter";
 import { getCurrentReadiness } from "../lib/coach/readinessScoring";
 import { loadActiveMacroProgram } from "../lib/macroprogram/storage";
-import { TOKENS } from "../lib/theme";
+import { TOKENS, TYPE, SPACE, uiCard } from "../lib/theme";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { savePlanWithHistory, getPlanHistory, getNextPlan, saveNextPlan, clearNextPlan, maybePromoteNextPlan } from "../lib/coach/planHistory";
 import { computeZonesContext, inferSessionZone, stripInlineHRRange, type ZonesResult } from "../lib/coach/zones";
@@ -1700,22 +1700,22 @@ export default function TrainingPlanView() {
           weekRangeLabel = formatWeekRange(iso);
         }
         return (
-        <div key={w.weekNumber} style={{ background: "#16213E", borderRadius: "14px", padding: "18px 20px", border: "1px solid rgba(255,255,255,0.06)" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "4px", flexWrap: "wrap" }}>
+        <div key={w.weekNumber} style={{ ...uiCard, padding: `${SPACE.xl}px` }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: `${SPACE.sm}px`, marginBottom: `${SPACE.xs}px`, flexWrap: "wrap" }}>
             {/* Sprint N fix: l'etichetta mostra il numero di settimana del MACRO
                 (sourceMacro.weekNumber), non l'indice interno weeks[0].weekNumber
                 che è sempre 1 (serve al calcolo date). Così card e header
                 programma combaciano ("Settimana 2"), niente più "Settimana 1"
                 fantasma. Senza macro: fallback all'indice interno. */}
-            <div style={{ fontSize: "11px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase" }}>Settimana {plan.sourceMacro?.weekNumber ?? w.weekNumber}</div>
+            <div style={{ ...TYPE.label, color: TOKENS.primary }}>Settimana {plan.sourceMacro?.weekNumber ?? w.weekNumber}</div>
             {weekRangeLabel && (
-              <div style={{ fontSize: "12px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+              <div style={{ ...TYPE.secondary, color: TOKENS.neutral, fontFamily: "'JetBrains Mono', monospace" }}>
                 {weekRangeLabel}
               </div>
             )}
           </div>
           {w.focus && (
-            <div style={{ fontSize: "13px", color: "#CBD5E1", fontWeight: 600, marginBottom: "12px" }}>{w.focus}</div>
+            <div style={{ ...TYPE.body, color: "#CBD5E1", fontWeight: 600, marginBottom: `${SPACE.md}px` }}>{w.focus}</div>
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             {(() => {
