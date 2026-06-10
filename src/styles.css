@@ -1,5 +1,55 @@
 @import "tailwindcss";
 
+/* Tema shadcn/ui mappato sulla palette dell'app (dark-only, definito in :root). */
+:root {
+  --radius: 0.875rem;
+  --background: #0B0F1A;
+  --foreground: #E2E8F0;
+  --card: #16213E;
+  --card-foreground: #E2E8F0;
+  --popover: #16213E;
+  --popover-foreground: #E2E8F0;
+  --primary: #E8553A;
+  --primary-foreground: #FFFFFF;
+  --secondary: #1A1A2E;
+  --secondary-foreground: #E2E8F0;
+  --muted: #1A1A2E;
+  --muted-foreground: #94A3B8;
+  --accent: #1E2746;
+  --accent-foreground: #E2E8F0;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: rgba(255,255,255,0.08);
+  --input: rgba(255,255,255,0.12);
+  --ring: #E8553A;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; min-height: 100vh; background: #0B0F1A; }
 body {
