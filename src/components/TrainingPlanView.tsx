@@ -129,22 +129,17 @@ function ExercisesList({
   exercises: PlannedExercise[];
   availableEquipment: ReturnType<typeof normalizeEquipmentTags>;
 }) {
-  // Aperta di default: in palestra serve vederla subito. Touch target garantito.
+  // Render piatto (no <details> propria): vive dentro il collapse "Dettagli e
+  // scheda" della card-sessione, così basta UN tap per vedere descrizione + scheda.
   return (
-    <details open style={{ marginTop: "8px" }}>
-      <summary
-        style={{
-          cursor: "pointer", fontSize: "11px", fontWeight: 800,
-          color: "#14B8A6", letterSpacing: "0.1em", textTransform: "uppercase",
-          padding: "6px 0", minHeight: "32px",
-          display: "flex", alignItems: "center", gap: "6px",
-          listStyle: "none", userSelect: "none",
-        }}
-      >
-        <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▾</span>
+    <div style={{ marginTop: "8px" }}>
+      <div style={{
+        fontSize: "11px", fontWeight: 800, color: "#14B8A6",
+        letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "8px",
+      }}>
         Scheda esercizi ({exercises.length})
-      </summary>
-      <div style={{ margin: "8px 0 0", display: "flex", flexDirection: "column", gap: "8px" }}>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         {exercises.map((ex, exIdx) => {
           const result = resolveSubstitution(ex.exerciseId, availableEquipment, EXERCISES);
           const displayId = result && result.hop > 0 ? result.resolvedId : ex.exerciseId;
@@ -216,7 +211,7 @@ function ExercisesList({
           );
         })}
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -341,7 +336,14 @@ export default function TrainingPlanView() {
     let effectivePlan = p;
     if (profile) {
       const projected = await tryProjectMacroPlan(profile).catch(() => null);
-      if (projected && p?.sourceMacro?.weekNumber !== projected.sourceMacro?.weekNumber) {
+      // Riproietta se la settimana macro O la startDate del piano salvato non
+      // combaciano con la proiezione corrente: cattura anche il caso "stesso
+      // weekNumber ma data disallineata" (piano stale → allenamenti di altre
+      // settimane che sbordano nei giorni della settimana corrente).
+      if (projected && (
+        p?.sourceMacro?.weekNumber !== projected.sourceMacro?.weekNumber
+        || p?.startDate !== projected.startDate
+      )) {
         effectivePlan = projected;
         await savePlanWithHistory(projected).catch(() => { /* best-effort */ });
       }
@@ -1782,7 +1784,7 @@ export default function TrainingPlanView() {
                         <span style={{ color: "#60A5FA", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>🔸 AUTONOMO</span>
                       </div>
                       <div style={{ color: "#CBD5E1", fontSize: "12px", marginTop: "2px", lineHeight: 1.4 }}>
-                        Allenamento non pianificato — registrato il {(() => { const d = new Date(e.date + "T12:00:00"); const w = d.toLocaleDateString("it-IT", { weekday: "short" }); return `${w} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; })()}
+                        Allenamento non pianificato — registrato {(() => { const d = new Date(e.date + "T12:00:00"); const w = d.toLocaleDateString("it-IT", { weekday: "short" }); return `${w} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; })()}
                       </div>
                       {e.workout.notes && (
                         <div style={{ color: "#94A3B8", fontSize: "11px", fontStyle: "italic", marginTop: "4px", lineHeight: 1.4 }}>
@@ -1880,33 +1882,37 @@ export default function TrainingPlanView() {
                       Fatto il {(() => { const d = new Date(completion.date + "T12:00:00"); const w = d.toLocaleDateString("it-IT", { weekday: "short" }); return `${w} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; })()} invece del giorno pianificato
                     </div>
                   )}
-                  <div style={{ color: "#CBD5E1", lineHeight: 1.5 }}>{stripInlineHRRange(s.details)}</div>
-                  {/* Wave 4.3 — Render esercizi forza con SubstitutionBadge.
-                      Per ogni PlannedExercise.exerciseId, calcoliamo a render-time
-                      la sostituzione equipment-aware (pure, no async). hop>0 →
-                      badge ambra; null → badge errore rosso. Backward compat:
-                      se exercises è undefined o vuoto, niente render extra. */}
-                  {Array.isArray(s.exercises) && s.exercises.length > 0 && (
-                    <ExercisesList
-                      exercises={s.exercises}
-                      availableEquipment={availableEquipmentForRender}
-                    />
-                  )}
-                  {s.rationale && (
-                    <details style={{ marginTop: "6px" }}>
+                  {/* Collapse "Dettagli e scheda": card mostra solo il titolo;
+                      qui dentro descrizione + scheda esercizi + razionale. Chiuso
+                      di default → meno ingombro (richiesta utente). */}
+                  {(s.details || (Array.isArray(s.exercises) && s.exercises.length > 0) || s.rationale) && (
+                    <details style={{ marginTop: "8px" }}>
                       <summary
                         style={{
                           cursor: "pointer", listStyle: "none",
-                          fontSize: "11px", color: "#94A3B8",
-                          fontWeight: 600, padding: "4px 0", minHeight: "24px",
-                          display: "flex", alignItems: "center", gap: "5px",
-                          userSelect: "none",
+                          display: "flex", alignItems: "center", gap: "6px", minHeight: "32px",
+                          fontSize: "11px", fontWeight: 700, color: "#94A3B8",
+                          letterSpacing: "0.06em", textTransform: "uppercase", userSelect: "none",
                         }}
                       >
                         <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
-                        Razionale coach
+                        Dettagli e scheda
                       </summary>
-                      <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", marginTop: "4px", lineHeight: 1.5 }}>{s.rationale}</div>
+                      {s.details && (
+                        <div style={{ color: "#CBD5E1", lineHeight: 1.5, marginTop: "8px" }}>{stripInlineHRRange(s.details)}</div>
+                      )}
+                      {Array.isArray(s.exercises) && s.exercises.length > 0 && (
+                        <ExercisesList
+                          exercises={s.exercises}
+                          availableEquipment={availableEquipmentForRender}
+                        />
+                      )}
+                      {s.rationale && (
+                        <div style={{ marginTop: "10px" }}>
+                          <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "4px" }}>Razionale coach</div>
+                          <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", lineHeight: 1.5 }}>{s.rationale}</div>
+                        </div>
+                      )}
                     </details>
                   )}
                   {/* Action row: Registra (se non completata) + Chiedi al coach (sempre).
