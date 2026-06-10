@@ -1828,11 +1828,22 @@ export default function TrainingPlanView() {
                   borderRadius: "10px", fontSize: "13px",
                   opacity: isPast && !isCompleted ? 0.55 : 1,
                 }}>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px", flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 700, textTransform: "uppercase", color: dayLabelColor, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "62px" }}>
+                  {/* Gerarchia: occhiello giorno + badge stato (riga 1) → TIPO come
+                      titolo (riga 2) → meta durata/zona (riga 3). Il tipo è il
+                      centro della card. */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "2px" }}>
+                    <span style={{ fontWeight: 700, textTransform: "uppercase", color: dayLabelColor, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", letterSpacing: "0.06em" }}>
                       {s.day}{dayDateLabelP ? ` ${dayDateLabelP}` : ""}
                     </span>
-                    <span style={{ fontWeight: 600 }}>{s.type}{s.subtype ? ` · ${s.subtype}` : ""}</span>
+                    {isPerfect && <span aria-label="Sessione completata" style={{ color: "#22C55E", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em" }}>✓ FATTA</span>}
+                    {isPartial && <span aria-label="Sessione con variazione" style={{ color: "#F59E0B", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em" }}>⚠ VARIAZIONE</span>}
+                    {!isCompleted && isToday && <span aria-label="Sessione di oggi (ancora da fare)" style={{ color: "#14B8A6", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em" }}>OGGI</span>}
+                    {!isCompleted && !isToday && isPast && <span aria-label="Sessione saltata" style={{ color: "#94A3B8", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em" }}>SALTATA</span>}
+                  </div>
+                  <div style={{ fontSize: "15px", fontWeight: 700, color: "#E2E8F0", lineHeight: 1.25 }}>
+                    {s.type}{s.subtype ? ` · ${s.subtype}` : ""}
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginTop: "4px", marginBottom: "6px" }}>
                     <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{s.duration_min}min</span>
                     {(() => {
                       const chip = zoneChipFor(s);
@@ -1855,10 +1866,6 @@ export default function TrainingPlanView() {
                         </span>
                       );
                     })()}
-                    {isPerfect && <span aria-label="Sessione completata" style={{ color: "#22C55E", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>✓ FATTA</span>}
-                    {isPartial && <span aria-label="Sessione con variazione" style={{ color: "#F59E0B", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>⚠ VARIAZIONE</span>}
-                    {!isCompleted && isToday && <span aria-label="Sessione di oggi (ancora da fare)" style={{ color: "#14B8A6", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
-                    {!isCompleted && !isToday && isPast && <span aria-label="Sessione saltata" style={{ color: "#94A3B8", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>SALTATA</span>}
                   </div>
                   {isPartial && completion && (
                     <div style={{ color: "#F59E0B", fontSize: "11px", marginBottom: "6px", fontWeight: 600 }}>
