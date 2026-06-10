@@ -20,7 +20,7 @@ import { getJSON } from "../lib/storage";
 import { uiCard, uiLabel, uiValue } from "../lib/theme";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
-import { ClipboardList, ChevronRight, HeartPulse, TrendingUp, Inbox, AlertTriangle, CircleAlert } from "lucide-react";
+import { ClipboardList, ChevronRight, HeartPulse, TrendingUp, Inbox, AlertTriangle, CircleAlert, Dumbbell, Moon } from "lucide-react";
 import type { UserProfile, TrainingPlan } from "../lib/types";
 import { events } from "../lib/events";
 import { getLastNDays } from "../lib/diaryContext";
@@ -184,35 +184,24 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
   // ─── Render (pilota shadcn/Tailwind + lucide, 2026-06-10) ─────────────────
   return (
     <div className="flex flex-col gap-3">
-      {/* Programma attivo → porta al tab Piano (niente più terzo schermo). */}
+      {/* 1. Contesto programma: striscia SOTTILE → tab Piano (non compete con l'eroe) */}
       {macroProgram && (
-        <Card
+        <button
           onClick={onGoToPlan}
-          className="cursor-pointer p-4 border-primary/40 transition-transform active:scale-[0.99]"
+          className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-transform active:scale-[0.99]"
         >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-primary">
-              <ClipboardList className="size-4" />
-              <span className="text-[11px] font-bold uppercase tracking-wider">Programma</span>
-            </div>
-            <ChevronRight className="size-4 text-muted-foreground" />
-          </div>
-          <div className="mt-2 text-base font-bold leading-snug text-foreground">
-            {macroProgram.metadata.title}
-          </div>
-          {macroProgress && (
-            <div className="mt-1 text-[13px] font-semibold text-cyan-600">
-              {macroProgress.currentWeek === 0
-                ? `Inizia tra ${Math.abs(macroProgress.daysFromStart)} giorni`
-                : macroProgress.currentWeek > macroProgram.metadata.weeks_total
-                  ? "Programma concluso"
-                  : `Settimana ${macroProgress.currentWeek} di ${macroProgram.metadata.weeks_total}${macroProgress.currentPhase ? ` · ${macroProgress.currentPhase}` : ""}`}
-            </div>
+          <ClipboardList className="size-4 shrink-0 text-primary" />
+          <span className="flex-1 truncate text-[13px] font-semibold text-foreground">{macroProgram.metadata.title}</span>
+          {macroProgress && macroProgress.currentWeek >= 1 && macroProgress.currentWeek <= macroProgram.metadata.weeks_total && (
+            <span className="shrink-0 text-[11px] font-bold text-primary">
+              S{macroProgress.currentWeek}/{macroProgram.metadata.weeks_total}
+            </span>
           )}
-        </Card>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </button>
       )}
 
-      {/* Riprendi sessione interrotta */}
+      {/* 2. Riprendi sessione interrotta (se esiste) */}
       {resumeSnapshot && (
         <ResumeSessionBanner
           snapshot={resumeSnapshot}
@@ -221,7 +210,7 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
         />
       )}
 
-      {/* Alert (icone lucide, colori semantici) */}
+      {/* 3. Alert (alta priorità → restano vicino alla cima) */}
       {alerts.length > 0 && (
         <div className="flex flex-col gap-1.5">
           {alerts.map((a, i) => (
@@ -243,60 +232,47 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
         </div>
       )}
 
-      {/* Stato corpo */}
-      {s.readiness && (
-        <Card className="p-4">
-          <div className="mb-2 flex items-center gap-2 text-muted-foreground">
-            <HeartPulse className="size-4" />
-            <span className="text-[11px] font-bold uppercase tracking-wider">Stato corpo</span>
-          </div>
-          <div className="flex flex-wrap items-baseline gap-2.5">
-            <span className="text-2xl font-extrabold" style={{ color: READINESS_META[s.readiness.band]?.color ?? "#E2E8F0" }}>
-              {READINESS_META[s.readiness.band]?.label ?? s.readiness.band.toUpperCase()}
-            </span>
-            <span className="text-[13px] text-muted-foreground">readiness {Math.round(s.readiness.score)}/100</span>
-          </div>
-        </Card>
-      )}
-
-      {/* Carico settimanale */}
-      {s.load && s.load.daysUsed >= 14 && (
-        <Card className="p-4">
-          <div className="mb-3 flex items-center gap-2 text-muted-foreground">
-            <TrendingUp className="size-4" />
-            <span className="text-[11px] font-bold uppercase tracking-wider">Carico settimanale</span>
-          </div>
-          <div className="mb-2 flex flex-wrap gap-5 font-mono">
-            <div>
-              <div className="text-[10px] text-muted-foreground">ATL 7gg</div>
-              <div className="text-lg font-extrabold text-foreground">{s.load.atl}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-muted-foreground">CTL 42gg</div>
-              <div className="text-lg font-extrabold text-foreground">{s.load.ctl}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-muted-foreground">TSB</div>
-              <div className="text-lg font-extrabold" style={{ color: TSB_BAND_META[s.load.band].color }}>
-                {s.load.tsb >= 0 ? "+" : ""}{s.load.tsb}
-              </div>
-            </div>
-          </div>
-          <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: TSB_BAND_META[s.load.band].color }}>
-            {TSB_BAND_META[s.load.band].label}{" "}
-            <span className="font-medium normal-case tracking-normal text-muted-foreground">· {TSB_BAND_META[s.load.band].copy}</span>
-          </div>
-        </Card>
-      )}
-
-      {/* Sessione di oggi (componente esistente, frame coerente con le Card) */}
+      {/* 4. ★ EROE — cosa alleni OGGI (il centro della schermata) */}
       <SessionDetailCard
         session={s.todaySession}
         onGoToPlan={onGoToPlan}
         onSessionUpdated={() => setRefreshKey(k => k + 1)}
       />
 
-      {/* Dal coach — collassato */}
+      {/* 5. Stati secondari: readiness + carico, COMPATTI affiancati (subordinati all'eroe) */}
+      {(s.readiness || (s.load && s.load.daysUsed >= 14)) && (
+        <div className="flex flex-wrap gap-3">
+          {s.readiness && (
+            <Card className="min-w-[140px] flex-1 p-3">
+              <div className="mb-1.5 flex items-center gap-1.5 text-muted-foreground">
+                <HeartPulse className="size-3.5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Stato corpo</span>
+              </div>
+              <div className="text-lg font-extrabold leading-none" style={{ color: READINESS_META[s.readiness.band]?.color ?? "#E2E8F0" }}>
+                {READINESS_META[s.readiness.band]?.label ?? s.readiness.band.toUpperCase()}
+              </div>
+              <div className="mt-1 text-[11px] text-muted-foreground">readiness {Math.round(s.readiness.score)}/100</div>
+            </Card>
+          )}
+          {s.load && s.load.daysUsed >= 14 && (
+            <Card className="min-w-[140px] flex-1 p-3">
+              <div className="mb-1.5 flex items-center gap-1.5 text-muted-foreground">
+                <TrendingUp className="size-3.5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Carico · TSB</span>
+              </div>
+              <div className="text-lg font-extrabold leading-none" style={{ color: TSB_BAND_META[s.load.band].color }}>
+                {s.load.tsb >= 0 ? "+" : ""}{s.load.tsb}
+              </div>
+              <div className="mt-1 text-[11px] font-semibold" style={{ color: TSB_BAND_META[s.load.band].color }}>
+                {TSB_BAND_META[s.load.band].label}
+              </div>
+              <div className="mt-0.5 text-[10px] text-muted-foreground">ATL {s.load.atl} · CTL {s.load.ctl}</div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* 6. Dal coach — collassato (dettaglio nascosto) */}
       <details className="rounded-xl border border-border bg-card p-4">
         <summary className="flex cursor-pointer list-none items-center gap-2 text-muted-foreground">
           <Inbox className="size-4" />
@@ -305,7 +281,7 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
         <div className="mt-2"><CoachFeedList /></div>
       </details>
 
-      {/* Metriche non ancora disponibili → una riga sola */}
+      {/* 7. Metriche non ancora disponibili → una riga sola */}
       {missing.length > 0 && (
         <div className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
           <span className="font-bold text-foreground">Non ancora disponibili ({missing.length}):</span> {missing.join(" · ")}
@@ -337,17 +313,15 @@ function SessionDetailCard({
   if (!session) {
     return (
       <div style={cardStyle}>
-        <div style={labelStyle}>Sessione di oggi ({todayLabel()})</div>
-        <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.5 }}>
-          Nessuna sessione pianificata per oggi 🛌
+        <div className="mb-1 flex items-center gap-2 text-primary">
+          <Moon className="size-4" />
+          <span className="text-[11px] font-bold uppercase tracking-wider">Oggi · {todayLabel()}</span>
         </div>
+        <div className="text-xl font-extrabold leading-tight text-foreground">Riposo</div>
+        <div className="mb-3 mt-0.5 text-[13px] text-muted-foreground">Nessuna sessione pianificata</div>
         <button
           onClick={onGoToPlan}
-          style={{
-            marginTop: "8px", padding: "7px 12px", background: "transparent",
-            border: "1px solid #0891B266", borderRadius: "8px",
-            color: "#0891B2", fontSize: "12px", fontWeight: 700, cursor: "pointer",
-          }}
+          className="inline-flex h-9 items-center rounded-lg border border-border px-3 text-[13px] font-semibold text-muted-foreground"
         >Vedi il piano →</button>
       </div>
     );
@@ -452,14 +426,14 @@ function SessionDetailCard({
 
   return (
     <div style={cardStyle}>
-      <div style={labelStyle}>Sessione di oggi ({todayLabel()})</div>
-      <div style={{ fontSize: "15px", fontWeight: 700, color: "#E2E8F0", marginBottom: "4px" }}>
-        {session.type}{session.subtype ? ` · ${session.subtype}` : ""}
-        {session.zone ? ` · Z${session.zone}` : ""}
+      <div className="mb-1 flex items-center gap-2 text-primary">
+        <Dumbbell className="size-4" />
+        <span className="text-[11px] font-bold uppercase tracking-wider">Oggi · {todayLabel()}</span>
       </div>
-      <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "10px" }}>
-        {session.duration_min} min
+      <div className="text-xl font-extrabold leading-tight text-foreground">
+        {session.type}{session.subtype ? ` · ${session.subtype}` : ""}{session.zone ? ` · Z${session.zone}` : ""}
       </div>
+      <div className="mb-3 mt-0.5 text-[13px] text-muted-foreground">{session.duration_min} min</div>
 
       {!hasDetail && supportsDetail && (
         <>
@@ -475,9 +449,9 @@ function SessionDetailCard({
               disabled={generating}
               style={{
                 padding: "10px 14px",
-                background: generating ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
+                background: generating ? "#1E293B" : "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
                 border: "none", borderRadius: "10px",
-                color: "#FFF", fontSize: "13px", fontWeight: 700,
+                color: generating ? "#94A3B8" : "#052E2A", fontSize: "13px", fontWeight: 700,
                 cursor: generating ? "wait" : "pointer",
                 opacity: generating ? 0.6 : 1,
               }}
@@ -537,9 +511,9 @@ function SessionDetailCard({
                 onClick={() => setPlayerOpen(true)}
                 style={{
                   padding: "12px 18px",
-                  background: "linear-gradient(135deg, #22C55E 0%, #15803D 100%)",
+                  background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
                   border: "none", borderRadius: "10px",
-                  color: "#FFF", fontSize: "14px", fontWeight: 800, cursor: "pointer",
+                  color: "#052E2A", fontSize: "14px", fontWeight: 800, cursor: "pointer",
                   flex: "1 1 auto", minWidth: "180px",
                 }}
               >
@@ -550,9 +524,9 @@ function SessionDetailCard({
               onClick={handleCopyToDiary}
               style={{
                 padding: "10px 14px",
-                background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
-                border: "none", borderRadius: "10px",
-                color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.14)", borderRadius: "10px",
+                color: "#CBD5E1", fontSize: "13px", fontWeight: 700, cursor: "pointer",
               }}
             >
               📋 Copia in diario
