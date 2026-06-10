@@ -29,7 +29,7 @@ const inputStyle: React.CSSProperties = {
 
 const primaryBtn: React.CSSProperties = {
   padding: "9px 14px",
-  background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+  background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
   border: "none", borderRadius: "10px", color: "#FFF",
   fontSize: "13px", fontWeight: 700, cursor: "pointer",
 };
@@ -272,12 +272,12 @@ export default function GoalsEditor({ variant = "compact" }: { variant?: GoalsEd
       {/* CTA rigenerazione piano dopo modifica obiettivi/priorità */}
       {goalsChanged && hasApiKey() && goals.length > 0 && (
         <div style={{
-          background: "#E8553A15", border: "1px solid #E8553A66",
+          background: "#6366F115", border: "1px solid #6366F166",
           borderRadius: "12px", padding: "12px 14px",
           display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
         }}>
           <div style={{ flex: 1, minWidth: "160px" }}>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#E8553A", marginBottom: "2px" }}>
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#6366F1", marginBottom: "2px" }}>
               Obiettivi modificati
             </div>
             <div style={{ fontSize: "11px", color: "#CBD5E1", lineHeight: 1.4 }}>
@@ -289,7 +289,7 @@ export default function GoalsEditor({ variant = "compact" }: { variant?: GoalsEd
             disabled={regenerating}
             style={{
               padding: "10px 16px",
-              background: regenerating ? "#1E293B" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+              background: regenerating ? "#1E293B" : "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
               border: "none", borderRadius: "10px", color: "#FFF",
               fontSize: "13px", fontWeight: 700,
               cursor: regenerating ? "wait" : "pointer",
@@ -319,7 +319,7 @@ export default function GoalsEditor({ variant = "compact" }: { variant?: GoalsEd
 
       {goals.map(g => {
         const isEditing = editingId === g.id;
-        const statusColor = g.status === "achieved" ? "#22C55E" : g.status === "archived" ? "#64748B" : "#E8553A";
+        const statusColor = g.status === "achieved" ? "#22C55E" : g.status === "archived" ? "#64748B" : "#6366F1";
         const statusLabel = g.status === "achieved" ? "Raggiunto" : g.status === "archived" ? "Archiviato" : "Attivo";
         return (
           <div key={g.id} style={{ ...cardStyle, borderLeft: `3px solid ${statusColor}`, opacity: g.status === "archived" ? 0.55 : 1 }}>
@@ -342,7 +342,7 @@ export default function GoalsEditor({ variant = "compact" }: { variant?: GoalsEd
                     {g.kpi.metric}: {g.kpi.target}
                   </div>
                   {g.kpi.deadline && g.kpi.deadline !== "-" && (
-                    <span style={{ fontSize: "12px", color: "#E8553A", fontWeight: 600 }}>
+                    <span style={{ fontSize: "12px", color: "#6366F1", fontWeight: 600 }}>
                       · entro {g.kpi.deadline}
                     </span>
                   )}
@@ -456,7 +456,7 @@ export default function GoalsEditor({ variant = "compact" }: { variant?: GoalsEd
                       <button onClick={() => toggleStatus(g.id, "archived")} style={{ ...ghostBtn, padding: "8px 12px", minHeight: "36px", fontSize: "12px" }}>Archivia</button>
                     )}
                     {g.status === "archived" && (
-                      <button onClick={() => toggleStatus(g.id, "active")} style={{ ...ghostBtn, padding: "8px 12px", minHeight: "36px", fontSize: "12px", borderColor: "#E8553A66", color: "#E8553A" }}>Riattiva</button>
+                      <button onClick={() => toggleStatus(g.id, "active")} style={{ ...ghostBtn, padding: "8px 12px", minHeight: "36px", fontSize: "12px", borderColor: "#6366F166", color: "#6366F1" }}>Riattiva</button>
                     )}
                   </div>
                 </details>
@@ -516,8 +516,8 @@ export default function GoalsEditor({ variant = "compact" }: { variant?: GoalsEd
       })}
 
       {adding && (
-        <div style={{ ...cardStyle, borderLeft: "3px solid #E8553A" }}>
-          <div style={{ fontSize: "11px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "8px" }}>
+        <div style={{ ...cardStyle, borderLeft: "3px solid #6366F1" }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366F1", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "8px" }}>
             Nuovo obiettivo
           </div>
           <textarea
@@ -568,7 +568,7 @@ export default function GoalsEditor({ variant = "compact" }: { variant?: GoalsEd
       )}
 
       {!adding && canAdd && (
-        <button onClick={startAdd} style={{ ...ghostBtn, alignSelf: "flex-start", borderStyle: "dashed", color: "#E8553A", borderColor: "#E8553A66" }}>
+        <button onClick={startAdd} style={{ ...ghostBtn, alignSelf: "flex-start", borderStyle: "dashed", color: "#6366F1", borderColor: "#6366F166" }}>
           + Aggiungi obiettivo
         </button>
       )}

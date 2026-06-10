@@ -184,7 +184,7 @@ export default function MarkdownLite({ text }: MarkdownLiteProps) {
           case "h2":
             return <h2 key={i} style={{ fontSize: "18px", fontWeight: 800, color: "#E2E8F0", margin: "16px 0 8px" }}>{parseInline(b.text)}</h2>;
           case "h3":
-            return <h3 key={i} style={{ fontSize: "15px", fontWeight: 700, color: "#E8553A", margin: "14px 0 6px" }}>{parseInline(b.text)}</h3>;
+            return <h3 key={i} style={{ fontSize: "15px", fontWeight: 700, color: "#6366F1", margin: "14px 0 6px" }}>{parseInline(b.text)}</h3>;
           case "h4":
             return <h4 key={i} style={{ fontSize: "13px", fontWeight: 700, color: "#0891B2", margin: "10px 0 4px" }}>{parseInline(b.text)}</h4>;
           case "hr":
@@ -230,7 +230,7 @@ export default function MarkdownLite({ text }: MarkdownLiteProps) {
                       {b.header.map((h, j) => (
                         <th key={j} style={{
                           padding: "6px 8px", textAlign: "left",
-                          background: "#16213E", color: "#E8553A",
+                          background: "#16213E", color: "#6366F1",
                           fontWeight: 700, fontSize: "10px", textTransform: "uppercase",
                           letterSpacing: "0.08em",
                           borderBottom: "1px solid rgba(255,255,255,0.12)",

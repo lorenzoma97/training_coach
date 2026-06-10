@@ -16,7 +16,7 @@ const STRENGTH_TYPES: ReadonlySet<string> = new Set(["forza_gambe", "forza_upper
 
 const WORKOUT_TYPES = [
   {
-    id: "corsa", icon: "🏃", label: "Corsa", color: "#E8553A",
+    id: "corsa", icon: "🏃", label: "Corsa", color: "#6366F1",
     fields: [
       { key: "tipo", label: "Tipo Sessione", type: "select", options: ["Fondo Lento","Fartlek","Ripetute","Progressione","Test Ritmo Gara","Test Finale","Corsa Intermittente"], required: true },
       { key: "durata_totale", label: "Durata Totale", unit: "min", type: "number", required: true },
@@ -913,7 +913,7 @@ export default function DiaryApp() {
         <div style={{ maxWidth: "560px", margin: "0 auto" }}>
           <div style={{ padding: "16px 24px 10px", background: "linear-gradient(180deg, #16213E 0%, #0B0F1A 100%)" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: "10px", flexWrap: "wrap" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>
+              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>
                 Diario · Oggi
               </div>
               {todayData && (
@@ -980,7 +980,7 @@ export default function DiaryApp() {
 
           <div style={{ padding: "16px 24px 8px", display: "flex", gap: "10px" }}>
             <button onClick={() => { setAddDate(today()); setAddType(null); setAddStrengthMode(false); setAddExercises([]); setEditingWorkoutId(null); setEditingOriginalDate(null); setScreen("add"); }} style={{
-              flex: 1, padding: "16px", background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+              flex: 1, padding: "16px", background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
               border: "none", borderRadius: "14px", color: "#FFF", fontSize: "15px", fontWeight: 700, cursor: "pointer",
             }}>🏋️ Registra allenamento</button>
             <button onClick={() => { setDailyDate(today()); resetDailyFields(); setEditingDaily(false); setScreen("daily"); }} style={{
@@ -1056,7 +1056,7 @@ export default function DiaryApp() {
                             <button key={date} onClick={() => openDetail(date)} style={{
                               width: "100%", textAlign: "left", padding: "12px 14px",
                               background: isToday ? "#16213E" : "#111827",
-                              border: isToday ? "1px solid #E8553A33" : "1px solid rgba(255,255,255,0.04)",
+                              border: isToday ? "1px solid #6366F133" : "1px solid rgba(255,255,255,0.04)",
                               borderRadius: "12px", cursor: "pointer", color: "#E2E8F0",
                               display: "flex", alignItems: "center", gap: "10px",
                             }}>
@@ -1140,7 +1140,7 @@ export default function DiaryApp() {
                       <div key={f.key}>
                         <div style={{ display: "flex", gap: "6px", marginBottom: "4px", alignItems: "center" }}>
                           <label htmlFor={inputId} style={{ fontSize: "12px", fontWeight: 600, color: "#CBD5E1" }}>{f.label}</label>
-                          {f.required && <span style={{ color: "#E8553A", fontSize: "10px" }} aria-label="obbligatorio">●</span>}
+                          {f.required && <span style={{ color: "#6366F1", fontSize: "10px" }} aria-label="obbligatorio">●</span>}
                         </div>
                         <FieldRow id={inputId} field={f} value={addFields[f.key]} onChange={v => setAddFields(p => ({ ...p, [f.key]: v }))} />
                       </div>
@@ -1253,7 +1253,7 @@ export default function DiaryApp() {
 
                 <button onClick={handleSaveWorkout} disabled={saving} style={{
                   width: "100%", padding: "14px", marginTop: "16px", minHeight: "52px",
-                  background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+                  background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
                   border: "none", borderRadius: "12px", color: "#FFF",
                   fontSize: "15px", fontWeight: 800,
                   cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1,

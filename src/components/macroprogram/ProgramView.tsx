@@ -288,7 +288,7 @@ function ProgramTimeline({
                 width: "36px", height: "36px",
                 borderRadius: "50%",
                 background: isPast ? color.bg : (isCurrent ? color.fg : "transparent"),
-                border: isViewing ? `2px solid #E8553A` : `1px solid ${color.border}`,
+                border: isViewing ? `2px solid #6366F1` : `1px solid ${color.border}`,
                 color: isCurrent ? "#FFF" : color.fg,
                 fontSize: "11px", fontWeight: 700,
                 fontFamily: "'JetBrains Mono', monospace",

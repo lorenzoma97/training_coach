@@ -68,7 +68,7 @@ const inputStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = { fontSize: "13px", fontWeight: 600, color: "#CBD5E1", display: "block", marginBottom: "6px" };
 const primaryBtn: React.CSSProperties = {
   width: "100%", padding: "16px",
-  background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+  background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
   border: "none", borderRadius: "14px", color: "#FFF",
   fontSize: "16px", fontWeight: 800, cursor: "pointer",
 };
@@ -616,7 +616,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         {STEPS.map((s, i) => (
           <div key={s} style={{
             flex: 1, height: "4px", borderRadius: "2px",
-            background: step === s ? "#E8553A" : stepIndex > i ? "#E8553A88" : "#1A1A2E",
+            background: step === s ? "#6366F1" : stepIndex > i ? "#6366F188" : "#1A1A2E",
           }} />
         ))}
       </div>
@@ -642,7 +642,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       {step === "intro" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Benvenuto</div>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Benvenuto</div>
             <h2 style={{ fontSize: "28px", fontWeight: 900, margin: "6px 0 8px", letterSpacing: "-0.03em" }}>Diario & Coach</h2>
             <p style={{ color: "#94A3B8", fontSize: "15px", margin: 0, lineHeight: 1.5 }}>
               Traccia i tuoi allenamenti, ricevi un coach AI che ti guida. In pochi step definiamo provider AI, profilo, obiettivi, regole di sicurezza e primo piano.
@@ -678,7 +678,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       {step === "apiKey" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 1 · Coach AI</div>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 1 · Coach AI</div>
             <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Configura il coach AI</h2>
             <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0, lineHeight: 1.5 }}>
               Il coach usa <b>Google Gemini</b> (gratis con tua chiave API). La chiave resta sul tuo dispositivo.
@@ -707,12 +707,12 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
             ) : null}
 
             <div style={{ marginTop: MULTI_PROVIDER_UI ? "12px" : "0", fontSize: "12px", color: "#94A3B8", lineHeight: 1.5 }}>
-              Ottieni la chiave gratis su <a href={PROVIDER_HELP[provider].url} target="_blank" rel="noreferrer" style={{ color: "#E8553A" }}>{PROVIDER_HELP[provider].label}</a>
+              Ottieni la chiave gratis su <a href={PROVIDER_HELP[provider].url} target="_blank" rel="noreferrer" style={{ color: "#6366F1" }}>{PROVIDER_HELP[provider].label}</a>
             </div>
 
             <div style={{ marginTop: "12px" }}>
               <label htmlFor={fid("apiKey")} style={labelStyle}>
-                Chiave API <span style={{ color: "#E8553A" }} aria-label="obbligatoria">*</span>
+                Chiave API <span style={{ color: "#6366F1" }} aria-label="obbligatoria">*</span>
               </label>
               <input id={fid("apiKey")} type="password" style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }}
                 value={apiKeyInput}
@@ -785,9 +785,9 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       {step === "profile" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 2 · Profilo</div>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 2 · Profilo</div>
             <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Chi sei</h2>
-            <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0 }}>Mi servono alcuni dati per costruire un piano realistico. I campi con <span style={{ color: "#E8553A" }}>*</span> sono obbligatori.</p>
+            <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0 }}>Mi servono alcuni dati per costruire un piano realistico. I campi con <span style={{ color: "#6366F1" }}>*</span> sono obbligatori.</p>
           </div>
 
           <div style={cardStyle}>
@@ -800,7 +800,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
               return (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
                   <div>
-                    <label htmlFor={fid("age")} style={labelStyle}>Età <span style={{ color: "#E8553A" }} aria-label="obbligatorio">*</span></label>
+                    <label htmlFor={fid("age")} style={labelStyle}>Età <span style={{ color: "#6366F1" }} aria-label="obbligatorio">*</span></label>
                     <input id={fid("age")} type="number" min={10} max={100} style={inputStyle} value={profile.age ?? ""}
                       onChange={e => setProfile(p => ({ ...p, age: parseNum(e.target.value) }))}
                       aria-invalid={ageErr ? true : undefined}
@@ -816,7 +816,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
                     </select>
                   </div>
                   <div>
-                    <label htmlFor={fid("weight")} style={labelStyle}>Peso (kg) <span style={{ color: "#E8553A" }} aria-label="obbligatorio">*</span></label>
+                    <label htmlFor={fid("weight")} style={labelStyle}>Peso (kg) <span style={{ color: "#6366F1" }} aria-label="obbligatorio">*</span></label>
                     <input id={fid("weight")} type="number" step="0.1" style={inputStyle} value={profile.weight_kg ?? ""}
                       onChange={e => setProfile(p => ({ ...p, weight_kg: parseNum(e.target.value) }))}
                       aria-invalid={weightErr ? true : undefined}
@@ -824,7 +824,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
                     {weightErr && <div id={fid("error-weight")} role="alert" style={{ fontSize: "12px", color: "#EF4444", marginTop: "4px" }}>{weightErr}</div>}
                   </div>
                   <div>
-                    <label htmlFor={fid("height")} style={labelStyle}>Altezza (cm) <span style={{ color: "#E8553A" }} aria-label="obbligatorio">*</span></label>
+                    <label htmlFor={fid("height")} style={labelStyle}>Altezza (cm) <span style={{ color: "#6366F1" }} aria-label="obbligatorio">*</span></label>
                     <input id={fid("height")} type="number" style={inputStyle} value={profile.height_cm ?? ""}
                       onChange={e => setProfile(p => ({ ...p, height_cm: parseNum(e.target.value) }))}
                       aria-invalid={heightErr ? true : undefined}
@@ -866,8 +866,8 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
               {EXP_OPTIONS.map(o => (
                 <button key={o.v} onClick={() => setProfile(p => ({ ...p, experience: o.v }))} style={{
                   textAlign: "left", padding: "12px 14px",
-                  background: profile.experience === o.v ? "#E8553A22" : "#1A1A2E",
-                  border: profile.experience === o.v ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.06)",
+                  background: profile.experience === o.v ? "#6366F122" : "#1A1A2E",
+                  border: profile.experience === o.v ? "1px solid #6366F1" : "1px solid rgba(255,255,255,0.06)",
                   borderRadius: "10px", color: "#E2E8F0", cursor: "pointer",
                 }}>
                   <div style={{ fontWeight: 700, fontSize: "14px" }}>{o.label}</div>
@@ -981,7 +981,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       {step === "goals" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 5 · Obiettivi</div>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 5 · Obiettivi</div>
             <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Obiettivi</h2>
             <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0, lineHeight: 1.5 }}>
               Scrivi 1-3 obiettivi. Il coach li valuterà e proporrà una versione realistica se servono aggiustamenti.
@@ -1053,9 +1053,9 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
                   return (
                     <button key={n} onClick={tryChangeCount} style={{
                       flex: 1, padding: "10px",
-                      background: goalsCount === n ? "#E8553A22" : "#1A1A2E",
-                      border: goalsCount === n ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: "10px", color: goalsCount === n ? "#E8553A" : "#CBD5E1",
+                      background: goalsCount === n ? "#6366F122" : "#1A1A2E",
+                      border: goalsCount === n ? "1px solid #6366F1" : "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: "10px", color: goalsCount === n ? "#6366F1" : "#CBD5E1",
                       fontWeight: 700, fontSize: "14px", cursor: "pointer",
                     }}>{n}</button>
                   );
@@ -1163,7 +1163,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
         return (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 6 · Sicurezza</div>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 6 · Sicurezza</div>
             <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Regole di sicurezza</h2>
             <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0 }}>Il coach si basa su queste regole per ogni consiglio. Leggile bene.</p>
           </div>
@@ -1248,7 +1248,7 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       {step === "plan" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 7 · Piano</div>
+            <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Step 7 · Piano</div>
             <h2 style={{ fontSize: "26px", fontWeight: 900, margin: "6px 0 4px", letterSpacing: "-0.03em" }}>Il tuo piano</h2>
             <p style={{ color: "#94A3B8", fontSize: "14px", margin: 0 }}>Microciclo di 2 settimane costruito sul tuo profilo.</p>
           </div>
@@ -1272,19 +1272,19 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
 
           {plan && (
             <>
-              <div style={{ ...cardStyle, borderLeft: "3px solid #E8553A" }}>
+              <div style={{ ...cardStyle, borderLeft: "3px solid #6366F1" }}>
                 <div style={{ fontSize: "11px", color: "#64748B", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "8px" }}>Razionale</div>
                 <div style={{ fontSize: "14px", lineHeight: 1.5 }}>{plan.rationale}</div>
               </div>
               {plan.weeks.map(w => (
                 <div key={w.weekNumber} style={cardStyle}>
-                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "4px" }}>Settimana {w.weekNumber}</div>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366F1", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "4px" }}>Settimana {w.weekNumber}</div>
                   <div style={{ fontSize: "14px", color: "#CBD5E1", marginBottom: "12px", fontWeight: 600 }}>{w.focus}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                     {w.sessions.map((s, i) => (
                       <div key={i} style={{ padding: "10px 12px", background: "#1A1A2E", borderRadius: "10px", fontSize: "13px" }}>
                         <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "4px" }}>
-                          <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#E8553A", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{s.day}</span>
+                          <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#6366F1", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "32px" }}>{s.day}</span>
                           <span style={{ fontWeight: 600 }}>{s.type}</span>
                           <span style={{ color: "#64748B", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{s.duration_min}min</span>
                         </div>

@@ -4,13 +4,13 @@ import type { CSSProperties } from "react";
 //
 // REGOLA: un colore = UN significato. Nasce dall'audit UX che ha trovato
 // ambiguità ricorrenti (amber usato sia per warning sia per intensità normale;
-// due blu #0891B2/#38BDF8; due verdi #22C55E/#10B981; due rossi #E8553A/#EF4444).
+// due blu #0891B2/#38BDF8; due verdi #22C55E/#10B981; due rossi #6366F1/#EF4444).
 //
 // Uso: importa TOKENS e, per bg/bordi semitrasparenti, withAlpha(TOKENS.x, "22").
 
 export const TOKENS = {
   /** Identità programma/piano + azione primaria. MAI come warning. */
-  primary: "#E8553A",
+  primary: "#6366F1",
   /** Informazione neutra e dati operativi non allarmanti (un solo blu). */
   info: "#0891B2",
   /** Serve attenzione ma non bloccante. MAI per dati/intensità normali. */

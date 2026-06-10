@@ -162,7 +162,7 @@ export default function PwaInstallBanner() {
 
   const installBtn: React.CSSProperties = {
     padding: "12px 18px",
-    background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+    background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
     border: "none",
     borderRadius: "8px",
     color: "#FFF",

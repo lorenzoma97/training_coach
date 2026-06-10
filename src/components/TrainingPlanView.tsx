@@ -99,7 +99,7 @@ function StatoBanner({ tone, title, body, cta, onCta, disabled, busyLabel }: {
           aria-busy={disabled || undefined}
           style={{
             padding: "10px 14px",
-            background: disabled ? "#1E293B" : `linear-gradient(135deg, ${TOKENS.primary} 0%, #D4452F 100%)`,
+            background: disabled ? "#1E293B" : `linear-gradient(135deg, ${TOKENS.primary} 0%, #4F46E5 100%)`,
             border: "none", borderRadius: "10px", color: "#FFF",
             fontSize: "13px", fontWeight: 700,
             cursor: disabled ? "wait" : "pointer", opacity: disabled ? 0.5 : 1,
@@ -135,7 +135,7 @@ function ExercisesList({
       <summary
         style={{
           cursor: "pointer", fontSize: "11px", fontWeight: 800,
-          color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase",
+          color: "#6366F1", letterSpacing: "0.1em", textTransform: "uppercase",
           padding: "6px 0", minHeight: "32px",
           display: "flex", alignItems: "center", gap: "6px",
           listStyle: "none", userSelect: "none",
@@ -1190,7 +1190,7 @@ export default function TrainingPlanView() {
           l'utente conferma ("Entrambi": auto-rileva + segnala, applica su OK). */}
       {plan.sourceMacro && pendingEvents.length > 0 && !eventsBannerDismissed && !adapting && (
         <div style={{
-          background: "linear-gradient(135deg, #F59E0B18 0%, #E8553A12 100%)",
+          background: "linear-gradient(135deg, #F59E0B18 0%, #6366F112 100%)",
           border: "1px solid #F59E0B66",
           borderRadius: "12px", padding: "12px 14px",
           display: "flex", flexDirection: "column", gap: "10px",
@@ -1211,7 +1211,7 @@ export default function TrainingPlanView() {
               disabled={adapting || regenerating}
               style={{
                 padding: "9px 14px",
-                background: "linear-gradient(135deg, #E8553A 0%, #D4452F 100%)",
+                background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
                 border: "none", borderRadius: "9px", color: "#FFF",
                 fontSize: "13px", fontWeight: 700, cursor: "pointer", flex: 1, minWidth: "140px",
               }}
@@ -1245,7 +1245,7 @@ export default function TrainingPlanView() {
         <summary
           style={{
             cursor: "pointer", listStyle: "none",
-            fontSize: "11px", color: "#E8553A",
+            fontSize: "11px", color: "#6366F1",
             letterSpacing: "0.12em", textTransform: "uppercase",
             fontWeight: 800, minHeight: "24px",
             display: "flex", alignItems: "center", gap: "6px",
@@ -1262,7 +1262,7 @@ export default function TrainingPlanView() {
                 <li key={i} style={{ display: "flex", gap: "8px", alignItems: "flex-start", fontSize: "13px", lineHeight: 1.5, color: "#E2E8F0" }}>
                   <span aria-hidden="true" style={{
                     width: "5px", height: "5px", borderRadius: "999px",
-                    background: "#E8553A", marginTop: "8px", flexShrink: 0,
+                    background: "#6366F1", marginTop: "8px", flexShrink: 0,
                   }} />
                   <span>{b}</span>
                 </li>
@@ -1658,7 +1658,7 @@ export default function TrainingPlanView() {
             Opzioni avanzate (adatta con richiesta)
           </summary>
           <div style={{ padding: "0 18px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
-            <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); }} disabled={adapting || regenerating} style={{ padding: "10px 14px", background: adaptOpen ? "#E8553A22" : "#1A1A2E", border: adaptOpen ? "1px solid #E8553A" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#E8553A" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); }} disabled={adapting || regenerating} style={{ padding: "10px 14px", background: adaptOpen ? "#6366F122" : "#1A1A2E", border: adaptOpen ? "1px solid #6366F1" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#6366F1" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
               ✏ Adatta con richiesta
             </button>
             {adaptOpen && (
@@ -1669,7 +1669,7 @@ export default function TrainingPlanView() {
                 </div>
                 <textarea value={adaptRequest} onChange={e => setAdaptRequest(e.target.value)} placeholder="es. 'settimana più leggera perché ho un viaggio' o 'aumenta le ripetute'" disabled={adapting} rows={2} style={{ width: "100%", padding: "10px 12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#E2E8F0", fontSize: "14px", fontFamily: "inherit", resize: "vertical", minHeight: "60px", outline: "none", boxSizing: "border-box" }} />
                 <div style={{ display: "flex", gap: "8px" }}>
-                  <button onClick={() => handleAdapt()} disabled={adapting || !adaptRequest.trim()} aria-busy={adapting || undefined} role={adapting ? "status" : undefined} aria-label={adapting ? "Adattamento piano in corso" : undefined} style={{ flex: 1, padding: "10px", background: adapting ? "#1E293B" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: adapting ? "wait" : "pointer", opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1 }}>
+                  <button onClick={() => handleAdapt()} disabled={adapting || !adaptRequest.trim()} aria-busy={adapting || undefined} role={adapting ? "status" : undefined} aria-label={adapting ? "Adattamento piano in corso" : undefined} style={{ flex: 1, padding: "10px", background: adapting ? "#1E293B" : "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: adapting ? "wait" : "pointer", opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1 }}>
                     {adapting ? `⏳ Adatto il piano… ${llmElapsedSec}s` : "Applica modifica"}
                   </button>
                   <button onClick={() => { setAdaptOpen(false); setAdaptRequest(""); setAdaptError(null); }} disabled={adapting} style={{ padding: "10px 14px", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#94A3B8", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>Annulla</button>
@@ -1815,9 +1815,9 @@ export default function TrainingPlanView() {
               const isCompleted = completion !== null;
               const isPartial = completion !== null && !completion.strictMatch;
               const isPerfect = completion !== null && completion.strictMatch;
-              const bg = isPerfect ? "#14532D40" : isPartial ? "#78350F30" : isToday ? "#E8553A15" : isPast ? "#1A1A2E80" : "#1A1A2E";
-              const borderColor = isPerfect ? "#22C55E66" : isPartial ? "#F59E0B66" : isToday ? "#E8553A66" : "transparent";
-              const dayLabelColor = isPerfect ? "#22C55E" : isPartial ? "#F59E0B" : isToday ? "#E8553A" : "#94A3B8";
+              const bg = isPerfect ? "#14532D40" : isPartial ? "#78350F30" : isToday ? "#6366F115" : isPast ? "#1A1A2E80" : "#1A1A2E";
+              const borderColor = isPerfect ? "#22C55E66" : isPartial ? "#F59E0B66" : isToday ? "#6366F166" : "transparent";
+              const dayLabelColor = isPerfect ? "#22C55E" : isPartial ? "#F59E0B" : isToday ? "#6366F1" : "#94A3B8";
               return (
                 <div key={`${w.weekNumber}-${s.day}-${i}`} style={{
                   padding: "12px 14px",
@@ -1855,7 +1855,7 @@ export default function TrainingPlanView() {
                     })()}
                     {isPerfect && <span aria-label="Sessione completata" style={{ color: "#22C55E", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>✓ FATTA</span>}
                     {isPartial && <span aria-label="Sessione con variazione" style={{ color: "#F59E0B", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>⚠ VARIAZIONE</span>}
-                    {!isCompleted && isToday && <span aria-label="Sessione di oggi (ancora da fare)" style={{ color: "#E8553A", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
+                    {!isCompleted && isToday && <span aria-label="Sessione di oggi (ancora da fare)" style={{ color: "#6366F1", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>OGGI</span>}
                     {!isCompleted && !isToday && isPast && <span aria-label="Sessione saltata" style={{ color: "#94A3B8", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>SALTATA</span>}
                   </div>
                   {isPartial && completion && (
@@ -1916,13 +1916,13 @@ export default function TrainingPlanView() {
                         style={{
                           padding: "9px 14px",
                           background: isToday
-                            ? "linear-gradient(135deg, #E8553A 0%, #D44429 100%)"
+                            ? "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)"
                             : isPast
                               ? "#1E293B"
                               : "transparent",
-                          border: isToday ? "none" : isPast ? "1px solid rgba(255,255,255,0.12)" : "1px solid #E8553A66",
+                          border: isToday ? "none" : isPast ? "1px solid rgba(255,255,255,0.12)" : "1px solid #6366F166",
                           borderRadius: "10px",
-                          color: isToday ? "#FFF" : isPast ? "#CBD5E1" : "#E8553A",
+                          color: isToday ? "#FFF" : isPast ? "#CBD5E1" : "#6366F1",
                           fontSize: "13px", fontWeight: 700, cursor: "pointer",
                           display: "flex", alignItems: "center", gap: "6px",
                           minHeight: "40px",
@@ -2052,7 +2052,7 @@ export default function TrainingPlanView() {
                 return (
                 <div key={h.generatedAt + hi} style={{ background: "#1A1A2E", borderRadius: "10px", padding: "12px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "6px", flexWrap: "wrap" }}>
-                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.08em" }}>
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#6366F1", letterSpacing: "0.08em" }}>
                       📅 {dateRange}
                     </div>
                   </div>

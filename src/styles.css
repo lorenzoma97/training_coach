@@ -9,7 +9,7 @@
   --card-foreground: #E2E8F0;
   --popover: #16213E;
   --popover-foreground: #E2E8F0;
-  --primary: #E8553A;
+  --primary: #6366F1;
   --primary-foreground: #FFFFFF;
   --secondary: #1A1A2E;
   --secondary-foreground: #E2E8F0;
@@ -21,7 +21,7 @@
   --destructive-foreground: #FFFFFF;
   --border: rgba(255,255,255,0.08);
   --input: rgba(255,255,255,0.12);
-  --ring: #E8553A;
+  --ring: #6366F1;
 }
 
 @theme inline {
@@ -68,7 +68,7 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 a:focus-visible {
-  outline: 2px solid #E8553A;
+  outline: 2px solid #6366F1;
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -76,7 +76,7 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
   outline-offset: 0;
-  box-shadow: 0 0 0 2px #E8553A80;
+  box-shadow: 0 0 0 2px #6366F180;
 }
 
 /* Stati disabled coerenti */
@@ -118,7 +118,7 @@ button { min-height: 40px; }
 .spinner {
   display: inline-block; width: 14px; height: 14px;
   border: 2px solid rgba(255,255,255,0.15);
-  border-top-color: #E8553A; border-radius: 50%;
+  border-top-color: #6366F1; border-radius: 50%;
   animation: spin 0.8s linear infinite;
   vertical-align: middle;
 }
@@ -160,7 +160,7 @@ input[type=number] { -moz-appearance: textfield; }
   }
   .spinner {
     animation: none !important;
-    border-top-color: #E8553A;
+    border-top-color: #6366F1;
   }
   .typing-dots::after {
     animation: none !important;

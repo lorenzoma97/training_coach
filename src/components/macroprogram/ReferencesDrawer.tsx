@@ -119,7 +119,7 @@ const tabBtnStyle: React.CSSProperties = {
 
 const tabBtnActiveStyle: React.CSSProperties = {
   ...tabBtnStyle,
-  color: "#E8553A", borderBottomColor: "#E8553A",
+  color: "#6366F1", borderBottomColor: "#6366F1",
 };
 
 // ─── MAIN ──────────────────────────────────────────────────────────────────

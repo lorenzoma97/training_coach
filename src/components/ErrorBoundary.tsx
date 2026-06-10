@@ -129,7 +129,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
         )}
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button onClick={this.reload} style={{
-            background: "#E8553A", color: "#FFF", border: "none",
+            background: "#6366F1", color: "#FFF", border: "none",
             borderRadius: "8px", padding: "10px 16px",
             fontSize: "14px", fontWeight: 700, cursor: "pointer",
           }}>Ricarica</button>

@@ -393,7 +393,7 @@ DOMANDA UTENTE: ${sanitizePII(text)}
               gap: "4px",
             }}>
               <div style={{
-                background: m.role === "user" ? "linear-gradient(135deg, #E8553A 0%, #D44429 100%)" : "#16213E",
+                background: m.role === "user" ? "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)" : "#16213E",
                 color: m.role === "user" ? "#FFF" : "#E2E8F0",
                 padding: "12px 14px", borderRadius: "14px",
                 fontSize: "14px", lineHeight: 1.55, whiteSpace: "pre-wrap", wordWrap: "break-word",
@@ -529,7 +529,7 @@ DOMANDA UTENTE: ${sanitizePII(text)}
               padding: "12px 18px", minWidth: "56px", minHeight: "44px",
               background: !online
                 ? "#475569"
-                : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+                : "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
               border: "none", borderRadius: "12px", color: "#FFF",
               fontWeight: 700, fontSize: "18px",
               cursor: !online ? "not-allowed" : "pointer",

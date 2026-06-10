@@ -550,7 +550,7 @@ function SessionDetailCard({
               onClick={handleCopyToDiary}
               style={{
                 padding: "10px 14px",
-                background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+                background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
                 border: "none", borderRadius: "10px",
                 color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
               }}
@@ -596,7 +596,7 @@ function SessionDetailCard({
             onClick={onGoToPlan}
             style={{
               padding: "10px 14px",
-              background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+              background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
               border: "none", borderRadius: "10px",
               color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
             }}
@@ -776,7 +776,7 @@ function CardioIntervalList({ intervals }: { intervals: NonNullable<PlannedSessi
   const KIND_META: Record<string, { icon: string; label: string; color: string }> = {
     warmup: { icon: "▶", label: "Warmup", color: "#94A3B8" },
     main: { icon: "●", label: "Main", color: "#0891B2" },
-    repetition: { icon: "⚡", label: "Ripetuta", color: "#E8553A" },
+    repetition: { icon: "⚡", label: "Ripetuta", color: "#6366F1" },
     recovery: { icon: "↻", label: "Recovery", color: "#64748B" },
     cooldown: { icon: "■", label: "Cooldown", color: "#94A3B8" },
   };

@@ -244,7 +244,7 @@ const ghostBtnStyle: React.CSSProperties = {
 };
 const primaryBtnStyle: React.CSSProperties = {
   padding: "12px 16px", minHeight: "44px",
-  background: "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+  background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
   border: "none", borderRadius: "10px", color: "#FFF",
   fontSize: "14px", fontWeight: 700, cursor: "pointer",
   fontFamily: "inherit",
@@ -550,7 +550,7 @@ export default function StrengthExercisesForm({
               <div key={pattern} style={{ marginBottom: "12px" }}>
                 <div style={{
                   ...labelStyle, marginBottom: "6px",
-                  color: "#E8553A",
+                  color: "#6366F1",
                 }}>
                   {PATTERN_LABELS[pattern as ExercisePattern] ?? pattern} · {list.length}
                 </div>

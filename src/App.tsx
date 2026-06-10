@@ -264,7 +264,7 @@ function AppShell() {
               {t.badge > 0 && (
                 <span aria-label={`${t.badge} nuovi`} style={{
                   position: "absolute", top: "2px", right: "calc(50% - 24px)",
-                  background: "#E8553A", color: "#FFF",
+                  background: "#6366F1", color: "#FFF",
                   minWidth: "20px", height: "20px", padding: "0 6px",
                   borderRadius: "10px", fontSize: "11px", fontWeight: 800,
                   display: "flex", alignItems: "center", justifyContent: "center",

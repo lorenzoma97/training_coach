@@ -293,7 +293,7 @@ export default function TrendsPage() {
   return (
     <div style={{ maxWidth: "560px", margin: "0 auto", padding: "24px 20px" }}>
       <div style={{ marginBottom: "16px" }}>
-        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#E8553A", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Trend</div>
+        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Trend</div>
         <h1 style={{ fontSize: "26px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.03em" }}>Andamento nel tempo</h1>
       </div>
 
@@ -335,13 +335,13 @@ export default function TrendsPage() {
           </div>
 
           {/* ═══ SEZIONE ALLENAMENTI ═══ */}
-          <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", color: "#E8553A", textTransform: "uppercase", marginTop: "8px", paddingLeft: "4px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", color: "#6366F1", textTransform: "uppercase", marginTop: "8px", paddingLeft: "4px" }}>
             🏋️ Dati Allenamenti
           </div>
 
           <div style={cardStyle}>
-            <SectionHeader title="Volume allenamento" hint="minuti/die" color="#E8553A" />
-            <Sparkline points={series.dailyVolume} width={width - 32} color="#E8553A" unit="′" />
+            <SectionHeader title="Volume allenamento" hint="minuti/die" color="#6366F1" />
+            <Sparkline points={series.dailyVolume} width={width - 32} color="#6366F1" unit="′" />
           </div>
 
           <div style={cardStyle}>
@@ -352,8 +352,8 @@ export default function TrendsPage() {
           {/* Corsa — metriche di progressione (solo se almeno una corsa nel periodo) */}
           {series.hasRunningData && (
             <>
-              <div style={{ ...cardStyle, background: "#1A1A2E", borderLeft: "3px solid #E8553A" }}>
-                <div style={{ fontSize: "11px", fontWeight: 700, color: "#E8553A", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+              <div style={{ ...cardStyle, background: "#1A1A2E", borderLeft: "3px solid #6366F1" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366F1", letterSpacing: "0.1em", textTransform: "uppercase" }}>
                   🏃 Corsa — progressione
                 </div>
                 <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "6px", lineHeight: 1.5 }}>
@@ -366,11 +366,11 @@ export default function TrendsPage() {
                   invece di una card "Nessun dato nel periodo" ciascuna. */}
               {series.runPaceSeries.some(p => p?.value != null) && (
                 <div style={cardStyle}>
-                  <SectionHeader title="Passo medio" hint="min:sec/km — basso = veloce, alto = lento" color="#E8553A" />
+                  <SectionHeader title="Passo medio" hint="min:sec/km — basso = veloce, alto = lento" color="#6366F1" />
                   <Sparkline
                     points={series.runPaceSeries}
                     width={width - 32}
-                    color="#E8553A"
+                    color="#6366F1"
                     formatValue={v => {
                       if (!Number.isFinite(v) || v <= 0) return "—";
                       const m = Math.floor(v / 60);
@@ -456,7 +456,7 @@ export default function TrendsPage() {
                           <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>{n}</span>
                         </div>
                         <div style={{ height: "6px", background: "#0F172A", borderRadius: "3px", overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${pct}%`, background: "#E8553A", transition: "width 0.3s ease" }} />
+                          <div style={{ height: "100%", width: `${pct}%`, background: "#6366F1", transition: "width 0.3s ease" }} />
                         </div>
                       </div>
                     );

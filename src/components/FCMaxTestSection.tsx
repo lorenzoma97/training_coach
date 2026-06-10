@@ -126,13 +126,13 @@ export default function FCMaxTestSection() {
   return (
     <div style={{
       background: "#1A1A2E",
-      border: `1px solid ${hasTest ? "#22C55E44" : "#E8553A44"}`,
+      border: `1px solid ${hasTest ? "#22C55E44" : "#6366F144"}`,
       borderRadius: "10px",
       padding: "14px",
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
         <div>
-          <div style={{ color: hasTest ? "#22C55E" : "#E8553A", fontWeight: 700, fontSize: "13px" }}>
+          <div style={{ color: hasTest ? "#22C55E" : "#6366F1", fontWeight: 700, fontSize: "13px" }}>
             {hasTest ? "✓ FCmax calibrata" : "🎯 Calibra la tua FCmax"}
           </div>
           <div style={{ color: "#94A3B8", fontSize: "12px", marginTop: "2px", lineHeight: 1.4 }}>
@@ -149,7 +149,7 @@ export default function FCMaxTestSection() {
         </div>
         <button onClick={() => setExpanded(e => !e)} style={{
           padding: "8px 14px",
-          background: hasTest ? "transparent" : "linear-gradient(135deg, #E8553A 0%, #D44429 100%)",
+          background: hasTest ? "transparent" : "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
           border: hasTest ? "1px solid rgba(255,255,255,0.15)" : "none",
           borderRadius: "8px",
           color: hasTest ? "#CBD5E1" : "#FFF",
