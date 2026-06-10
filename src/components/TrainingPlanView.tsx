@@ -311,6 +311,8 @@ export default function TrainingPlanView() {
   const [subMenuKey, setSubMenuKey] = useState<string | null>(null);
   const [subAltroOpen, setSubAltroOpen] = useState(false);
   const [subAltroText, setSubAltroText] = useState("");
+  // Overflow azioni secondarie per-sessione (Chiedi/Sostituisci) → 1 primario + "⋯".
+  const [actionsKey, setActionsKey] = useState<string | null>(null);
 
   const load = async () => {
     // Auto-promote prima di caricare: se la settimana del preview è iniziata,
@@ -1903,7 +1905,10 @@ export default function TrainingPlanView() {
                   {/* Action row: Registra (se non completata) + Chiedi al coach (sempre).
                       SALTATA actionable: anche se isPast && !isCompleted, l'utente può
                       ancora registrare retroattivamente o chiedere al coach come recuperarla. */}
-                  <div style={{ display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" }}>
+                  {/* Sprint: 1 azione PRIMARIA + "⋯" per le secondarie (prima 3
+                      bottoni impilati). Registra è il primario; Chiedi/Sostituisci
+                      stanno nel menu overflow. */}
+                  <div style={{ display: "flex", gap: "8px", marginTop: "10px", alignItems: "center" }}>
                     {!isCompleted && (
                       <button
                         onClick={() => registerFromPlan(s, w.weekNumber)}
@@ -1914,6 +1919,7 @@ export default function TrainingPlanView() {
                             : "Registra in anticipo questa sessione (campi pre-compilati dal piano, modificabili)"
                         }
                         style={{
+                          flex: "1 1 auto",
                           padding: "9px 14px",
                           background: isToday
                             ? "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)"
@@ -1922,46 +1928,43 @@ export default function TrainingPlanView() {
                               : "transparent",
                           border: isToday ? "none" : isPast ? "1px solid rgba(255,255,255,0.12)" : "1px solid #14B8A666",
                           borderRadius: "10px",
-                          color: isToday ? "#FFF" : isPast ? "#CBD5E1" : "#14B8A6",
+                          color: isToday ? "#052E2A" : isPast ? "#CBD5E1" : "#14B8A6",
                           fontSize: "13px", fontWeight: 700, cursor: "pointer",
-                          display: "flex", alignItems: "center", gap: "6px",
-                          minHeight: "40px",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                          minHeight: "44px",
                         }}
                       >
                         <span>+</span> Registra allenamento
                       </button>
                     )}
                     <button
-                      onClick={() => askCoachAboutSession(s, w.weekNumber)}
-                      title="Apri la chat Coach con un prompt contestuale su questa sessione"
+                      onClick={() => { const k = `${w.weekNumber}-${s.day}`; setActionsKey(actionsKey === k ? null : k); }}
+                      title="Altre azioni"
+                      aria-label="Altre azioni"
                       style={{
-                        padding: "9px 14px",
-                        background: "transparent",
-                        border: "1px solid rgba(14, 165, 233, 0.5)",
-                        borderRadius: "10px",
-                        color: "#38BDF8",
-                        fontSize: "13px", fontWeight: 700, cursor: "pointer",
-                        display: "flex", alignItems: "center", gap: "6px",
-                        minHeight: "40px",
+                        padding: "9px 12px", background: "transparent",
+                        border: "1px solid rgba(255,255,255,0.14)", borderRadius: "10px",
+                        color: "#94A3B8", fontSize: "18px", fontWeight: 700, cursor: "pointer",
+                        minHeight: "44px", minWidth: "48px",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        flex: isCompleted ? "1 1 auto" : "0 0 auto",
                       }}
-                    >
-                      💬 Chiedi al coach
-                    </button>
-                    {plan.sourceMacro && !isCompleted && (
-                      <button
-                        onClick={() => { const k = `${w.weekNumber}-${s.day}`; setSubMenuKey(subMenuKey === k ? null : k); setSubAltroOpen(false); }}
-                        title="Non puoi farla? Sostituiscila con un'alternativa equivalente"
-                        style={{
-                          padding: "9px 14px", background: "transparent",
-                          border: "1px solid rgba(255,255,255,0.18)", borderRadius: "10px",
-                          color: "#94A3B8", fontSize: "13px", fontWeight: 700, cursor: "pointer",
-                          display: "flex", alignItems: "center", gap: "6px", minHeight: "40px",
-                        }}
-                      >
-                        🔁 Non posso / sostituisci
-                      </button>
-                    )}
+                    >⋯</button>
                   </div>
+                  {actionsKey === `${w.weekNumber}-${s.day}` && (
+                    <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <button
+                        onClick={() => { askCoachAboutSession(s, w.weekNumber); setActionsKey(null); }}
+                        style={ALT_BTN_STYLE}
+                      >💬 Chiedi al coach</button>
+                      {plan.sourceMacro && !isCompleted && (
+                        <button
+                          onClick={() => { const k = `${w.weekNumber}-${s.day}`; setSubMenuKey(subMenuKey === k ? null : k); setSubAltroOpen(false); }}
+                          style={ALT_BTN_STYLE}
+                        >🔁 Non posso / sostituisci</button>
+                      )}
+                    </div>
+                  )}
                   {plan.sourceMacro && subMenuKey === `${w.weekNumber}-${s.day}` && (
                     <div style={{ marginTop: "10px", padding: "12px", background: "#0F172A", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
                       <div style={{ fontSize: "11px", color: "#F59E0B", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
