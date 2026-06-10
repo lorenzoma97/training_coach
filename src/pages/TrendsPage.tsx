@@ -465,11 +465,12 @@ export default function TrendsPage() {
             </div>
           )}
 
-          {/* ═══ SEZIONE BIOMETRICI ═══ */}
-          <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", color: "#0891B2", textTransform: "uppercase", marginTop: "8px", paddingLeft: "4px" }}>
-            📊 Dati Biometrici
-          </div>
-
+          {/* ═══ SEZIONE BIOMETRICI — collassabile (coda lunga, secondaria) ═══ */}
+          <details style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", overflow: "hidden" }}>
+            <summary style={{ cursor: "pointer", listStyle: "none", padding: "14px 16px", minHeight: "44px", display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", color: "#0891B2", textTransform: "uppercase" }}>
+              <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span> Dati biometrici e benessere
+            </summary>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "0 16px 16px" }}>
           <div style={cardStyle}>
             <SectionHeader title="Peso corporeo" hint="mattino a digiuno" color="#0891B2" />
             <Sparkline points={series.weight} width={width - 32} color="#0891B2" unit=" kg" />
@@ -529,6 +530,8 @@ export default function TrendsPage() {
               <Sparkline points={series.bodyWater} width={width - 32} color="#06B6D4" unit="%" />
             </div>
           )}
+            </div>
+          </details>
 
           <div style={{ fontSize: "11px", color: "#64748B", textAlign: "center", padding: "8px 0 20px" }}>
             Trend calcolati localmente dal diario. Periodo: ultimi {period} giorni.
