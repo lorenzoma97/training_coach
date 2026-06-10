@@ -18,6 +18,9 @@ import LTThresholdSection from "../components/LTThresholdSection";
 import MobilityLibrary from "../components/mobility/MobilityLibrary";
 import { getJSON } from "../lib/storage";
 import { uiCard, uiLabel, uiValue } from "../lib/theme";
+import { Card } from "../components/ui/card";
+import { cn } from "../lib/utils";
+import { ClipboardList, ChevronRight, HeartPulse, TrendingUp, Inbox, AlertTriangle, CircleAlert } from "lucide-react";
 import type { UserProfile, TrainingPlan } from "../lib/types";
 import { events } from "../lib/events";
 import { getLastNDays } from "../lib/diaryContext";
@@ -178,47 +181,38 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
   if (!s.readiness) missing.push("Stato corpo (manca il check di oggi)");
   if (!(s.load && s.load.daysUsed >= 14)) missing.push("Carico settimanale (servono ≥14 giorni)");
 
-  // ─── Render ──────────────────────────────────────────────────────────────
+  // ─── Render (pilota shadcn/Tailwind + lucide, 2026-06-10) ─────────────────
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-      {/* Sprint 4.4: banner macroprogramma attivo */}
+    <div className="flex flex-col gap-3">
+      {/* Programma attivo → porta al tab Piano (niente più terzo schermo). */}
       {macroProgram && (
-        <div
-          onClick={() => setMacroViewerOpen(true)}
-          style={{
-            background: "linear-gradient(135deg, #16213E 0%, #1E2746 100%)",
-            border: "1px solid #E8553A66",
-            borderRadius: "12px",
-            padding: "12px 14px",
-            cursor: "pointer",
-            display: "flex", flexDirection: "column", gap: "6px",
-          }}
+        <Card
+          onClick={onGoToPlan}
+          className="cursor-pointer p-4 border-primary/40 transition-transform active:scale-[0.99]"
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-            <div style={{ fontSize: "10px", color: "#E8553A", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" }}>
-              📋 Programma attivo
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-primary">
+              <ClipboardList className="size-4" />
+              <span className="text-[11px] font-bold uppercase tracking-wider">Programma</span>
             </div>
-            <span style={{ fontSize: "11px", color: "#94A3B8" }}>Apri →</span>
+            <ChevronRight className="size-4 text-muted-foreground" />
           </div>
-          <div style={{ fontSize: "14px", fontWeight: 700, color: "#E2E8F0", lineHeight: 1.3 }}>
+          <div className="mt-2 text-base font-bold leading-snug text-foreground">
             {macroProgram.metadata.title}
           </div>
           {macroProgress && (
-            <div style={{ fontSize: "11px", color: "#0891B2", fontWeight: 600 }}>
+            <div className="mt-1 text-[13px] font-semibold text-cyan-600">
               {macroProgress.currentWeek === 0
-                ? `⏳ Inizio tra ${Math.abs(macroProgress.daysFromStart)} giorni`
+                ? `Inizia tra ${Math.abs(macroProgress.daysFromStart)} giorni`
                 : macroProgress.currentWeek > macroProgram.metadata.weeks_total
-                  ? "✓ Programma concluso"
+                  ? "Programma concluso"
                   : `Settimana ${macroProgress.currentWeek} di ${macroProgram.metadata.weeks_total}${macroProgress.currentPhase ? ` · ${macroProgress.currentPhase}` : ""}`}
             </div>
           )}
-        </div>
-      )}
-      {macroProgram && macroViewerOpen && (
-        <ProgramView program={macroProgram} onClose={() => setMacroViewerOpen(false)} />
+        </Card>
       )}
 
-      {/* Step F: banner Riprendi sessione interrotta */}
+      {/* Riprendi sessione interrotta */}
       {resumeSnapshot && (
         <ResumeSessionBanner
           snapshot={resumeSnapshot}
@@ -227,97 +221,94 @@ function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
         />
       )}
 
-      {/* Alert section */}
+      {/* Alert (icone lucide, colori semantici) */}
       {alerts.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        <div className="flex flex-col gap-1.5">
           {alerts.map((a, i) => (
-            <div key={i} style={{
-              background: a.kind === "danger" ? "#EF444415" : "#F59E0B15",
-              border: `1px solid ${a.kind === "danger" ? "#EF444466" : "#F59E0B66"}`,
-              borderRadius: "10px",
-              padding: "10px 12px",
-              fontSize: "12px",
-              color: a.kind === "danger" ? "#EF4444" : "#F59E0B",
-              fontWeight: 600,
-              lineHeight: 1.4,
-            }}>
-              {a.kind === "danger" ? "🚨 " : "⚠ "}{a.text}
+            <div
+              key={i}
+              className={cn(
+                "flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px] font-semibold leading-snug",
+                a.kind === "danger"
+                  ? "border-destructive/40 bg-destructive/10 text-destructive"
+                  : "border-amber-500/40 bg-amber-500/10 text-amber-500",
+              )}
+            >
+              {a.kind === "danger"
+                ? <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                : <AlertTriangle className="mt-0.5 size-4 shrink-0" />}
+              <span>{a.text}</span>
             </div>
           ))}
         </div>
       )}
 
-      {/* Stato corpo — solo se c'è il check di oggi (altrimenti → riga "non disponibili") */}
+      {/* Stato corpo */}
       {s.readiness && (
-        <div style={cardStyle}>
-          <div style={labelStyle}>Stato corpo</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "10px", flexWrap: "wrap" }}>
-            <span style={{
-              ...valueStyle,
-              color: READINESS_META[s.readiness.band]?.color ?? "#E2E8F0",
-            }}>
+        <Card className="p-4">
+          <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+            <HeartPulse className="size-4" />
+            <span className="text-[11px] font-bold uppercase tracking-wider">Stato corpo</span>
+          </div>
+          <div className="flex flex-wrap items-baseline gap-2.5">
+            <span className="text-2xl font-extrabold" style={{ color: READINESS_META[s.readiness.band]?.color ?? "#E2E8F0" }}>
               {READINESS_META[s.readiness.band]?.label ?? s.readiness.band.toUpperCase()}
             </span>
-            <span style={{ fontSize: "12px", color: "#94A3B8" }}>
-              readiness score {Math.round(s.readiness.score)}/100
-            </span>
+            <span className="text-[13px] text-muted-foreground">readiness {Math.round(s.readiness.score)}/100</span>
           </div>
-        </div>
+        </Card>
       )}
 
-      {/* Carico settimanale — solo con ≥14 giorni (altrimenti → "non disponibili") */}
+      {/* Carico settimanale */}
       {s.load && s.load.daysUsed >= 14 && (
-        <div style={cardStyle}>
-          <div style={labelStyle}>Carico settimanale (TrainingPeaks PMC)</div>
-          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "6px" }}>
+        <Card className="p-4">
+          <div className="mb-3 flex items-center gap-2 text-muted-foreground">
+            <TrendingUp className="size-4" />
+            <span className="text-[11px] font-bold uppercase tracking-wider">Carico settimanale</span>
+          </div>
+          <div className="mb-2 flex flex-wrap gap-5 font-mono">
             <div>
-              <div style={{ fontSize: "10px", color: "#64748B" }}>ATL (7gg)</div>
-              <div style={{ ...valueStyle, fontSize: "16px" }}>{s.load.atl}</div>
+              <div className="text-[10px] text-muted-foreground">ATL 7gg</div>
+              <div className="text-lg font-extrabold text-foreground">{s.load.atl}</div>
             </div>
             <div>
-              <div style={{ fontSize: "10px", color: "#64748B" }}>CTL (42gg)</div>
-              <div style={{ ...valueStyle, fontSize: "16px" }}>{s.load.ctl}</div>
+              <div className="text-[10px] text-muted-foreground">CTL 42gg</div>
+              <div className="text-lg font-extrabold text-foreground">{s.load.ctl}</div>
             </div>
             <div>
-              <div style={{ fontSize: "10px", color: "#64748B" }}>TSB</div>
-              <div style={{ ...valueStyle, fontSize: "16px", color: TSB_BAND_META[s.load.band].color }}>
+              <div className="text-[10px] text-muted-foreground">TSB</div>
+              <div className="text-lg font-extrabold" style={{ color: TSB_BAND_META[s.load.band].color }}>
                 {s.load.tsb >= 0 ? "+" : ""}{s.load.tsb}
               </div>
             </div>
           </div>
-          <div style={{
-            fontSize: "11px",
-            color: TSB_BAND_META[s.load.band].color,
-            fontWeight: 700,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-          }}>
-            {TSB_BAND_META[s.load.band].label} · <span style={{ color: "#94A3B8", fontWeight: 500, letterSpacing: 0, textTransform: "none" }}>{TSB_BAND_META[s.load.band].copy}</span>
+          <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: TSB_BAND_META[s.load.band].color }}>
+            {TSB_BAND_META[s.load.band].label}{" "}
+            <span className="font-medium normal-case tracking-normal text-muted-foreground">· {TSB_BAND_META[s.load.band].copy}</span>
           </div>
-        </div>
+        </Card>
       )}
 
-      {/* Sessione di oggi */}
+      {/* Sessione di oggi (componente esistente, frame coerente con le Card) */}
       <SessionDetailCard
         session={s.todaySession}
         onGoToPlan={onGoToPlan}
         onSessionUpdated={() => setRefreshKey(k => k + 1)}
       />
 
-      {/* Dal coach — collassato per non occupare una card piena quando è vuoto */}
-      <details style={cardStyle}>
-        <summary style={{ ...labelStyle, cursor: "pointer", listStyle: "none", marginBottom: 0 }}>📬 Dal coach</summary>
-        <div style={{ marginTop: "8px" }}><CoachFeedList /></div>
+      {/* Dal coach — collassato */}
+      <details className="rounded-xl border border-border bg-card p-4">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-muted-foreground">
+          <Inbox className="size-4" />
+          <span className="text-[11px] font-bold uppercase tracking-wider">Dal coach</span>
+        </summary>
+        <div className="mt-2"><CoachFeedList /></div>
       </details>
 
-      {/* Sprint N: metriche non ancora disponibili → UNA riga neutra, non N card piene */}
+      {/* Metriche non ancora disponibili → una riga sola */}
       {missing.length > 0 && (
-        <div style={{
-          background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.06)",
-          borderRadius: "10px", padding: "10px 12px",
-          fontSize: "11px", color: "#94A3B8", lineHeight: 1.5,
-        }}>
-          <span style={{ fontWeight: 700, color: "#CBD5E1" }}>Non ancora disponibili ({missing.length}):</span> {missing.join(" · ")}
+        <div className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
+          <span className="font-bold text-foreground">Non ancora disponibili ({missing.length}):</span> {missing.join(" · ")}
         </div>
       )}
     </div>
