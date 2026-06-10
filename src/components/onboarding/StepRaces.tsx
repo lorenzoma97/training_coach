@@ -121,7 +121,7 @@ const labelStyle: React.CSSProperties = {
 };
 const primaryBtn: React.CSSProperties = {
   width: "100%", padding: "16px", minHeight: "44px",
-  background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
+  background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
   border: "none", borderRadius: "14px", color: "#FFF",
   fontSize: "16px", fontWeight: 800, cursor: "pointer",
 };
@@ -223,7 +223,7 @@ export default function StepRaces({ draft, onDraftChange, onSave, onSkip, onBack
       <div>
         <div style={{
           fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em",
-          color: "#6366F1", textTransform: "uppercase",
+          color: "#14B8A6", textTransform: "uppercase",
           fontFamily: "'JetBrains Mono', monospace",
         }}>Step 4 · Gare</div>
         <h2 style={{
@@ -241,10 +241,10 @@ export default function StepRaces({ draft, onDraftChange, onSave, onSkip, onBack
       {hasAnyRace && (
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           {draft.races.map(r => (
-            <div key={r.id} style={{ ...cardStyle, borderLeft: `3px solid ${r.priority === "A" ? "#6366F1" : r.priority === "B" ? "#F59E0B" : "#64748B"}` }}>
+            <div key={r.id} style={{ ...cardStyle, borderLeft: `3px solid ${r.priority === "A" ? "#14B8A6" : r.priority === "B" ? "#F59E0B" : "#64748B"}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: "11px", color: r.priority === "A" ? "#6366F1" : "#94A3B8", fontWeight: 700, letterSpacing: "0.08em", marginBottom: "4px" }}>
+                  <div style={{ fontSize: "11px", color: r.priority === "A" ? "#14B8A6" : "#94A3B8", fontWeight: 700, letterSpacing: "0.08em", marginBottom: "4px" }}>
                     PRIORITÀ {r.priority} · {SPORT_LABELS[r.sport]}
                   </div>
                   <div style={{ fontWeight: 700, fontSize: "15px", marginBottom: "4px", wordBreak: "break-word" }}>
@@ -370,10 +370,10 @@ export default function StepRaces({ draft, onDraftChange, onSave, onSkip, onBack
                     flex: "1 1 90px",
                     display: "flex", flexDirection: "column", gap: "2px",
                     padding: "10px 12px", minHeight: "44px",
-                    background: checked ? "#6366F122" : "#1A1A2E",
-                    border: checked ? "1px solid #6366F1" : "1px solid rgba(255,255,255,0.08)",
+                    background: checked ? "#14B8A622" : "#1A1A2E",
+                    border: checked ? "1px solid #14B8A6" : "1px solid rgba(255,255,255,0.08)",
                     borderRadius: "10px", cursor: "pointer",
-                    color: checked ? "#6366F1" : "#CBD5E1",
+                    color: checked ? "#14B8A6" : "#CBD5E1",
                   }}
                 >
                   <input
@@ -383,10 +383,10 @@ export default function StepRaces({ draft, onDraftChange, onSave, onSkip, onBack
                     value={p}
                     checked={checked}
                     onChange={() => updateForm({ priority: p })}
-                    style={{ accentColor: "#6366F1", marginBottom: "2px" }}
+                    style={{ accentColor: "#14B8A6", marginBottom: "2px" }}
                   />
                   <span style={{ fontWeight: 700, fontSize: "13px" }}>{PRIORITY_LABELS[p].label}</span>
-                  <span style={{ fontSize: "11px", color: checked ? "#6366F1" : "#94A3B8", lineHeight: 1.3 }}>
+                  <span style={{ fontSize: "11px", color: checked ? "#14B8A6" : "#94A3B8", lineHeight: 1.3 }}>
                     {PRIORITY_LABELS[p].hint}
                   </span>
                 </label>

@@ -16,10 +16,10 @@ export const colors = {
   textDim: "#64748B",       // valori sparsi, placeholder (SOLO ≥12px)
 
   // Accent
-  accent: "#6366F1",        // primario (CTA, titoli emphasis)
-  accentDark: "#4F46E5",    // hover gradient end
-  accentSoft: "#6366F166",  // border 40%
-  accentFaint: "#6366F115", // bg selezione 8%
+  accent: "#14B8A6",        // primario (CTA, titoli emphasis)
+  accentDark: "#0D9488",    // hover gradient end
+  accentSoft: "#14B8A666",  // border 40%
+  accentFaint: "#14B8A615", // bg selezione 8%
 
   info: "#0891B2",          // info (Karvonen, knowledge base)
   infoDark: "#0E7490",

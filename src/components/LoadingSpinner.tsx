@@ -1,6 +1,6 @@
 // LoadingSpinner — helper UI per stati di caricamento async (fetch/storage/IO).
 // Wrappa la classe CSS `.spinner` già definita in styles.css (border-spinner
-// 14px, animation @keyframes spin 0.8s linear infinite, accent #6366F1).
+// 14px, animation @keyframes spin 0.8s linear infinite, accent #14B8A6).
 //
 // Tre varianti di layout selezionabili via prop `variant`:
 //  - "inline"  → spinner + label affiancati su una riga (default). Usato

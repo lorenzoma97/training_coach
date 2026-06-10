@@ -540,7 +540,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
         </div>
       )}
       <div>
-        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Impostazioni</div>
+        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#14B8A6", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Impostazioni</div>
         <h1 style={{ fontSize: "24px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.03em" }}>Configurazione</h1>
       </div>
 
@@ -592,7 +592,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
               spellCheck={false}
             />
             <div style={{ fontSize: "11px", color: "#64748B", marginTop: "6px", lineHeight: 1.4 }}>
-              Installa da <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#6366F1" }}>{help.label}</a>, avvia <code>ollama serve</code>, scarica un modello: <code>ollama pull qwen2.5:7b-instruct</code>.
+              Installa da <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#14B8A6" }}>{help.label}</a>, avvia <code>ollama serve</code>, scarica un modello: <code>ollama pull qwen2.5:7b-instruct</code>.
             </div>
             <button
               onClick={testOllamaConnection}
@@ -617,7 +617,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
               autoComplete="off"
             />
             <div style={{ fontSize: "11px", color: "#64748B", marginTop: "6px", lineHeight: 1.4 }}>
-              Chiave su <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#6366F1" }}>{help.label}</a>. Resta sul dispositivo (localStorage).
+              Chiave su <a href={help.url} target="_blank" rel="noreferrer" style={{ color: "#14B8A6" }}>{help.label}</a>. Resta sul dispositivo (localStorage).
               {!providerSupportsEmbeddings && (
                 <span style={{ color: "#F59E0B" }}>{" "}Nota: provider senza embeddings nativi → RAG disabilitato.</span>
               )}
@@ -676,7 +676,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
             disabled={saving || (provider !== "ollama" && !apiKey.trim()) || !modelId.trim()}
             style={{
               padding: "10px 16px", minHeight: "44px",
-              background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
+              background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
               border: "none", borderRadius: "10px", color: "#FFF",
               fontWeight: 700, fontSize: "13px", cursor: "pointer",
               opacity: (saving || (provider !== "ollama" && !apiKey.trim()) || !modelId.trim()) ? 0.5 : 1,
@@ -695,7 +695,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
 
       {/* ─── Profilo atleta ───────────────────────────────────────────── */}
       <div style={cardStyle}>
-        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "10px" }}>
+        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#14B8A6", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "10px" }}>
           Profilo atleta
         </div>
         <div style={{ fontSize: "12px", color: "#64748B", marginBottom: "12px", lineHeight: 1.4 }}>
@@ -706,7 +706,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
 
       {/* ─── Obiettivi ────────────────────────────────────────────────── */}
       <div style={cardStyle}>
-        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#6366F1", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "10px" }}>
+        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", color: "#14B8A6", textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace", marginBottom: "10px" }}>
           Obiettivi
         </div>
         <GoalsEditor variant="compact" />
@@ -900,7 +900,7 @@ export default function SettingsPage({ onResetOnboarding }: { onResetOnboarding:
                     minHeight: "44px", padding: "12px 14px",
                     background: importBusy
                       ? "#1E293B"
-                      : "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
+                      : "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
                     border: "none", borderRadius: "10px",
                     color: "#FFF", fontWeight: 700, fontSize: "13px",
                     cursor: importBusy ? "wait" : "pointer",

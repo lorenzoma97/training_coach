@@ -97,8 +97,8 @@ export default function PlanTab() {
             style={{
               padding: "10px 14px",
               background: "transparent",
-              border: "1px solid #6366F166", borderRadius: "10px",
-              color: "#6366F1", fontSize: "13px", fontWeight: 700, cursor: "pointer",
+              border: "1px solid #14B8A666", borderRadius: "10px",
+              color: "#14B8A6", fontSize: "13px", fontWeight: 700, cursor: "pointer",
             }}
           >
             {uploadOpen ? "Chiudi" : "Carica programma"}
@@ -209,10 +209,10 @@ function ProgramHeader({
               title={`Settimana ${w}${cur ? " (corrente)" : ""}`}
               style={{
                 minWidth: "36px", padding: "6px 9px",
-                background: sel ? "#6366F1" : cur ? "#6366F122" : past ? "#0891B218" : "#1A1A2E",
-                border: sel ? "1px solid #6366F1" : cur ? "1px solid #6366F166" : "1px solid rgba(255,255,255,0.1)",
+                background: sel ? "#14B8A6" : cur ? "#14B8A622" : past ? "#0891B218" : "#1A1A2E",
+                border: sel ? "1px solid #14B8A6" : cur ? "1px solid #14B8A666" : "1px solid rgba(255,255,255,0.1)",
                 borderRadius: "9px",
-                color: sel ? "#FFF" : cur ? "#6366F1" : past ? "#0891B2" : "#94A3B8",
+                color: sel ? "#FFF" : cur ? "#14B8A6" : past ? "#0891B2" : "#94A3B8",
                 fontSize: "12px", fontWeight: 700, cursor: "pointer",
                 fontFamily: "'JetBrains Mono', monospace",
               }}
@@ -315,7 +315,7 @@ function StartDateEditor({ program, onChanged }: { program: MacroProgram; onChan
           onClick={() => apply(val)}
           disabled={saving || !val}
           style={{
-            padding: "8px 14px", background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
+            padding: "8px 14px", background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
             border: "none", borderRadius: "8px", color: "#FFF", fontSize: "13px", fontWeight: 700,
             cursor: saving ? "wait" : "pointer", opacity: saving || !val ? 0.6 : 1,
           }}

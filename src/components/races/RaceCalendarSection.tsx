@@ -49,7 +49,7 @@ const SPORT_ICONS: Record<RaceEvent["sport"], string> = {
 };
 
 const PRIORITY_COLORS: Record<RaceEvent["priority"], { fg: string; bg: string; border: string }> = {
-  A: { fg: "#6366F1", bg: "#6366F122", border: "#6366F1" },
+  A: { fg: "#14B8A6", bg: "#14B8A622", border: "#14B8A6" },
   B: { fg: "#F59E0B", bg: "#F59E0B22", border: "#F59E0B" },
   C: { fg: "#94A3B8", bg: "#64748B22", border: "#64748B" },
 };
@@ -183,7 +183,7 @@ const ghostBtn: React.CSSProperties = {
 };
 const primaryBtn: React.CSSProperties = {
   padding: "12px 16px", minHeight: "44px",
-  background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
+  background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
   border: "none", borderRadius: "10px", color: "#FFF",
   fontSize: "14px", fontWeight: 700, cursor: "pointer",
 };
@@ -450,7 +450,7 @@ function MacroBanner({ macroResult, onGoToPlan }: MacroBannerProps) {
     : ctx.phase === "build"
     ? "#3B82F6"
     : ctx.phase === "peak"
-    ? "#6366F1"
+    ? "#14B8A6"
     : ctx.phase === "taper"
     ? "#F59E0B"
     : "#94A3B8";
@@ -718,7 +718,7 @@ export default function RaceCalendarSection() {
         }}>
           <div style={{
             fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em",
-            color: "#6366F1", textTransform: "uppercase",
+            color: "#14B8A6", textTransform: "uppercase",
             fontFamily: "'JetBrains Mono', monospace",
           }}>
             Gare e obiettivi

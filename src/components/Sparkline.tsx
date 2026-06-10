@@ -11,7 +11,7 @@ export default function Sparkline({
   points,
   width = 320,
   height = 80,
-  color = "#6366F1",
+  color = "#14B8A6",
   yMin,
   yMax,
   showDots = false,

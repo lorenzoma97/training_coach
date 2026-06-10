@@ -125,7 +125,7 @@ const mainStyle: React.CSSProperties = {
 
 const ctaStyle: React.CSSProperties = {
   padding: "14px 20px",
-  background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
+  background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
   border: "none", borderRadius: "12px",
   color: "#FFF", fontSize: "15px", fontWeight: 800, cursor: "pointer",
   minHeight: "52px",
@@ -574,7 +574,7 @@ function WarmupCooldownStep({
             </span>
           )}
           {step.reps && (
-            <span style={{ fontSize: "12px", color: "#6366F1", fontFamily: "'JetBrains Mono', monospace" }}>
+            <span style={{ fontSize: "12px", color: "#14B8A6", fontFamily: "'JetBrains Mono', monospace" }}>
               × {step.reps} reps
             </span>
           )}
@@ -943,7 +943,7 @@ function RestStep({
           ⏱ Recupero
         </div>
         <div style={{
-          fontSize: "64px", fontWeight: 800, color: secLeft <= 5 ? "#6366F1" : "#0891B2",
+          fontSize: "64px", fontWeight: 800, color: secLeft <= 5 ? "#14B8A6" : "#0891B2",
           fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.0, marginBottom: "10px",
         }}>
           {mm}:{ss.toString().padStart(2, "0")}

@@ -110,7 +110,7 @@ const labelStyle: React.CSSProperties = {
 };
 const primaryBtn: React.CSSProperties = {
   width: "100%", padding: "16px", minHeight: "44px",
-  background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
+  background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
   border: "none", borderRadius: "14px", color: "#FFF",
   fontSize: "16px", fontWeight: 800, cursor: "pointer",
 };
@@ -199,7 +199,7 @@ export default function StepStrength1RM({ draft, onDraftChange, onSave, onSkip, 
       <div>
         <div style={{
           fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em",
-          color: "#6366F1", textTransform: "uppercase",
+          color: "#14B8A6", textTransform: "uppercase",
           fontFamily: "'JetBrains Mono', monospace",
         }}>Step 3 · Test forza</div>
         <h2 style={{
@@ -220,7 +220,7 @@ export default function StepStrength1RM({ draft, onDraftChange, onSave, onSkip, 
         aria-label="Apri la guida: come fare il test 1RM (nuova scheda)"
         style={{
           alignSelf: "flex-start",
-          color: "#6366F1", fontSize: "13px", fontWeight: 600,
+          color: "#14B8A6", fontSize: "13px", fontWeight: 600,
           textDecoration: "none", padding: "8px 0",
         }}
       >
@@ -310,10 +310,10 @@ export default function StepStrength1RM({ draft, onDraftChange, onSave, onSkip, 
                         flex: "1 1 140px",
                         display: "flex", alignItems: "center", gap: "8px",
                         padding: "10px 12px", minHeight: "44px",
-                        background: checked ? "#6366F122" : "#1A1A2E",
-                        border: checked ? "1px solid #6366F1" : "1px solid rgba(255,255,255,0.08)",
+                        background: checked ? "#14B8A622" : "#1A1A2E",
+                        border: checked ? "1px solid #14B8A6" : "1px solid rgba(255,255,255,0.08)",
                         borderRadius: "10px", cursor: "pointer",
-                        fontSize: "13px", color: checked ? "#6366F1" : "#CBD5E1",
+                        fontSize: "13px", color: checked ? "#14B8A6" : "#CBD5E1",
                         fontWeight: 600,
                       }}
                     >
@@ -324,7 +324,7 @@ export default function StepStrength1RM({ draft, onDraftChange, onSave, onSkip, 
                         value={src}
                         checked={checked}
                         onChange={() => updateEntry(idx, { source: src })}
-                        style={{ accentColor: "#6366F1" }}
+                        style={{ accentColor: "#14B8A6" }}
                       />
                       {src === "tested" ? "Testato" : "Stimato"}
                     </label>

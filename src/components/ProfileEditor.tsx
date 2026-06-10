@@ -325,10 +325,10 @@ export default function ProfileEditor() {
                   flex: 1,
                   height: "36px",
                   padding: "0 4px",
-                  background: active ? "#6366F125" : "#1A1A2E",
-                  border: active ? "1px solid #6366F166" : "1px solid rgba(255,255,255,0.1)",
+                  background: active ? "#14B8A625" : "#1A1A2E",
+                  border: active ? "1px solid #14B8A666" : "1px solid rgba(255,255,255,0.1)",
                   borderRadius: "10px",
-                  color: active ? "#6366F1" : "#94A3B8",
+                  color: active ? "#14B8A6" : "#94A3B8",
                   fontSize: "12px", fontWeight: 700, cursor: "pointer",
                 }}
               >{opt.label}</button>
