@@ -92,7 +92,12 @@ export interface MacroProgressInfo {
 
 export function computeMacroProgress(program: MacroProgram): MacroProgressInfo | null {
   if (!program.metadata.start_date) return null;
-  const startTs = Date.parse(program.metadata.start_date);
+  // Ancora al LUNEDÌ della settimana di start_date (le settimane sono lun→dom).
+  // Robusto anche se l'.md ha una data non-lunedì (es. sabato) → niente settimane
+  // sfasate "sab-ven".
+  const monday = mondayOf(program.metadata.start_date);
+  if (!monday) return null;
+  const startTs = Date.parse(monday);
   if (!Number.isFinite(startTs)) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const days = Math.floor((today.getTime() - startTs) / (24 * 3600 * 1000));

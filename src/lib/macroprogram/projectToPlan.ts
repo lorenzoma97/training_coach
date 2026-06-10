@@ -20,7 +20,7 @@ import type {
 import type {
   MacroProgram, MacroProgramSession, MacroProgramExercise, MacroProgramInterval,
 } from "../types/macroprogram";
-import { computeMacroProgress } from "./storage";
+import { computeMacroProgress, mondayOf } from "./storage";
 
 const DAY_ORDER = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const;
 
@@ -107,7 +107,12 @@ function projectSession(s: MacroProgramSession, phaseName: string | undefined): 
  */
 function weekStartDate(program: MacroProgram, weekNumber: number): string | undefined {
   if (!program.metadata.start_date) return undefined;
-  const startTs = Date.parse(program.metadata.start_date);
+  // Le settimane sono lun→dom: ancoriamo al LUNEDÌ della settimana di start_date
+  // (anche se l'.md importato ha una data non-lunedì, es. sabato). Senza questo
+  // le settimane risultavano sfasate (range "sab-ven") e i workout sbordavano.
+  const monday = mondayOf(program.metadata.start_date);
+  if (!monday) return undefined;
+  const startTs = Date.parse(monday);
   if (!Number.isFinite(startTs)) return undefined;
   const d = new Date(startTs + (weekNumber - 1) * 7 * 24 * 3600 * 1000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
