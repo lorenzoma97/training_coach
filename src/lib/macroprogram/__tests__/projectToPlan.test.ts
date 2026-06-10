@@ -103,10 +103,11 @@ describe("projectMacroWeekToPlan — proiezione deterministica", () => {
     expect(forza.details).toContain("Setup: Palestra");
   });
 
-  it("calcola startDate della settimana N da metadata.start_date", () => {
-    // week 3 → start_date + 2 settimane = 2026-05-26 + 14gg = 2026-06-09
+  it("calcola startDate della settimana N (ancorata a lunedì) da metadata.start_date", () => {
+    // start_date 2026-05-26 è MARTEDÌ → ancora al lunedì della sua settimana
+    // (2026-05-25). week 3 = 2026-05-25 + 14gg = 2026-06-08 (lunedì).
     const r = projectMacroWeekToPlan(makeProgram("2026-05-26"), 3, profile);
-    expect(r!.plan.startDate).toBe("2026-06-09");
+    expect(r!.plan.startDate).toBe("2026-06-08");
   });
 
   it("ritorna null se la settimana non esiste nel macro", () => {
