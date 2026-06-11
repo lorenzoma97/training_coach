@@ -316,7 +316,7 @@ function StartDateEditor({ program, onChanged }: { program: MacroProgram; onChan
           disabled={saving || !val}
           style={{
             padding: "8px 14px", background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
-            border: "none", borderRadius: "8px", color: "#FFF", fontSize: "13px", fontWeight: 700,
+            border: "none", borderRadius: "8px", color: "#052E2A", fontSize: "13px", fontWeight: 800,
             cursor: saving ? "wait" : "pointer", opacity: saving || !val ? 0.6 : 1,
           }}
         >Applica</button>

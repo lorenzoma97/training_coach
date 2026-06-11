@@ -100,8 +100,8 @@ function StatoBanner({ tone, title, body, cta, onCta, disabled, busyLabel }: {
           style={{
             padding: "10px 14px",
             background: disabled ? "#1E293B" : `linear-gradient(135deg, ${TOKENS.primary} 0%, #0D9488 100%)`,
-            border: "none", borderRadius: "10px", color: "#FFF",
-            fontSize: "13px", fontWeight: 700,
+            border: "none", borderRadius: "10px", color: disabled ? "#94A3B8" : "#052E2A",
+            fontSize: "13px", fontWeight: 800,
             cursor: disabled ? "wait" : "pointer", opacity: disabled ? 0.5 : 1,
           }}
         >

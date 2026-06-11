@@ -572,7 +572,7 @@ function SessionDetailCard({
               padding: "10px 14px",
               background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
               border: "none", borderRadius: "10px",
-              color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: "pointer",
+              color: "#052E2A", fontSize: "13px", fontWeight: 800, cursor: "pointer",
             }}
           >
             Vai al piano →

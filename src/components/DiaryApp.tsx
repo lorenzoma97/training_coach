@@ -981,7 +981,7 @@ export default function DiaryApp() {
           <div style={{ padding: "16px 24px 8px", display: "flex", gap: "10px" }}>
             <button onClick={() => { setAddDate(today()); setAddType(null); setAddStrengthMode(false); setAddExercises([]); setEditingWorkoutId(null); setEditingOriginalDate(null); setScreen("add"); }} style={{
               flex: 1, padding: "16px", background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
-              border: "none", borderRadius: "14px", color: "#FFF", fontSize: "15px", fontWeight: 700, cursor: "pointer",
+              border: "none", borderRadius: "14px", color: "#052E2A", fontSize: "15px", fontWeight: 800, cursor: "pointer",
             }}>🏋️ Registra allenamento</button>
             <button onClick={() => { setDailyDate(today()); resetDailyFields(); setEditingDaily(false); setScreen("daily"); }} style={{
               flex: 1, padding: "16px", background: "#16213E",
