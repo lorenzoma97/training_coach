@@ -1059,7 +1059,9 @@ export default function TrainingPlanView() {
     ].filter(Boolean).join("\n");
     void setJSON("pending-chat-prompt", { prompt });
     events.emit("chat:openWith", { prompt });
-    events.emit("nav:goto", { tab: "coach" });
+    // Nav piatta: la chat è una pagina top-level. Il vecchio {tab:"coach"}
+    // veniva aliasato su "today" e SOVRASCRIVEVA il salto in chat (bug).
+    events.emit("nav:goto", { tab: "chat" });
   };
 
   // Apre il diario in modalità "nuovo allenamento" pre-compilato con durata,

@@ -691,7 +691,9 @@ export default function RaceCalendarSection() {
   };
 
   const goToPlan = () => {
-    events.emit("nav:goto", { tab: "coach" });
+    // Nav piatta: il piano è il tab top-level "plan" (il legacy "coach"
+    // atterrava su Oggi via alias).
+    events.emit("nav:goto", { tab: "plan" });
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────
