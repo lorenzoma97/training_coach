@@ -14,6 +14,7 @@ import {
 import { getCurrentReadiness } from "../lib/coach/readinessScoring";
 import { loadActiveMacroProgram } from "../lib/macroprogram/storage";
 import { TOKENS, TYPE, SPACE, uiCard } from "../lib/theme";
+import BottomSheet from "./ui/sheet";
 import { translateGeminiError } from "../lib/geminiErrors";
 import { savePlanWithHistory, getPlanHistory, getNextPlan, saveNextPlan, clearNextPlan, maybePromoteNextPlan } from "../lib/coach/planHistory";
 import { computeZonesContext, inferSessionZone, stripInlineHRRange, type ZonesResult } from "../lib/coach/zones";
@@ -306,8 +307,16 @@ export default function TrainingPlanView() {
   const [subMenuKey, setSubMenuKey] = useState<string | null>(null);
   const [subAltroOpen, setSubAltroOpen] = useState(false);
   const [subAltroText, setSubAltroText] = useState("");
-  // Overflow azioni secondarie per-sessione (Chiedi/Sostituisci) → 1 primario + "⋯".
-  const [actionsKey, setActionsKey] = useState<string | null>(null);
+  // Redesign function-first (2026-06-11): tap su una riga-giorno apre lo sheet
+  // con dettagli + azioni della sessione. La settimana resta una lista pulita.
+  const [sheetSession, setSheetSession] = useState<{
+    w: TrainingPlan["weeks"][number];
+    s: PlannedSession;
+    isToday: boolean;
+    isPast: boolean;
+    completion: { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string; actualType?: string } | null;
+    dateLabel: string;
+  } | null>(null);
 
   const load = async () => {
     // Auto-promote prima di caricare: se la settimana del preview è iniziata,
@@ -906,6 +915,7 @@ export default function TrainingPlanView() {
     if (!mountedRef.current) return true;
     setPlan(next);
     setSubMenuKey(null); setSubAltroOpen(false); setSubAltroText("");
+    setSheetSession(null);
     showSuccess("✓ Sessione sostituita", res.applied.join(" "));
     return true;
   };
@@ -1237,46 +1247,7 @@ export default function TrainingPlanView() {
           nei chip inline di ogni sessione cardio, e la reference Z1-Z5 completa
           vive in Coach → Tools → Zone FC. Una sola fonte, meno doppioni. */}
 
-      {/* Razionale piano — collassato di default (Sprint L: riduce l'altezza
-          prima delle sessioni; chi vuole il dettaglio lo apre). */}
-      <details
-        style={{
-          background: "#16213E", borderRadius: "12px",
-          border: "1px solid rgba(232, 85, 58, 0.2)",
-          padding: "12px 16px",
-        }}
-      >
-        <summary
-          style={{
-            cursor: "pointer", listStyle: "none",
-            fontSize: "11px", color: "#14B8A6",
-            letterSpacing: "0.12em", textTransform: "uppercase",
-            fontWeight: 800, minHeight: "24px",
-            display: "flex", alignItems: "center", gap: "6px",
-            userSelect: "none",
-          }}
-        >
-          <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
-          Razionale del piano
-        </summary>
-        <div style={{ marginTop: "10px" }}>
-          {isMultiBullet ? (
-            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "6px" }}>
-              {rationaleBullets.map((b, i) => (
-                <li key={i} style={{ display: "flex", gap: "8px", alignItems: "flex-start", fontSize: "13px", lineHeight: 1.5, color: "#E2E8F0" }}>
-                  <span aria-hidden="true" style={{
-                    width: "5px", height: "5px", borderRadius: "999px",
-                    background: "#14B8A6", marginTop: "8px", flexShrink: 0,
-                  }} />
-                  <span>{b}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div style={{ fontSize: "13px", lineHeight: 1.5, color: "#E2E8F0" }}>{plan.rationale}</div>
-          )}
-        </div>
-      </details>
+
 
       {/* (Banner scaduto/in-scadenza consolidato in StatoPiano, in cima.) */}
 
@@ -1375,728 +1346,457 @@ export default function TrainingPlanView() {
 
       {/* (Banner "profilo cambiato" consolidato in StatoPiano, in cima.) */}
 
-      {/* UX redesign #4 (2026-05-14) — Bottone smart con dettaglio + link
-          "Altre opzioni" che apre il picker tradizionale.
-          Principio: focalizza SEMPRE sulla settimana in corso. Il bottone
-          primario è sempre `rest-of-week` (anche al sabato/domenica con
-          pochi giorni rimasti). "Pianifica prossima settimana" sta solo
-          nelle "Altre opzioni" (tendina chiusa) — l'utente la cerca solo
-          in casi specifici, non vale la pena offrirla come default.
-          Se rest-of-week + ci sono deviazioni → useAdapt=true, va via
-          handleAdapt(buildDeviationRequest). 'Adatta alle deviazioni' non
-          è più una scelta separata, è integrata nel default smart. */}
-      {!isExpired && (() => {
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        const todayIdx = (today.getDay() + 6) % 7;
-        const labels = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
-        const formatDay = (d: Date) => `${labels[(d.getDay() + 6) % 7]} ${d.getDate()}`;
-        const totalDev = deviationCount.skipped + deviationCount.partial + deviationCount.extras;
-        const restEnd = new Date(today); restEnd.setDate(today.getDate() + (6 - todayIdx));
-        const remainLabels = labels.slice(todayIdx);
-        const remainSessions = plan.weeks[0]?.sessions.filter(s => remainLabels.includes(s.day)) ?? [];
-        // Sprint L: se il banner eventi è visibile (macro + eventi pendenti), è
-        // LUI l'entry-point per adattare → il bottone smart resta "rigenera" per
-        // non duplicare la stessa azione.
-        const eventsBannerVisible = !!plan.sourceMacro && pendingEvents.length > 0 && !eventsBannerDismissed;
-        const useAdapt = totalDev > 0 && !eventsBannerVisible;
-        const smartRegen = {
-          mode: "rest-of-week" as const,
-          useAdapt,
-          icon: "",
-          label: useAdapt ? "Adatta piano alle deviazioni" : "Aggiorna giorni rimanenti",
-          sub1: todayIdx === 6
-            ? `solo ${formatDay(today)} (settimana quasi conclusa)`
-            : `${formatDay(today)} → ${formatDay(restEnd)} (${remainSessions.length} session${remainSessions.length === 1 ? "e" : "i"})`,
-          sub2: useAdapt ? `integra ${totalDev} deviazion${totalDev === 1 ? "e" : "i"}` : null,
-        };
-        const doSmartAction = () => {
-          if (regenerating || adapting) return;
-          setAdaptOpen(false);
-          if (smartRegen.useAdapt) {
-            // Macro attivo → adattatore vincolato (deviazioni strutturate).
-            if (plan.sourceMacro) void handleAdaptMacro({ includeDeviations: true });
-            else void handleAdapt(buildDeviationRequest());
-          } else {
-            void handleRegenerate(smartRegen.mode);
-          }
-        };
-        return (
-        <div style={{ background: "#16213E", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 18px", display: "flex", flexDirection: "column", gap: "10px" }}>
-          {!regenPickerOpen ? (
-            <>
-              <button
-                onClick={doSmartAction}
-                disabled={regenerating || adapting}
-                aria-busy={regenerating || adapting || undefined}
-                role={regenerating || adapting ? "status" : undefined}
-                aria-label={regenerating ? "Rigenerazione piano in corso" : adapting ? "Adattamento piano in corso" : `${smartRegen.label} — ${smartRegen.sub1}${smartRegen.sub2 ? ` · ${smartRegen.sub2}` : ""}`}
-                style={{
-                  padding: "14px 18px", minHeight: "48px",
-                  background: (regenerating || adapting) ? "#1E293B" : "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)",
-                  border: "none", borderRadius: "10px",
-                  color: "#FFF", fontSize: "14px", fontWeight: 700,
-                  cursor: (regenerating || adapting) ? "wait" : "pointer",
-                  opacity: (regenerating || adapting) ? 0.5 : 1,
-                  width: "100%", textAlign: "left",
-                  display: "flex", flexDirection: "column", gap: "2px",
-                }}
-              >
-                {(regenerating || adapting) ? (
-                  <span role="progressbar" aria-busy="true">{regenerating ? "Rigenerazione" : "Adatto piano"}… {llmElapsedSec}s</span>
-                ) : (
-                  <>
-                    <span style={{ fontSize: "14px", fontWeight: 700 }}>{smartRegen.label}</span>
-                    <span style={{ fontSize: "12px", fontWeight: 500, opacity: 0.92 }}>{smartRegen.sub1}</span>
-                    {smartRegen.sub2 && (
-                      <span style={{ fontSize: "11px", fontWeight: 500, opacity: 0.85 }}>{smartRegen.sub2}</span>
-                    )}
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => { setRegenPickerOpen(true); setAdaptOpen(false); }}
-                disabled={regenerating || adapting}
-                style={{
-                  alignSelf: "flex-end", padding: "6px 10px",
-                  background: "transparent", border: "none",
-                  color: "#94A3B8", fontSize: "12px", fontWeight: 600,
-                  cursor: (regenerating || adapting) ? "wait" : "pointer",
-                  textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: "3px",
-                }}
-                aria-label="Mostra altre opzioni di rigenerazione"
-              >
-                Altre opzioni →
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => setRegenPickerOpen(false)}
-              disabled={regenerating || adapting}
-              style={{
-                padding: "10px 14px", minHeight: "44px",
-                background: "#0891B222", border: "1px solid #0891B2",
-                borderRadius: "10px", color: "#0891B2",
-                fontSize: "13px", fontWeight: 700, cursor: "pointer",
-                width: "100%",
-              }}
-            >✕ Chiudi opzioni</button>
-          )}
-
-          {regenPickerOpen && !regenerating && (() => {
-            const today = new Date();
-            const dow = today.getDay(); // 0=dom..6=sab
-            const todayIdx = (dow + 6) % 7; // 0=lun..6=dom
-            const labels = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
-            const todayLabel = labels[todayIdx];
-            const remaining = labels.slice(todayIdx);
-            // Mostra "rest-of-week" lun-sab. Su lunedì copre l'intera settimana
-            // corrente (lun→dom). Su domenica non ha senso (solo 1 giorno).
-            const showRestOfWeek = todayIdx >= 0 && todayIdx <= 5;
-            // Toggle giorno nel picker. Stato locale, non persiste — è override
-            // SOLO per la prossima generazione.
-            const togglePickerDay = (d: string) => {
-              setPickerDays(prev => {
-                const cur = prev || [];
-                return cur.includes(d) ? cur.filter(x => x !== d) : [...cur, d];
-              });
-            };
-            // Reset al default profilo (utility quando l'utente ha smanettato troppo).
-            const resetToProfile = () => {
-              const def = currentProfile?.availableDays;
-              if (def && def.length > 0) setPickerDays([...def]);
-              else setPickerDays(["lun","mar","mer","gio","ven","sab","dom"]);
-            };
-            // Per "Riparti da oggi" mostra in evidenza i giorni rimanenti che
-            // rientrano nella selezione (intersezione).
-            const remainingActive = (pickerDays || []).filter(d => remaining.includes(d));
-            const noDaysSelected = !pickerDays || pickerDays.length === 0;
-            return (
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600 }}>Giorni allenabili questa settimana</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                  {labels.map(d => {
-                    const active = (pickerDays || []).includes(d);
-                    return (
-                      <button
-                        key={d}
-                        onClick={() => togglePickerDay(d)}
-                        aria-pressed={active}
-                        style={{
-                          padding: "8px 12px", minWidth: "44px",
-                          background: active ? "#0891B225" : "#1A1A2E",
-                          border: active ? "1px solid #0891B266" : "1px solid rgba(255,255,255,0.1)",
-                          borderRadius: "999px",
-                          color: active ? "#38BDF8" : "#94A3B8",
-                          fontSize: "12px", fontWeight: 700, cursor: "pointer",
-                          fontFamily: "'JetBrains Mono', monospace",
-                          textTransform: "uppercase",
-                        }}
-                      >{d}</button>
-                    );
-                  })}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
-                  <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.4 }}>
-                    {currentProfile?.availableDays && currentProfile.availableDays.length > 0
-                      ? <>Default profilo: <b>{currentProfile.availableDays.join(", ")}</b>. Questa scelta è solo per la prossima generazione.</>
-                      : "Nessun default impostato. Configurarlo in Impostazioni → Profilo per pre-selezione automatica."}
-                  </div>
-                  <button
-                    onClick={resetToProfile}
-                    style={{
-                      padding: "5px 10px", background: "transparent",
-                      border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
-                      color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
-                    }}
-                  >Reset</button>
-                </div>
-
-                <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600, marginTop: "4px" }}>Come vuoi rigenerare?</div>
-                {showRestOfWeek && (
-                  <button
-                    onClick={() => handleRegenerate("rest-of-week", pickerDays)}
-                    disabled={noDaysSelected || remainingActive.length === 0}
-                    style={{
-                      textAlign: "left", padding: "12px 14px",
-                      background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: "10px", color: "#E2E8F0",
-                      cursor: (noDaysSelected || remainingActive.length === 0) ? "not-allowed" : "pointer",
-                      opacity: (noDaysSelected || remainingActive.length === 0) ? 0.5 : 1,
-                    }}
-                  >
-                    <div style={{ fontWeight: 700, fontSize: "13px", color: "#0891B2", marginBottom: "3px" }}>
-                      ▶ Riparti da oggi
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
-                      {remainingActive.length === 0
-                        ? `Nessuno dei giorni selezionati rientra nei rimanenti (${remaining.join(", ")}).`
-                        : `Genera fino a ${remainingActive.length} sessione/i in ${remainingActive.join(", ")}. I giorni passati restano chiusi.`}
-                    </div>
-                  </button>
-                )}
-                <button
-                  onClick={() => handleRegenerate("next-week", pickerDays)}
-                  disabled={noDaysSelected}
-                  style={{
-                    textAlign: "left", padding: "12px 14px",
-                    background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: "10px", color: "#E2E8F0",
-                    cursor: noDaysSelected ? "not-allowed" : "pointer",
-                    opacity: noDaysSelected ? 0.5 : 1,
-                  }}
-                >
-                  <div style={{ fontWeight: 700, fontSize: "13px", color: "#0891B2", marginBottom: "3px" }}>
-                    ▶ Pianifica settimana prossima
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
-                    {noDaysSelected
-                      ? "Seleziona almeno un giorno sopra."
-                      : `Genera fino a ${(pickerDays || []).length} sessione/i tra: ${(pickerDays || []).join(", ")}.`}
-                    {!showRestOfWeek && ` (Oggi è ${todayLabel}, l'opzione "riparti" non è disponibile.)`}
-                  </div>
-                </button>
-                {/* UX redesign #3 — terza opzione nel picker: "Adatta alle
-                    deviazioni". Mostrata solo se hasDeviations, scorciatoia
-                    al flusso adapt con buildDeviationRequest. Coerente con il
-                    pattern degli altri item (titolo amber + dettaglio sub).
-                    Non passa per il day picker (le deviazioni hanno già scope
-                    di settimana corrente). */}
-                {hasDeviations && (
-                  <button
-                    onClick={() => { setRegenPickerOpen(false); void handleAdapt(buildDeviationRequest()); }}
-                    disabled={adapting || regenerating}
-                    style={{
-                      textAlign: "left", padding: "12px 14px",
-                      background: "#1A1A2E", border: "1px solid rgba(245, 158, 11, 0.35)",
-                      borderRadius: "10px", color: "#E2E8F0",
-                      cursor: (adapting || regenerating) ? "wait" : "pointer",
-                      opacity: (adapting || regenerating) ? 0.5 : 1,
-                    }}
-                  >
-                    <div style={{ fontWeight: 700, fontSize: "13px", color: "#F59E0B", marginBottom: "3px" }}>
-                      ▶ Adatta alle deviazioni
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
-                      Riallinea le sessioni future a quello che hai realmente fatto: {[
-                        deviationCount.skipped > 0 ? `${deviationCount.skipped} saltate` : "",
-                        deviationCount.partial > 0 ? `${deviationCount.partial} variate` : "",
-                        deviationCount.extras > 0 ? `${deviationCount.extras} autonomi` : "",
-                      ].filter(Boolean).join(" · ")}.
-                    </div>
-                  </button>
-                )}
-                <button
-                  onClick={() => setRegenPickerOpen(false)}
-                  style={{
-                    alignSelf: "flex-start", padding: "8px 14px",
-                    background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: "10px", color: "#94A3B8", fontSize: "12px", fontWeight: 600, cursor: "pointer",
-                  }}
-                >Annulla</button>
-              </div>
-            );
-          })()}
-          {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
-        </div>
-        );
-      })()}
-
-      {/* UX redesign #3 — Opzioni avanzate: "Adatta con richiesta" free-text
-          spostato qui in <details> chiuso di default. L'utente principale
-          orienta a picker primario; questo resta accessibile come escape
-          hatch per modifiche puntuali (es. "settimana di deload"). */}
+      {/* Azione UNICA del Piano (redesign function-first, 2026-06-11):
+          "Aggiorna piano" apre lo sheet con tutte le opzioni (riparti da oggi /
+          prossima settimana / adatta alle deviazioni / modifica libera).
+          Prima: 3 entry-point diversi → l'utente non sapeva dove muoversi. */}
       {!isExpired && (
-        <details style={{ background: "#16213E", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)" }}>
-          <summary
+        <>
+          <button
+            onClick={() => { setRegenPickerOpen(true); setAdaptError(null); setRegenError(null); }}
+            disabled={regenerating || adapting}
+            aria-busy={regenerating || adapting || undefined}
             style={{
-              cursor: "pointer", listStyle: "none",
-              padding: "14px 18px", minHeight: "44px",
-              fontSize: "12px", color: "#94A3B8",
-              letterSpacing: "0.1em", textTransform: "uppercase",
-              fontWeight: 700,
-              display: "flex", alignItems: "center", gap: "8px",
-              userSelect: "none",
+              padding: "14px 18px", minHeight: "52px", width: "100%",
+              background: (regenerating || adapting) ? "#1E293B" : "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
+              border: "none", borderRadius: "12px",
+              color: (regenerating || adapting) ? "#94A3B8" : "#052E2A",
+              fontSize: "15px", fontWeight: 800,
+              cursor: (regenerating || adapting) ? "wait" : "pointer",
             }}
           >
-            <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "14px" }}>▸</span>
-            Opzioni avanzate (adatta con richiesta)
-          </summary>
-          <div style={{ padding: "0 18px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
-            <button onClick={() => { setAdaptOpen(o => !o); setAdaptError(null); }} disabled={adapting || regenerating} style={{ padding: "10px 14px", background: adaptOpen ? "#14B8A622" : "#1A1A2E", border: adaptOpen ? "1px solid #14B8A6" : "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: adaptOpen ? "#14B8A6" : "#E2E8F0", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
-              ✏ Adatta con richiesta
-            </button>
-            {adaptOpen && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>Dimmi cosa vuoi cambiare. Il coach rispetterà comunque le regole di sicurezza.</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                  {ADAPT_QUICK_PROMPTS.map(p => (<button key={p} onClick={() => setAdaptRequest(p)} disabled={adapting} style={{ padding: "10px 14px", minHeight: "40px", fontSize: "12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "999px", color: "#CBD5E1", cursor: "pointer" }}>{p}</button>))}
-                </div>
-                <textarea value={adaptRequest} onChange={e => setAdaptRequest(e.target.value)} placeholder="es. 'settimana più leggera perché ho un viaggio' o 'aumenta le ripetute'" disabled={adapting} rows={2} style={{ width: "100%", padding: "10px 12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#E2E8F0", fontSize: "14px", fontFamily: "inherit", resize: "vertical", minHeight: "60px", outline: "none", boxSizing: "border-box" }} />
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <button onClick={() => handleAdapt()} disabled={adapting || !adaptRequest.trim()} aria-busy={adapting || undefined} role={adapting ? "status" : undefined} aria-label={adapting ? "Adattamento piano in corso" : undefined} style={{ flex: 1, padding: "10px", background: adapting ? "#1E293B" : "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: adapting ? "wait" : "pointer", opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1 }}>
-                    {adapting ? `Adatto il piano… ${llmElapsedSec}s` : "Applica modifica"}
-                  </button>
-                  <button onClick={() => { setAdaptOpen(false); setAdaptRequest(""); setAdaptError(null); }} disabled={adapting} style={{ padding: "10px 14px", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#94A3B8", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>Annulla</button>
-                </div>
-                {adaptError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{adaptError}</div>}
-              </div>
-            )}
-          </div>
-        </details>
+            {(regenerating || adapting)
+              ? `${regenerating ? "Rigenerazione" : "Adatto il piano"}… ${llmElapsedSec}s`
+              : "Aggiorna piano"}
+          </button>
+          {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
+          {adaptError && !sheetSession && <div style={{ color: "#EF4444", fontSize: "12px" }}>{adaptError}</div>}
+        </>
       )}
 
-      {/* Fix 1 — Wrapper "grigio" delle sessioni della settimana quando il
-          piano è stale (>7gg dal startDate). Visivamente chiaro che la
-          settimana mostrata non è più quella corrente. */}
+      {/* LA SETTIMANA — il cuore funzionale del Piano: 7 righe lun→dom,
+          riposo incluso, OGGI evidenziata, autonomi come sotto-righe.
+          Tap su una riga → sheet con dettagli, scheda e azioni. */}
       <div style={staleWeeksStyle}>
-      {!isExpired && plan.weeks.map((w: TrainingPlan["weeks"][number]) => {
-        // Calcola la data di inizio della settimana (Mon) per il range header
-        // e per le date assolute delle sessioni. plan.startDate è il lun della
-        // weekNumber=1; +(weekNumber-1)*7 → lun della week corrente.
+      {!isExpired && plan.weeks.map((w) => {
+        const DAYS7 = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
         let weekStartDate: Date | null = null;
         let weekRangeLabel = "";
         if (plan.startDate) {
           const [sy, sm, sd] = plan.startDate.split("-").map(Number);
           weekStartDate = new Date(sy, sm - 1, sd);
           weekStartDate.setDate(weekStartDate.getDate() + (w.weekNumber - 1) * 7);
-          // formatWeekRange si aspetta ISO yyyy-mm-dd
           const iso = `${weekStartDate.getFullYear()}-${String(weekStartDate.getMonth()+1).padStart(2,"0")}-${String(weekStartDate.getDate()).padStart(2,"0")}`;
           weekRangeLabel = formatWeekRange(iso);
         }
+        const dateForDayIdx = (dayIdx: number): string => {
+          if (!weekStartDate || dayIdx < 0) return "";
+          const d = new Date(weekStartDate);
+          d.setDate(d.getDate() + dayIdx);
+          return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+        };
+        // Autonomi della settimana, indicizzati per giorno (0=lun..6=dom)
+        const extrasByDay = new Map<number, Array<{ date: string; workout: any }>>();
+        if (weekStartDate) {
+          const fmtLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+          const weekEnd = new Date(weekStartDate); weekEnd.setDate(weekStartDate.getDate() + 6);
+          const wkStartKey = fmtLocal(weekStartDate); const wkEndKey = fmtLocal(weekEnd);
+          for (const e of extraWorkouts) {
+            if (e.date < wkStartKey || e.date > wkEndKey) continue;
+            const [ey, em, ed] = e.date.split("-").map(Number);
+            const di = (new Date(ey, em - 1, ed).getDay() + 6) % 7;
+            if (!extrasByDay.has(di)) extrasByDay.set(di, []);
+            extrasByDay.get(di)!.push(e);
+          }
+        }
         return (
-        <div key={w.weekNumber} style={{ ...uiCard, padding: `${SPACE.xl}px` }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: `${SPACE.sm}px`, marginBottom: `${SPACE.xs}px`, flexWrap: "wrap" }}>
-            {/* Sprint N fix: l'etichetta mostra il numero di settimana del MACRO
-                (sourceMacro.weekNumber), non l'indice interno weeks[0].weekNumber
-                che è sempre 1 (serve al calcolo date). Così card e header
-                programma combaciano ("Settimana 2"), niente più "Settimana 1"
-                fantasma. Senza macro: fallback all'indice interno. */}
-            <div style={{ ...TYPE.label, color: TOKENS.primary }}>Settimana {plan.sourceMacro?.weekNumber ?? w.weekNumber}</div>
+        <div key={w.weekNumber} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "8px", padding: "4px 2px 0" }}>
+            <div style={{ ...TYPE.label, color: TOKENS.neutral }}>Questa settimana</div>
             {weekRangeLabel && (
-              <div style={{ ...TYPE.secondary, color: TOKENS.neutral, fontFamily: "'JetBrains Mono', monospace" }}>
-                {weekRangeLabel}
-              </div>
+              <div style={{ fontSize: "12px", color: "#64748B", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{weekRangeLabel}</div>
             )}
           </div>
-          {w.focus && (
-            <div style={{ ...TYPE.body, color: "#CBD5E1", fontWeight: 600, marginBottom: `${SPACE.md}px` }}>{w.focus}</div>
-          )}
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {(() => {
-              // Costruisce entries ordinate per giorno (lun-dom): sessioni pianificate
-              // + allenamenti autonomi intervallati nel posto giusto.
-              const DAY_ORDER = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
-              type PlannedEntry = { kind: "planned"; dayIdx: number; s: TrainingPlan["weeks"][number]["sessions"][number]; i: number };
-              type ExtraEntry = { kind: "extra"; dayIdx: number; e: { date: string; workout: any }; i: number };
-              const plannedEntries: PlannedEntry[] = w.sessions.map((s: TrainingPlan["weeks"][number]["sessions"][number], i: number) => ({
-                kind: "planned", dayIdx: DAY_ORDER.indexOf(s.day), s, i,
-              }));
-              let extraEntries: ExtraEntry[] = [];
-              if (plan.startDate) {
-                const [sy, sm, sd] = plan.startDate.split("-").map(Number);
-                const weekStart = new Date(sy, sm - 1, sd);
-                weekStart.setDate(weekStart.getDate() + (w.weekNumber - 1) * 7);
-                const weekEnd = new Date(weekStart);
-                weekEnd.setDate(weekStart.getDate() + 6);
-                const fmtLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-                const wkStartKey = fmtLocal(weekStart);
-                const wkEndKey = fmtLocal(weekEnd);
-                const weekExtras = extraWorkouts.filter((e: { date: string; workout: any }) => e.date >= wkStartKey && e.date <= wkEndKey);
-                extraEntries = weekExtras.map((e: { date: string; workout: any }, i: number) => {
-                  const [ey, em, ed] = e.date.split("-").map(Number);
-                  const dt = new Date(ey, em - 1, ed);
-                  const DAY_LABELS_IT = ["dom","lun","mar","mer","gio","ven","sab"];
-                  return { kind: "extra" as const, dayIdx: DAY_ORDER.indexOf(DAY_LABELS_IT[dt.getDay()]), e, i };
-                });
-              }
-              const unified: Array<PlannedEntry | ExtraEntry> = [...plannedEntries, ...extraEntries]
-                .sort((a, b) => a.dayIdx - b.dayIdx);
-
-              // Helper: data assoluta dal dayIdx (0=lun..6=dom) usando weekStartDate.
-              // Ritorna formato "28/04" (gg/mm). Vuoto se weekStartDate non disponibile.
-              const dateForDayIdx = (dayIdx: number): string => {
-                if (!weekStartDate || dayIdx < 0) return "";
-                const d = new Date(weekStartDate);
-                d.setDate(d.getDate() + dayIdx);
-                return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
-              };
-
-              return unified.map((entry) => {
-                if (entry.kind === "extra") {
-                  const e = entry.e;
-                  const dayKey = DAY_ORDER[entry.dayIdx] || "";
-                  const dayDateLabel = dateForDayIdx(entry.dayIdx);
-                  const wtSubtype = e.workout.fields?.tipo || e.workout.fields?.sport || "";
-                  const wtDur = e.workout.fields?.durata_totale || e.workout.fields?.durata || "";
-                  return (
-                    <div key={`extra-${e.date}-${entry.i}`} style={{
-                      padding: "12px 14px",
-                      background: "#1E3A8A20",
-                      border: "1px solid #3B82F666",
-                      borderRadius: "10px", fontSize: "13px",
-                    }}>
-                      <div style={{ display: "flex", gap: "8px", alignItems: "baseline", marginBottom: "3px" }}>
-                        <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#60A5FA", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", minWidth: "62px" }}>
-                          {dayKey}{dayDateLabel ? ` ${dayDateLabel}` : ""}
-                        </span>
-                        <span style={{ fontWeight: 600 }}>{e.workout.type}{wtSubtype ? ` · ${wtSubtype}` : ""}</span>
-                        {wtDur && <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{wtDur}min</span>}
-                        <span style={{ color: "#60A5FA", fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", marginLeft: "auto" }}>🔸 AUTONOMO</span>
-                      </div>
-                      <div style={{ color: "#CBD5E1", fontSize: "12px", marginTop: "2px", lineHeight: 1.4 }}>
-                        Allenamento non pianificato — registrato {(() => { const d = new Date(e.date + "T12:00:00"); const w = d.toLocaleDateString("it-IT", { weekday: "short" }); return `${w} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; })()}
-                      </div>
-                      {e.workout.notes && (
-                        <div style={{ color: "#94A3B8", fontSize: "11px", fontStyle: "italic", marginTop: "4px", lineHeight: 1.4 }}>
-                          {e.workout.notes}
-                        </div>
-                      )}
-                    </div>
-                  );
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {DAYS7.map((day, dayIdx) => {
+              const daySessions = w.sessions.filter(s => s.day === day);
+              const dayExtras = extrasByDay.get(dayIdx) ?? [];
+              const dateLabel = dateForDayIdx(dayIdx);
+              const isToday = w.weekNumber === todayPlanWeekNumber && day === todayKey;
+              const isPastDay = w.weekNumber < todayPlanWeekNumber ||
+                (w.weekNumber === todayPlanWeekNumber && dayIdx < DAYS7.indexOf(todayKey));
+              const rows: React.ReactNode[] = [];
+              daySessions.forEach((s, i) => {
+                let completion: { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string; actualType?: string } | null = null;
+                if (weekStartDate) {
+                  const sessionDate = new Date(weekStartDate);
+                  sessionDate.setDate(weekStartDate.getDate() + dayIdx);
+                  completion = completedSessions.get(`${w.weekNumber}-${day}-${sessionDate.getTime()}`) || null;
                 }
-                // Planned session
-                const s = entry.s;
-                const i = entry.i;
-                const dayDateLabelP = dateForDayIdx(entry.dayIdx);
-              // "Oggi" = il giorno della settimana corrente del piano (non hardcoded week 1)
-              const isToday = w.weekNumber === todayPlanWeekNumber && s.day === todayKey;
-              // È nel passato (già dovrebbe essere stata fatta)?
-              const isPast = w.weekNumber < todayPlanWeekNumber ||
-                (w.weekNumber === todayPlanWeekNumber && ["lun","mar","mer","gio","ven","sab","dom"].indexOf(s.day) < ["lun","mar","mer","gio","ven","sab","dom"].indexOf(todayKey));
-              // Matching piano↔diario: FATTA perfetta (verde), FATTA parziale (giallo), SALTATA (grigia)
-              let completion: { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string; actualType?: string } | null = null;
-              if (plan.startDate) {
-                const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
-                const dayIdx = DAY_KEYS.indexOf(s.day);
-                if (dayIdx >= 0) {
-                  const [sy, sm, sd] = plan.startDate.split("-").map(Number);
-                  const start = new Date(sy, sm - 1, sd);
-                  const sessionDate = new Date(start);
-                  sessionDate.setDate(start.getDate() + (w.weekNumber - 1) * 7 + dayIdx);
-                  completion = completedSessions.get(`${w.weekNumber}-${s.day}-${sessionDate.getTime()}`) || null;
-                }
-              }
-              const isCompleted = completion !== null;
-              const isPartial = completion !== null && !completion.strictMatch;
-              const isPerfect = completion !== null && completion.strictMatch;
-              const bg = isPerfect ? "#14532D40" : isPartial ? "#78350F30" : isToday ? "#14B8A615" : isPast ? "#1A1A2E80" : "#1A1A2E";
-              const borderColor = isPerfect ? "#22C55E66" : isPartial ? "#F59E0B66" : isToday ? "#14B8A666" : "transparent";
-              const dayLabelColor = isPerfect ? "#22C55E" : isPartial ? "#F59E0B" : isToday ? "#14B8A6" : "#94A3B8";
-              return (
-                <div key={`${w.weekNumber}-${s.day}-${i}`} style={{
-                  padding: "12px 14px",
-                  background: bg,
-                  border: `1px solid ${borderColor}`,
-                  borderRadius: "10px", fontSize: "13px",
-                  opacity: isPast && !isCompleted ? 0.55 : 1,
-                }}>
-                  {/* Gerarchia: occhiello giorno + badge stato (riga 1) → TIPO come
-                      titolo (riga 2) → meta durata/zona (riga 3). Il tipo è il
-                      centro della card. */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "2px" }}>
-                    <span style={{ fontWeight: 700, textTransform: "uppercase", color: dayLabelColor, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", letterSpacing: "0.06em" }}>
-                      {s.day}{dayDateLabelP ? ` ${dayDateLabelP}` : ""}
+                const isCompleted = completion !== null;
+                const isPerfect = !!completion && completion.strictMatch;
+                const isPartial = !!completion && !completion.strictMatch;
+                const chip = zoneChipFor(s);
+                rows.push(
+                  <button
+                    key={`s-${i}`}
+                    onClick={() => setSheetSession({ w, s, isToday, isPast: isPastDay, completion, dateLabel })}
+                    style={{
+                      width: "100%", textAlign: "left", cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: "12px",
+                      padding: "12px 14px", minHeight: "58px",
+                      background: isToday ? "rgba(20,184,166,0.10)" : "#16213E",
+                      border: isToday ? "1px solid rgba(20,184,166,0.45)" : "1px solid transparent",
+                      borderRadius: "12px",
+                      opacity: isPastDay && !isCompleted ? 0.6 : 1,
+                      color: "#E2E8F0",
+                      transition: "transform 120ms ease-out",
+                    }}
+                  >
+                    <span style={{ width: "52px", flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: isToday ? "#14B8A6" : "#94A3B8", lineHeight: 1.35 }}>
+                      {day}<br /><span style={{ color: "#64748B", fontWeight: 600 }}>{dateLabel}</span>
                     </span>
-                    {isPerfect && <span aria-label="Sessione completata" style={{ color: "#22C55E", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em" }}>✓ FATTA</span>}
-                    {isPartial && <span aria-label="Sessione con variazione" style={{ color: "#F59E0B", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em" }}>⚠ VARIAZIONE</span>}
-                    {!isCompleted && isToday && <span aria-label="Sessione di oggi (ancora da fare)" style={{ color: "#14B8A6", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em" }}>OGGI</span>}
-                    {!isCompleted && !isToday && isPast && <span aria-label="Sessione saltata" style={{ color: "#94A3B8", fontSize: "10px", fontWeight: 800, letterSpacing: "0.1em" }}>SALTATA</span>}
-                  </div>
-                  <div style={{ fontSize: "15px", fontWeight: 700, color: "#E2E8F0", lineHeight: 1.25 }}>
-                    {s.type}{s.subtype ? ` · ${s.subtype}` : ""}
-                  </div>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginTop: "4px", marginBottom: "6px" }}>
-                    <span style={{ color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px" }}>{s.duration_min}min</span>
-                    {(() => {
-                      const chip = zoneChipFor(s);
-                      if (!chip) return null;
-                      const c = ZONE_CHIP_COLORS[chip.idx];
-                      return (
-                        <span
-                          title="Range bpm calcolato dalle tue zone FC correnti"
-                          style={{
-                            fontFamily: "'JetBrains Mono', monospace",
-                            fontSize: "11px", fontWeight: 700,
-                            color: c.text, background: c.bg,
-                            border: `1px solid ${c.border}`,
-                            padding: "2px 7px", borderRadius: "999px",
-                            letterSpacing: "0.04em",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          Z{chip.idx} · {chip.low}-{chip.high} bpm
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  {isPartial && completion && (
-                    <div style={{ color: "#F59E0B", fontSize: "11px", marginBottom: "6px", fontWeight: 600 }}>
-                      {completion.actualType
-                        ? <>Hai fatto <b>{completion.actualType}</b>{completion.actualSubtype ? ` · ${completion.actualSubtype}` : ""} invece di <b>{s.type}</b>{s.subtype ? ` · ${s.subtype}` : ""}</>
-                        : <>Hai fatto {completion.actualSubtype ? `"${completion.actualSubtype}"` : "una variazione"} invece di "{s.subtype || s.type}"</>}
-                      {!completion.sameDay && ` · il ${(() => { const d = new Date(completion.date + "T12:00:00"); const w = d.toLocaleDateString("it-IT", { weekday: "short" }); return `${w} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; })()}`}
-                    </div>
-                  )}
-                  {isPerfect && completion && !completion.sameDay && (
-                    <div style={{ color: "#22C55E", fontSize: "11px", marginBottom: "6px", fontWeight: 600 }}>
-                      Fatto il {(() => { const d = new Date(completion.date + "T12:00:00"); const w = d.toLocaleDateString("it-IT", { weekday: "short" }); return `${w} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; })()} invece del giorno pianificato
-                    </div>
-                  )}
-                  {/* Collapse "Dettagli e scheda": card mostra solo il titolo;
-                      qui dentro descrizione + scheda esercizi + razionale. Chiuso
-                      di default → meno ingombro (richiesta utente). */}
-                  {(s.details || (Array.isArray(s.exercises) && s.exercises.length > 0) || s.rationale) && (
-                    <details style={{ marginTop: "8px" }}>
-                      <summary
-                        style={{
-                          cursor: "pointer", listStyle: "none",
-                          display: "flex", alignItems: "center", gap: "6px", minHeight: "32px",
-                          fontSize: "11px", fontWeight: 700, color: "#94A3B8",
-                          letterSpacing: "0.06em", textTransform: "uppercase", userSelect: "none",
-                        }}
-                      >
-                        <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
-                        Dettagli e scheda
-                      </summary>
-                      {s.details && (
-                        <div style={{ color: "#CBD5E1", lineHeight: 1.5, marginTop: "8px" }}>{stripInlineHRRange(s.details)}</div>
-                      )}
-                      {Array.isArray(s.exercises) && s.exercises.length > 0 && (
-                        <ExercisesList
-                          exercises={s.exercises}
-                          availableEquipment={availableEquipmentForRender}
-                        />
-                      )}
-                      {s.rationale && (
-                        <div style={{ marginTop: "10px" }}>
-                          <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "4px" }}>Razionale coach</div>
-                          <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", lineHeight: 1.5 }}>{s.rationale}</div>
-                        </div>
-                      )}
-                    </details>
-                  )}
-                  {/* Action row: Registra (se non completata) + Chiedi al coach (sempre).
-                      SALTATA actionable: anche se isPast && !isCompleted, l'utente può
-                      ancora registrare retroattivamente o chiedere al coach come recuperarla. */}
-                  {/* Sprint: 1 azione PRIMARIA + "⋯" per le secondarie (prima 3
-                      bottoni impilati). Registra è il primario; Chiedi/Sostituisci
-                      stanno nel menu overflow. */}
-                  <div style={{ display: "flex", gap: "8px", marginTop: "10px", alignItems: "center" }}>
-                    {!isCompleted && (
-                      <button
-                        onClick={() => registerFromPlan(s, w.weekNumber)}
-                        title={isPast
-                          ? "Registra questa sessione retrodatata (campi pre-compilati dal piano, modificabili)"
-                          : isToday
-                            ? "Registra questa sessione (campi pre-compilati dal piano, modificabili)"
-                            : "Registra in anticipo questa sessione (campi pre-compilati dal piano, modificabili)"
-                        }
-                        style={{
-                          flex: "1 1 auto",
-                          padding: "9px 14px",
-                          background: isToday
-                            ? "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)"
-                            : isPast
-                              ? "#1E293B"
-                              : "transparent",
-                          border: isToday ? "none" : isPast ? "1px solid rgba(255,255,255,0.12)" : "1px solid #14B8A666",
-                          borderRadius: "10px",
-                          color: isToday ? "#052E2A" : isPast ? "#CBD5E1" : "#14B8A6",
-                          fontSize: "13px", fontWeight: 700, cursor: "pointer",
-                          display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-                          minHeight: "44px",
-                        }}
-                      >
-                        <span>+</span> Registra allenamento
-                      </button>
-                    )}
-                    <button
-                      onClick={() => { const k = `${w.weekNumber}-${s.day}`; setActionsKey(actionsKey === k ? null : k); }}
-                      title="Altre azioni"
-                      aria-label="Altre azioni"
-                      style={{
-                        padding: "9px 12px", background: "transparent",
-                        border: "1px solid rgba(255,255,255,0.14)", borderRadius: "10px",
-                        color: "#94A3B8", fontSize: "18px", fontWeight: 700, cursor: "pointer",
-                        minHeight: "44px", minWidth: "48px",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        flex: isCompleted ? "1 1 auto" : "0 0 auto",
-                      }}
-                    >⋯</button>
-                  </div>
-                  {actionsKey === `${w.weekNumber}-${s.day}` && (
-                    <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
-                      <button
-                        onClick={() => { askCoachAboutSession(s, w.weekNumber); setActionsKey(null); }}
-                        style={ALT_BTN_STYLE}
-                      >Chiedi al coach</button>
-                      {plan.sourceMacro && !isCompleted && (
-                        <button
-                          onClick={() => { const k = `${w.weekNumber}-${s.day}`; setSubMenuKey(subMenuKey === k ? null : k); setSubAltroOpen(false); }}
-                          style={ALT_BTN_STYLE}
-                        >Non posso / sostituisci</button>
-                      )}
-                    </div>
-                  )}
-                  {plan.sourceMacro && subMenuKey === `${w.weekNumber}-${s.day}` && (
-                    <div style={{ marginTop: "10px", padding: "12px", background: "#0F172A", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                      <div style={{ fontSize: "11px", color: "#F59E0B", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                        Sostituisci con un'alternativa equivalente
-                      </div>
-                      {sessionAlternatives(s).map((alt, ai) => (
-                        <button key={ai} onClick={() => void handleSubstitute([alt.op])} disabled={adapting} style={ALT_BTN_STYLE}>
-                          {alt.label}
-                        </button>
-                      ))}
-                      <button onClick={() => void handleSubstitute([{ op: "dropSession", day: s.day as AdaptationOp["day"], reason: "non disponibile" }])} disabled={adapting} style={ALT_BTN_STYLE}>
-                        Riposo (togli la sessione)
-                      </button>
-                      <button onClick={() => setSubAltroOpen(v => !v)} disabled={adapting} style={{ ...ALT_BTN_STYLE, borderStyle: "dashed" }}>
-                        Altro (chiedi al coach)
-                      </button>
-                      {subAltroOpen && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                          <input
-                            value={subAltroText}
-                            onChange={e => setSubAltroText(e.target.value)}
-                            placeholder="Opzionale: es. ho solo la palestra, niente campo"
-                            style={{ padding: "8px 10px", background: "#16213E", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px", color: "#E2E8F0", fontSize: "12px" }}
-                          />
-                          <button
-                            onClick={() => void handleSubstituteAltro(s)}
-                            disabled={adapting}
-                            style={{ padding: "9px 12px", background: "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border: "none", borderRadius: "8px", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: adapting ? "wait" : "pointer" }}
-                          >
-                            {adapting ? `Il coach propone… ${llmElapsedSec}s` : "Proponi alternativa"}
-                          </button>
-                        </div>
-                      )}
-                      {adaptError && (
-                        <div style={{ fontSize: "11px", color: "#EF4444" }}>{adaptError}</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: "14px", fontWeight: 700, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {s.type}{s.subtype ? ` · ${s.subtype}` : ""}
+                      </span>
+                      <span style={{ display: "block", fontSize: "11px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", marginTop: "2px" }}>
+                        {s.duration_min}′{chip ? ` · Z${chip.idx} ${chip.low}-${chip.high}bpm` : ""}
+                      </span>
+                    </span>
+                    {isPerfect && <span style={{ flexShrink: 0, fontSize: "10px", fontWeight: 800, letterSpacing: "0.08em", color: "#22C55E" }}>✓ FATTA</span>}
+                    {isPartial && <span style={{ flexShrink: 0, fontSize: "10px", fontWeight: 800, letterSpacing: "0.08em", color: "#F59E0B" }}>VARIATA</span>}
+                    {!isCompleted && isToday && <span style={{ flexShrink: 0, fontSize: "10px", fontWeight: 800, letterSpacing: "0.08em", color: "#14B8A6" }}>OGGI</span>}
+                    {!isCompleted && !isToday && isPastDay && <span style={{ flexShrink: 0, fontSize: "10px", fontWeight: 800, letterSpacing: "0.08em", color: "#64748B" }}>SALTATA</span>}
+                    <span aria-hidden="true" style={{ flexShrink: 0, color: "#64748B", fontSize: "16px" }}>›</span>
+                  </button>
+                );
               });
-            })()}
+              if (daySessions.length === 0) {
+                rows.push(
+                  <div key="rest" style={{
+                    display: "flex", alignItems: "center", gap: "12px",
+                    padding: "8px 14px", borderRadius: "12px",
+                    background: isToday ? "rgba(20,184,166,0.07)" : "transparent",
+                    border: isToday ? "1px solid rgba(20,184,166,0.3)" : "1px solid transparent",
+                  }}>
+                    <span style={{ width: "52px", flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: isToday ? "#14B8A6" : "#475569", lineHeight: 1.35 }}>
+                      {day}<br /><span style={{ color: "#475569", fontWeight: 600 }}>{dateLabel}</span>
+                    </span>
+                    <span style={{ flex: 1, fontSize: "13px", color: "#475569" }}>Riposo</span>
+                    {isToday && <span style={{ fontSize: "10px", fontWeight: 800, letterSpacing: "0.08em", color: "#14B8A6" }}>OGGI</span>}
+                  </div>
+                );
+              }
+              dayExtras.forEach((e, xi) => {
+                const sub = e.workout.fields?.tipo || e.workout.fields?.sport || "";
+                const dur = e.workout.fields?.durata_totale || e.workout.fields?.durata || "";
+                rows.push(
+                  <div key={`x-${xi}`} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "2px 14px 2px 78px", fontSize: "12px", color: "#67E8F9" }}>
+                    <span style={{ fontWeight: 600 }}>+ {e.workout.type}{sub ? ` · ${sub}` : ""}</span>
+                    {dur ? <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#0891B2" }}>{dur}′</span> : null}
+                    <span style={{ fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", color: "#0891B2" }}>AUTONOMO</span>
+                  </div>
+                );
+              });
+              return <div key={day} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>{rows}</div>;
+            })}
           </div>
         </div>
         );
       })}
       </div>
-      {/* /Fix 1 wrapper grigio */}
 
-
-      {!isExpired && (
-        <div style={{
-          background: "#1A1A2E", borderRadius: "10px",
-          padding: "10px 14px", fontSize: "12px", color: "#94A3B8",
-          display: "flex", alignItems: "center", gap: "8px",
-          border: "1px solid rgba(255,255,255,0.06)",
-        }}>
-          <span>📅</span>
-          <span style={{ lineHeight: 1.5 }}>
-            La settimana prossima verrà rigenerata automaticamente lunedì sui tuoi dati reali, oppure puoi farlo ora con "Rigenera piano".
-          </span>
-        </div>
-      )}
-
-      {history.length > 0 && (
-        <div style={{ background: "#16213E", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)", overflow: "hidden" }}>
-          <button
-            onClick={() => setHistoryOpen(o => !o)}
-            aria-expanded={historyOpen}
-            style={{
-              width: "100%", padding: "14px 18px",
-              background: "transparent", border: "none",
-              color: "#CBD5E1", fontSize: "13px", fontWeight: 700,
-              display: "flex", alignItems: "center", gap: "10px",
-              cursor: "pointer", textAlign: "left",
-            }}
-          >
-            <span style={{ fontSize: "16px", transform: historyOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>▸</span>
-            <span style={{ flex: 1 }}>Settimane precedenti</span>
-            <span style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 500 }}>{history.length} piani archiviati</span>
-          </button>
-
-          {historyOpen && (
-            <div style={{ padding: "0 18px 18px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              {history.map((h: TrainingPlan, hi: number) => {
-                // La history è newest-first. Numeriamo dal più vecchio: oldest = Settimana 1.
-                const dateRange = formatWeekRange(h.startDate) || new Date(h.generatedAt).toLocaleDateString("it-IT");
-                return (
-                <div key={h.generatedAt + hi} style={{ background: "#1A1A2E", borderRadius: "10px", padding: "12px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "6px", flexWrap: "wrap" }}>
-                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#14B8A6", letterSpacing: "0.08em" }}>
-                      📅 {dateRange}
-                    </div>
-                  </div>
-                  {h.rationale && (
-                    <div style={{ fontSize: "12px", color: "#94A3B8", marginBottom: "8px", lineHeight: 1.5, fontStyle: "italic" }}>
-                      {h.rationale}
-                    </div>
-                  )}
-                  {h.weeks.map((w: TrainingPlan["weeks"][number], wi: number) => (
-                    <div key={wi} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      {w.sessions.map((s: TrainingPlan["weeks"][number]["sessions"][number], si: number) => (
-                        <div key={si} style={{ fontSize: "12px", padding: "6px 8px", background: "#0F172A", borderRadius: "6px", display: "flex", gap: "8px", alignItems: "baseline" }}>
-                          <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", minWidth: "28px" }}>{s.day}</span>
-                          <span style={{ fontWeight: 600, color: "#CBD5E1" }}>{s.type}{s.subtype ? ` · ${s.subtype}` : ""}</span>
-                          <span style={{ color: "#64748B", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px" }}>{s.duration_min}min</span>
-                          <span style={{ color: "#64748B", fontSize: "11px", flex: 1, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stripInlineHRRange(s.details)}</span>
+      {/* Dettagli secondari: razionale, nota rigenerazione, settimane precedenti.
+          Un solo gruppo collassato in fondo — fuori dal percorso principale. */}
+      <details style={{ background: "#16213E", borderRadius: "14px", overflow: "hidden" }}>
+        <summary style={{ cursor: "pointer", listStyle: "none", padding: "14px 16px", minHeight: "44px", display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", color: "#94A3B8", textTransform: "uppercase", userSelect: "none" }}>
+          <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
+          Razionale e settimane precedenti
+        </summary>
+        <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div>
+            <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "6px" }}>Razionale del piano</div>
+            {isMultiBullet ? (
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "6px" }}>
+                {rationaleBullets.map((b, i) => (
+                  <li key={i} style={{ display: "flex", gap: "8px", alignItems: "flex-start", fontSize: "13px", lineHeight: 1.5, color: "#CBD5E1" }}>
+                    <span aria-hidden="true" style={{ width: "5px", height: "5px", borderRadius: "999px", background: "#14B8A6", marginTop: "8px", flexShrink: 0 }} />
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div style={{ fontSize: "13px", lineHeight: 1.5, color: "#CBD5E1" }}>{plan.rationale}</div>
+            )}
+          </div>
+          <div style={{ fontSize: "12px", color: "#64748B", lineHeight: 1.5 }}>
+            La settimana prossima viene rigenerata automaticamente lunedì sui tuoi dati reali, oppure subito con "Aggiorna piano".
+          </div>
+          {history.length > 0 && (
+            <div>
+              <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "8px" }}>Settimane precedenti ({history.length})</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {history.map((h: TrainingPlan, hi: number) => {
+                  const dateRange = formatWeekRange(h.startDate) || new Date(h.generatedAt).toLocaleDateString("it-IT");
+                  return (
+                    <div key={h.generatedAt + hi} style={{ background: "#1A1A2E", borderRadius: "10px", padding: "12px 14px" }}>
+                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#14B8A6", letterSpacing: "0.06em", marginBottom: "6px", fontFamily: "'JetBrains Mono', monospace" }}>{dateRange}</div>
+                      {h.weeks.map((hw: TrainingPlan["weeks"][number], wi: number) => (
+                        <div key={wi} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          {hw.sessions.map((s: TrainingPlan["weeks"][number]["sessions"][number], si: number) => (
+                            <div key={si} style={{ fontSize: "12px", padding: "6px 8px", background: "#0F172A", borderRadius: "6px", display: "flex", gap: "8px", alignItems: "baseline" }}>
+                              <span style={{ fontWeight: 700, textTransform: "uppercase", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", minWidth: "28px" }}>{s.day}</span>
+                              <span style={{ fontWeight: 600, color: "#CBD5E1", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.type}{s.subtype ? ` · ${s.subtype}` : ""}</span>
+                              <span style={{ color: "#64748B", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px" }}>{s.duration_min}′</span>
+                            </div>
+                          ))}
                         </div>
                       ))}
                     </div>
-                  ))}
-                </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
-      )}
+      </details>
 
+      {/* SHEET SESSIONE — dettagli + scheda + azioni del giorno selezionato. */}
+      <BottomSheet
+        open={!!sheetSession}
+        onClose={() => { setSheetSession(null); setSubMenuKey(null); setSubAltroOpen(false); }}
+        title={sheetSession ? `${sheetSession.s.day} ${sheetSession.dateLabel}` : undefined}
+      >
+        {sheetSession && (() => {
+          const sw = sheetSession.w;
+          const s = sheetSession.s;
+          const completion = sheetSession.completion;
+          const isCompleted = completion !== null;
+          const isPerfect = !!completion && completion.strictMatch;
+          const isPartial = !!completion && !completion.strictMatch;
+          const chip = zoneChipFor(s);
+          const showSub = subMenuKey === "sheet";
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxHeight: "72vh", overflowY: "auto", paddingBottom: "4px" }}>
+              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "12px" }}>
+                <div style={{ fontSize: "19px", fontWeight: 800, color: "#E2E8F0", lineHeight: 1.25, letterSpacing: "-0.01em" }}>
+                  {s.type}{s.subtype ? ` · ${s.subtype}` : ""}
+                </div>
+                <div style={{ flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: "22px", fontWeight: 800, color: "#E2E8F0", lineHeight: 1 }}>
+                  {s.duration_min}<span style={{ fontSize: "13px", color: "#94A3B8" }}>′</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                {isPerfect && <span style={{ fontSize: "10px", fontWeight: 800, letterSpacing: "0.08em", color: "#22C55E" }}>✓ FATTA</span>}
+                {isPartial && <span style={{ fontSize: "10px", fontWeight: 800, letterSpacing: "0.08em", color: "#F59E0B" }}>VARIATA</span>}
+                {!isCompleted && sheetSession.isToday && <span style={{ fontSize: "10px", fontWeight: 800, letterSpacing: "0.08em", color: "#14B8A6" }}>OGGI</span>}
+                {!isCompleted && !sheetSession.isToday && sheetSession.isPast && <span style={{ fontSize: "10px", fontWeight: 800, letterSpacing: "0.08em", color: "#94A3B8" }}>SALTATA</span>}
+                {chip && (() => {
+                  const cc = ZONE_CHIP_COLORS[chip.idx];
+                  return (
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, color: cc.text, background: cc.bg, border: `1px solid ${cc.border}`, padding: "2px 8px", borderRadius: "999px" }}>
+                      Z{chip.idx} · {chip.low}-{chip.high} bpm
+                    </span>
+                  );
+                })()}
+              </div>
+              {isPartial && completion && (
+                <div style={{ color: "#F59E0B", fontSize: "12px", lineHeight: 1.5, fontWeight: 600 }}>
+                  {completion.actualType
+                    ? <>Hai fatto <b>{completion.actualType}</b>{completion.actualSubtype ? ` · ${completion.actualSubtype}` : ""} invece di <b>{s.type}</b></>
+                    : <>Hai fatto {completion.actualSubtype ? `"${completion.actualSubtype}"` : "una variazione"} invece di "{s.subtype || s.type}"</>}
+                </div>
+              )}
+              {s.details && (
+                <div style={{ color: "#CBD5E1", fontSize: "14px", lineHeight: 1.55 }}>{stripInlineHRRange(s.details)}</div>
+              )}
+              {Array.isArray(s.exercises) && s.exercises.length > 0 && (
+                <ExercisesList exercises={s.exercises} availableEquipment={availableEquipmentForRender} />
+              )}
+              {s.rationale && (
+                <div>
+                  <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "4px" }}>Razionale coach</div>
+                  <div style={{ color: "#94A3B8", fontSize: "12px", fontStyle: "italic", lineHeight: 1.5 }}>{s.rationale}</div>
+                </div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+                {!isCompleted && (
+                  <button
+                    onClick={() => { setSheetSession(null); registerFromPlan(s, sw.weekNumber); }}
+                    style={{
+                      padding: "13px 16px", minHeight: "50px", width: "100%",
+                      background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
+                      border: "none", borderRadius: "12px",
+                      color: "#052E2A", fontSize: "14px", fontWeight: 800, cursor: "pointer",
+                    }}
+                  >+ Registra allenamento</button>
+                )}
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    onClick={() => { setSheetSession(null); askCoachAboutSession(s, sw.weekNumber); }}
+                    style={{ flex: 1, padding: "11px 14px", minHeight: "44px", background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "12px", color: "#CBD5E1", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}
+                  >Chiedi al coach</button>
+                  {plan.sourceMacro && !isCompleted && (
+                    <button
+                      onClick={() => { setSubMenuKey(showSub ? null : "sheet"); setSubAltroOpen(false); }}
+                      style={{ flex: 1, padding: "11px 14px", minHeight: "44px", background: showSub ? "rgba(245,158,11,0.12)" : "transparent", border: showSub ? "1px solid rgba(245,158,11,0.5)" : "1px solid rgba(255,255,255,0.14)", borderRadius: "12px", color: showSub ? "#F59E0B" : "#CBD5E1", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}
+                    >Non posso</button>
+                  )}
+                </div>
+              </div>
+              {plan.sourceMacro && showSub && (
+                <div style={{ padding: "12px", background: "#0F172A", borderRadius: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <div style={{ fontSize: "10px", color: "#F59E0B", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    Sostituisci con un'alternativa equivalente
+                  </div>
+                  {sessionAlternatives(s).map((alt, ai) => (
+                    <button key={ai} onClick={() => void handleSubstitute([alt.op])} disabled={adapting} style={ALT_BTN_STYLE}>
+                      {alt.label}
+                    </button>
+                  ))}
+                  <button onClick={() => void handleSubstitute([{ op: "dropSession", day: s.day as AdaptationOp["day"], reason: "non disponibile" }])} disabled={adapting} style={ALT_BTN_STYLE}>
+                    Riposo (togli la sessione)
+                  </button>
+                  <button onClick={() => setSubAltroOpen(v => !v)} disabled={adapting} style={{ ...ALT_BTN_STYLE, borderStyle: "dashed" }}>
+                    Altro (chiedi al coach)
+                  </button>
+                  {subAltroOpen && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <input
+                        value={subAltroText}
+                        onChange={e => setSubAltroText(e.target.value)}
+                        placeholder="Opzionale: es. ho solo la palestra, niente campo"
+                        style={{ padding: "10px 12px", background: "#16213E", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#E2E8F0", fontSize: "13px" }}
+                      />
+                      <button
+                        onClick={() => void handleSubstituteAltro(s)}
+                        disabled={adapting}
+                        style={{ padding: "11px 14px", background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)", border: "none", borderRadius: "10px", color: "#052E2A", fontSize: "13px", fontWeight: 800, cursor: adapting ? "wait" : "pointer" }}
+                      >
+                        {adapting ? `Il coach propone… ${llmElapsedSec}s` : "Proponi alternativa"}
+                      </button>
+                    </div>
+                  )}
+                  {adaptError && <div style={{ fontSize: "11px", color: "#EF4444" }}>{adaptError}</div>}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </BottomSheet>
+
+      {/* SHEET AGGIORNA PIANO — tutte le opzioni di rigenerazione/adattamento. */}
+      <BottomSheet
+        open={regenPickerOpen && !isExpired}
+        onClose={() => setRegenPickerOpen(false)}
+        title="Aggiorna piano"
+      >
+        {(() => {
+          const labels = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+          const todayIdx2 = (new Date().getDay() + 6) % 7;
+          const remaining = labels.slice(todayIdx2);
+          const showRestOfWeek = todayIdx2 <= 5;
+          const togglePickerDay = (d: string) => setPickerDays(prev => {
+            const cur = prev || [];
+            return cur.includes(d) ? cur.filter(x => x !== d) : [...cur, d];
+          });
+          const remainingActive = (pickerDays || []).filter(d => remaining.includes(d));
+          const noDays = !pickerDays || pickerDays.length === 0;
+          const optStyle: React.CSSProperties = {
+            textAlign: "left", padding: "12px 14px", width: "100%",
+            background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "12px", color: "#E2E8F0", cursor: "pointer",
+          };
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "70vh", overflowY: "auto", paddingBottom: "4px" }}>
+              <div style={{ fontSize: "12px", color: "#94A3B8", fontWeight: 600 }}>Giorni allenabili questa settimana</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {labels.map(d => {
+                  const active = (pickerDays || []).includes(d);
+                  return (
+                    <button key={d} onClick={() => togglePickerDay(d)} aria-pressed={active} style={{
+                      padding: "8px 12px", minWidth: "44px", minHeight: "40px",
+                      background: active ? "rgba(20,184,166,0.14)" : "#1A1A2E",
+                      border: active ? "1px solid rgba(20,184,166,0.5)" : "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: "999px",
+                      color: active ? "#14B8A6" : "#94A3B8",
+                      fontSize: "12px", fontWeight: 700, cursor: "pointer",
+                      fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase",
+                    }}>{d}</button>
+                  );
+                })}
+              </div>
+              {showRestOfWeek && (
+                <button onClick={() => handleRegenerate("rest-of-week", pickerDays)} disabled={noDays || remainingActive.length === 0} style={{ ...optStyle, opacity: (noDays || remainingActive.length === 0) ? 0.5 : 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: "14px", color: "#14B8A6", marginBottom: "2px" }}>Riparti da oggi</div>
+                  <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
+                    {remainingActive.length === 0
+                      ? "Nessuno dei giorni selezionati rientra nei rimanenti."
+                      : `Rigenera i giorni rimanenti (${remainingActive.join(", ")}). I passati restano chiusi.`}
+                  </div>
+                </button>
+              )}
+              <button onClick={() => handleRegenerate("next-week", pickerDays)} disabled={noDays} style={{ ...optStyle, opacity: noDays ? 0.5 : 1 }}>
+                <div style={{ fontWeight: 700, fontSize: "14px", color: "#14B8A6", marginBottom: "2px" }}>Pianifica settimana prossima</div>
+                <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
+                  {noDays ? "Seleziona almeno un giorno sopra." : `Prepara la prossima settimana sui giorni: ${(pickerDays || []).join(", ")}.`}
+                </div>
+              </button>
+              {hasDeviations && (
+                <button
+                  onClick={() => {
+                    setRegenPickerOpen(false);
+                    if (plan.sourceMacro) void handleAdaptMacro({ includeDeviations: true });
+                    else void handleAdapt(buildDeviationRequest());
+                  }}
+                  disabled={adapting || regenerating}
+                  style={{ ...optStyle, border: "1px solid rgba(245,158,11,0.4)", opacity: (adapting || regenerating) ? 0.5 : 1 }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: "14px", color: "#F59E0B", marginBottom: "2px" }}>Adatta alle deviazioni</div>
+                  <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.4 }}>
+                    Riallinea il piano a ciò che hai fatto davvero: {[
+                      deviationCount.skipped > 0 ? `${deviationCount.skipped} saltate` : "",
+                      deviationCount.partial > 0 ? `${deviationCount.partial} variate` : "",
+                      deviationCount.extras > 0 ? `${deviationCount.extras} autonomi` : "",
+                    ].filter(Boolean).join(" · ")}.
+                  </div>
+                </button>
+              )}
+              <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                <div style={{ fontSize: "12px", color: "#94A3B8", fontWeight: 600 }}>Oppure chiedi una modifica al coach</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {ADAPT_QUICK_PROMPTS.map(p => (
+                    <button key={p} onClick={() => setAdaptRequest(p)} disabled={adapting} style={{ padding: "8px 12px", minHeight: "36px", fontSize: "12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "999px", color: "#CBD5E1", cursor: "pointer" }}>{p}</button>
+                  ))}
+                </div>
+                <textarea
+                  value={adaptRequest}
+                  onChange={e => setAdaptRequest(e.target.value)}
+                  placeholder="es. settimana più leggera perché ho un viaggio"
+                  disabled={adapting}
+                  rows={2}
+                  style={{ width: "100%", padding: "10px 12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#E2E8F0", fontSize: "14px", fontFamily: "inherit", resize: "vertical", minHeight: "56px", outline: "none", boxSizing: "border-box" }}
+                />
+                <button
+                  onClick={() => { setRegenPickerOpen(false); void handleAdapt(); }}
+                  disabled={adapting || regenerating || !adaptRequest.trim()}
+                  style={{
+                    padding: "12px 16px", minHeight: "48px", width: "100%",
+                    background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
+                    border: "none", borderRadius: "12px",
+                    color: "#052E2A", fontSize: "14px", fontWeight: 800,
+                    cursor: (adapting || !adaptRequest.trim()) ? "not-allowed" : "pointer",
+                    opacity: (adapting || regenerating || !adaptRequest.trim()) ? 0.5 : 1,
+                  }}
+                >Applica modifica</button>
+              </div>
+              {regenError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{regenError}</div>}
+              {adaptError && <div style={{ color: "#EF4444", fontSize: "12px" }}>{adaptError}</div>}
+            </div>
+          );
+        })()}
+      </BottomSheet>
       <div style={{ fontSize: "11px", color: "#94A3B8", textAlign: "center" }}>
         Generato {(() => { const d = new Date(plan.generatedAt); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; })()} — Valido fino al {(() => { const d = new Date(plan.validUntil); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; })()}
       </div>
