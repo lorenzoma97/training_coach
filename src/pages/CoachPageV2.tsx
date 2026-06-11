@@ -20,7 +20,8 @@ import { getJSON } from "../lib/storage";
 import { uiCard, uiLabel, uiValue } from "../lib/theme";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
-import { ClipboardList, ChevronRight, HeartPulse, TrendingUp, Inbox, AlertTriangle, CircleAlert, Dumbbell, Moon } from "lucide-react";
+import { ClipboardList, ChevronRight, HeartPulse, TrendingUp, Inbox, AlertTriangle, CircleAlert, Dumbbell, Moon, Play, ClipboardCopy, RefreshCw, Zap } from "lucide-react";
+import Skeleton from "../components/ui/skeleton";
 import type { UserProfile, TrainingPlan } from "../lib/types";
 import { events } from "../lib/events";
 import { getLastNDays } from "../lib/diaryContext";
@@ -151,7 +152,18 @@ export function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
   const s = useTodayState(refreshKey);
 
   if (!s.loaded) {
-    return <div style={{ color: "#94A3B8", fontSize: "13px", textAlign: "center", padding: "40px 20px" }}>Caricamento…</div>;
+    // Skeleton con la STRUTTURA della pagina (striscia programma + eroe + 2 tessere):
+    // la home "appare" subito invece di mostrare un'attesa generica.
+    return (
+      <div className="flex flex-col gap-3" aria-busy="true" aria-label="Caricamento">
+        <Skeleton height={44} />
+        <Skeleton height={170} style={{ borderRadius: "14px" }} />
+        <div className="flex gap-3">
+          <Skeleton height={92} style={{ flex: 1 }} />
+          <Skeleton height={92} style={{ flex: 1 }} />
+        </div>
+      </div>
+    );
   }
 
   // ─── Alert aggregation ──────────────────────────────────────────────────
@@ -245,7 +257,7 @@ export function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
       {(s.readiness || (s.load && s.load.daysUsed >= 14)) && (
         <div className="flex flex-wrap gap-3">
           {s.readiness && (
-            <Card className="min-w-[140px] flex-1 p-3">
+            <Card className="min-w-[140px] flex-1 border-transparent p-3">
               <div className="mb-1.5 flex items-center gap-1.5 text-muted-foreground">
                 <HeartPulse className="size-3.5" />
                 <span className="text-[10px] font-bold uppercase tracking-wider">Stato corpo</span>
@@ -257,7 +269,7 @@ export function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
             </Card>
           )}
           {s.load && s.load.daysUsed >= 14 && (
-            <Card className="min-w-[140px] flex-1 p-3">
+            <Card className="min-w-[140px] flex-1 border-transparent p-3">
               <div className="mb-1.5 flex items-center gap-1.5 text-muted-foreground">
                 <TrendingUp className="size-3.5" />
                 <span className="text-[10px] font-bold uppercase tracking-wider">Carico · TSB</span>
@@ -274,8 +286,8 @@ export function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
         </div>
       )}
 
-      {/* 6. Dal coach — collassato (dettaglio nascosto) */}
-      <details className="rounded-xl border border-border bg-card p-4">
+      {/* 6. Dal coach — collassato (dettaglio nascosto, superficie senza bordo) */}
+      <details className="rounded-xl bg-card p-4">
         <summary className="flex cursor-pointer list-none items-center gap-2 text-muted-foreground">
           <Inbox className="size-4" />
           <span className="text-[11px] font-bold uppercase tracking-wider">Dal coach</span>
@@ -283,9 +295,9 @@ export function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
         <div className="mt-2"><CoachFeedList /></div>
       </details>
 
-      {/* 7. Metriche non ancora disponibili → una riga sola */}
+      {/* 7. Metriche non ancora disponibili → una riga sola, quieta */}
       {missing.length > 0 && (
-        <div className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
+        <div className="rounded-lg bg-secondary px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
           <span className="font-bold text-foreground">Non ancora disponibili ({missing.length}):</span> {missing.join(" · ")}
         </div>
       )}
@@ -427,15 +439,19 @@ function SessionDetailCard({
   }
 
   return (
-    <div style={cardStyle}>
+    <div style={{ ...cardStyle, border: "1px solid rgba(20,184,166,0.28)" }}>
       <div className="mb-1 flex items-center gap-2 text-primary">
         <Dumbbell className="size-4" />
         <span className="text-[11px] font-bold uppercase tracking-wider">Oggi · {todayLabel()}</span>
       </div>
-      <div className="text-xl font-extrabold leading-tight text-foreground">
-        {session.type}{session.subtype ? ` · ${session.subtype}` : ""}{session.zone ? ` · Z${session.zone}` : ""}
+      <div className="mb-3 flex items-end justify-between gap-3">
+        <div className="text-xl font-extrabold leading-tight text-foreground">
+          {session.type}{session.subtype ? ` · ${session.subtype}` : ""}{session.zone ? ` · Z${session.zone}` : ""}
+        </div>
+        <div className="shrink-0 font-mono text-2xl font-extrabold leading-none text-foreground" aria-label={`${session.duration_min} minuti`}>
+          {session.duration_min}<span className="text-sm font-bold text-muted-foreground">′</span>
+        </div>
       </div>
-      <div className="mb-3 mt-0.5 text-[13px] text-muted-foreground">{session.duration_min} min</div>
 
       {!hasDetail && supportsDetail && (
         <>
@@ -456,9 +472,10 @@ function SessionDetailCard({
                 color: generating ? "#94A3B8" : "#052E2A", fontSize: "13px", fontWeight: 700,
                 cursor: generating ? "wait" : "pointer",
                 opacity: generating ? 0.6 : 1,
+                display: "flex", alignItems: "center", gap: "8px",
               }}
             >
-              {generating ? "⏳ Genero dettaglio…" : "⚡ Genera dettaglio"}
+              {generating ? "Genero dettaglio…" : <><Zap size={15} /> Genera dettaglio</>}
             </button>
             <button
               onClick={onGoToPlan}
@@ -517,9 +534,10 @@ function SessionDetailCard({
                   border: "none", borderRadius: "10px",
                   color: "#052E2A", fontSize: "14px", fontWeight: 800, cursor: "pointer",
                   flex: "1 1 auto", minWidth: "180px",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
                 }}
               >
-                ▶ Inizia allenamento
+                <Play size={17} strokeWidth={2.6} /> Inizia allenamento
               </button>
             )}
             <button
@@ -529,9 +547,10 @@ function SessionDetailCard({
                 background: "transparent",
                 border: "1px solid rgba(255,255,255,0.14)", borderRadius: "10px",
                 color: "#CBD5E1", fontSize: "13px", fontWeight: 700, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: "8px",
               }}
             >
-              📋 Copia in diario
+              <ClipboardCopy size={15} /> Copia in diario
             </button>
             <button
               onClick={handleGenerate}
@@ -543,9 +562,10 @@ function SessionDetailCard({
                 color: "#94A3B8", fontSize: "12px", fontWeight: 600,
                 cursor: generating ? "wait" : "pointer",
                 opacity: generating ? 0.6 : 1,
+                display: "flex", alignItems: "center", gap: "7px",
               }}
             >
-              {generating ? "⏳ Rigenero…" : "🔄 Rigenera"}
+              <RefreshCw size={14} /> {generating ? "Rigenero…" : "Rigenera"}
             </button>
           </div>
         </>
@@ -738,7 +758,7 @@ function StrengthDetailList({ exercises }: { exercises: NonNullable<PlannedSessi
             </div>
             {ex.cue && (
               <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "4px", lineHeight: 1.4, fontStyle: "italic" }}>
-                💡 {ex.cue}
+                {ex.cue}
               </div>
             )}
           </li>
@@ -784,7 +804,7 @@ function CardioIntervalList({ intervals }: { intervals: NonNullable<PlannedSessi
             )}
             {iv.cue && (
               <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "4px", lineHeight: 1.4, fontStyle: "italic" }}>
-                💡 {iv.cue}
+                {iv.cue}
               </div>
             )}
           </li>
