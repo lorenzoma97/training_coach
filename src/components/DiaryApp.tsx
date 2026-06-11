@@ -533,7 +533,18 @@ export default function DiaryApp() {
       }
     })();
     const off = events.on("diary:openAdd", applyOpenAddPayload);
-    return off;
+    // P1 nav piatta: il "+" centrale della bottom nav apre direttamente i form.
+    const offNew = events.on("diary:openNew", () => {
+      setAddDate(today()); setAddType(null); setAddFields({}); setAddPainByArea({});
+      setAddRpe(null); setAddNotes(""); setAddStrengthMode(false); setAddExercises([]);
+      setEditingWorkoutId(null); setEditingOriginalDate(null);
+      setScreen("add");
+    });
+    const offDaily = events.on("diary:openDaily", () => {
+      setDailyDate(today()); resetDailyFields(); setEditingDaily(false);
+      setScreen("daily");
+    });
+    return () => { off(); offNew(); offDaily(); };
   }, []);
 
   const flash = (msg: string) => { setSaveMsg(msg); setTimeout(() => setSaveMsg(""), 2200); };

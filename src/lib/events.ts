@@ -15,7 +15,13 @@ export type EventMap = {
     /** Testo pre-compilato in "Note & Sensazioni". */
     notes?: string;
   };
-  "nav:goto": { tab: "diary" | "trends" | "coach" | "settings" };
+  /** P1 nav piatta (2026-06-11): today/plan/chat sono tab top-level.
+   *  "coach" resta accettato come ALIAS legacy → App lo mappa su "today". */
+  "nav:goto": { tab: "diary" | "trends" | "coach" | "settings" | "today" | "plan" | "chat" };
+  /** Apre il Diario sul form "nuovo allenamento" vuoto (dal + centrale). */
+  "diary:openNew": {};
+  /** Apre il Diario sul form "check giornaliero" di oggi (dal + centrale). */
+  "diary:openDaily": {};
   "onboarding:resume": {};
   /** Emesso quando localStorage è stato modificato in un'ALTRA tab/finestra.
    *  Permette ai componenti di ri-leggere i dati e sincronizzarsi. */
@@ -86,7 +92,7 @@ const PAYLOAD_VALIDATORS: Partial<Record<keyof EventMap, PayloadValidator>> = {
   "nav:goto": (p) => {
     if (!p || typeof p !== "object") return false;
     const tab = (p as any).tab;
-    return tab === "diary" || tab === "trends" || tab === "coach" || tab === "settings";
+    return ["diary", "trends", "coach", "settings", "today", "plan", "chat"].includes(tab);
   },
   "diary:openAdd": (p) => {
     if (!p || typeof p !== "object") return false;

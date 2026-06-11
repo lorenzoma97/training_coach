@@ -123,7 +123,9 @@ const TSB_BAND_META: Record<TrainingLoadSnapshot["band"], { color: string; label
 
 // ─── Tab "Oggi" ────────────────────────────────────────────────────────────
 
-function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
+// P1 nav piatta (2026-06-11): TodayTab esportato — è la home dell'app, montata
+// da TodayPage. CoachPageV2 (contenitore a sub-tab) resta solo come legacy.
+export function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [resumeSnapshot, setResumeSnapshot] = useState<GuidedSessionSnapshot | null>(null);
   const [macroProgram, setMacroProgram] = useState<MacroProgram | null>(null);

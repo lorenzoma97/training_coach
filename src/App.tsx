@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 import DiaryApp from "./components/DiaryApp";
-import CoachPageV2 from "./pages/CoachPageV2";
+import TodayPage from "./pages/TodayPage";
+import PlanPage from "./pages/PlanPage";
+import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import OnboardingWizard from "./pages/OnboardingWizard";
 import TrendsPage from "./pages/TrendsPage";
+import BottomSheet from "./components/ui/sheet";
+import { Home, CalendarRange, Plus, BookOpen, TrendingUp, Dumbbell, ClipboardCheck } from "lucide-react";
 import ProactiveFeedback from "./components/ProactiveFeedback";
 import ErrorBoundary from "./components/ErrorBoundary";
 import OfflineBanner from "./components/OfflineBanner";
@@ -17,7 +21,9 @@ import type { CoachFeedItem } from "./lib/types";
 import { events } from "./lib/events";
 import { checkPendingRestore, clearPendingRestoreFlag } from "./lib/backup";
 
-type Tab = "diary" | "trends" | "coach" | "settings";
+// P1 nav piatta (2026-06-11): Oggi è la home; Coach come contenitore è smontato.
+// "chat" e "settings" sono navigabili ma fuori dalla bottom nav (header icons).
+type Tab = "today" | "plan" | "diary" | "trends" | "chat" | "settings";
 const LAST_SEEN_KEY = "coach-feed-last-seen";
 
 // Wrapper top-level: NotificationHost fornisce il context per tutti i
@@ -33,8 +39,10 @@ export default function App() {
 
 function AppShell() {
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
-  const [tab, setTab] = useState<Tab>("diary");
+  const [tab, setTab] = useState<Tab>("today");
   const [unreadCoach, setUnreadCoach] = useState(0);
+  // Sheet del "+" centrale: registra allenamento / check giornaliero.
+  const [addOpen, setAddOpen] = useState(false);
   const { notify } = useNotify();
 
   // Toast globali per eventi di sistema (migrazione modello, fallback LLM).
@@ -125,9 +133,9 @@ function AppShell() {
     };
   }, []);
 
-  // Quando si apre il tab Coach, segna tutto come "letto"
+  // Il feed coach vive in Oggi e la chat è pagina dedicata: aprirle = "letto".
   useEffect(() => {
-    if (tab === "coach") {
+    if (tab === "today" || tab === "chat") {
       setJSON(LAST_SEEN_KEY, new Date().toISOString()).then(refreshUnread);
     }
   }, [tab]);
@@ -138,9 +146,18 @@ function AppShell() {
     return off;
   }, []);
 
-  // Navigazione globale tra tab (es. da CoachPage "vai a Impostazioni")
+  // Navigazione globale tra tab. "coach" è alias legacy → home (Oggi):
+  // gli emitter esistenti (TrainingPlanView, RaceCalendar) continuano a funzionare.
   useEffect(() => {
-    const off = events.on("nav:goto", ({ tab }) => setTab(tab));
+    const off = events.on("nav:goto", ({ tab }) => {
+      setTab(tab === "coach" ? "today" : tab);
+    });
+    return off;
+  }, []);
+
+  // "Chiedi al coach" apre la pagina Chat (prima switchava il sub-tab interno).
+  useEffect(() => {
+    const off = events.on("chat:openWith", () => setTab("chat"));
     return off;
   }, []);
 
@@ -214,16 +231,22 @@ function AppShell() {
       <PwaInstallBanner />
 
       <div className="page-pad-bottom">
-        {/* Un ErrorBoundary per pagina: un crash nel Coach non deve abbattere
+        {/* Un ErrorBoundary per pagina: un crash in una pagina non deve abbattere
             il menu di navigazione, l'utente può passare ad altra tab. */}
+        {tab === "today" && (
+          <ErrorBoundary label="TodayPage"><TodayPage unreadChat={unreadCoach} /></ErrorBoundary>
+        )}
+        {tab === "plan" && (
+          <ErrorBoundary label="PlanPage"><PlanPage /></ErrorBoundary>
+        )}
         {tab === "diary" && (
           <ErrorBoundary label="DiaryApp"><DiaryApp /></ErrorBoundary>
         )}
         {tab === "trends" && (
           <ErrorBoundary label="TrendsPage"><TrendsPage /></ErrorBoundary>
         )}
-        {tab === "coach" && (
-          <ErrorBoundary label="CoachPageV2"><CoachPageV2 /></ErrorBoundary>
+        {tab === "chat" && (
+          <ErrorBoundary label="ChatPage"><ChatPage /></ErrorBoundary>
         )}
         {tab === "settings" && (
           <ErrorBoundary label="SettingsPage">
@@ -232,50 +255,98 @@ function AppShell() {
         )}
       </div>
 
-      {/* Bottom nav */}
+      {/* Sheet del "+" centrale: l'azione primaria globale (registra). */}
+      <BottomSheet open={addOpen} onClose={() => setAddOpen(false)} title="Registra">
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <button
+            onClick={() => { setAddOpen(false); setTab("diary"); events.emit("diary:openNew", {}); }}
+            style={{
+              display: "flex", alignItems: "center", gap: "12px",
+              padding: "14px", minHeight: "56px",
+              background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
+              border: "none", borderRadius: "14px",
+              color: "#052E2A", fontSize: "15px", fontWeight: 800, cursor: "pointer",
+            }}
+          >
+            <Dumbbell size={20} /> Allenamento
+          </button>
+          <button
+            onClick={() => { setAddOpen(false); setTab("diary"); events.emit("diary:openDaily", {}); }}
+            style={{
+              display: "flex", alignItems: "center", gap: "12px",
+              padding: "14px", minHeight: "56px",
+              background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "14px",
+              color: "#E2E8F0", fontSize: "15px", fontWeight: 700, cursor: "pointer",
+            }}
+          >
+            <ClipboardCheck size={20} /> Check giornaliero
+          </button>
+        </div>
+      </BottomSheet>
+
+      {/* Bottom nav piatta: Oggi · Piano · [+] · Diario · Trend */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50,
         background: "rgba(11, 15, 26, 0.92)",
         backdropFilter: "blur(14px)",
         WebkitBackdropFilter: "blur(14px)",
         borderTop: "1px solid rgba(255,255,255,0.06)",
-        padding: "10px 12px calc(10px + env(safe-area-inset-bottom, 0px))",
-        display: "flex", gap: "6px", justifyContent: "center",
+        padding: "8px 12px calc(8px + env(safe-area-inset-bottom, 0px))",
+        display: "flex", gap: "4px", justifyContent: "center",
       }}>
-        <div style={{ display: "flex", gap: "6px", maxWidth: "560px", width: "100%" }}>
+        <div style={{ display: "flex", gap: "4px", maxWidth: "560px", width: "100%", alignItems: "center" }}>
           {([
-            { id: "diary" as const, label: "Diario", emoji: "📓", badge: 0 },
-            { id: "trends" as const, label: "Trend", emoji: "📈", badge: 0 },
-            { id: "coach" as const, label: "Coach", emoji: "🎯", badge: unreadCoach },
-            { id: "settings" as const, label: "Impost.", emoji: "⚙", badge: 0 },
+            { id: "today" as const, label: "Oggi", Icon: Home },
+            { id: "plan" as const, label: "Piano", Icon: CalendarRange },
           ]).map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} aria-label={t.label}
-              aria-current={tab === t.id ? "page" : undefined}
-              style={{
-                flex: 1, padding: "10px 8px", background: tab === t.id ? "#16213E" : "transparent",
-                border: "none", borderRadius: "10px",
-                color: tab === t.id ? "#E2E8F0" : "#94A3B8",
-                fontSize: "11px", fontWeight: 700, cursor: "pointer",
-                display: "flex", flexDirection: "column", alignItems: "center", gap: "3px",
-                position: "relative", minHeight: "52px",
-              }}>
-              <span style={{ fontSize: "20px", lineHeight: 1 }}>{t.emoji}</span>
-              <span>{t.label}</span>
-              {t.badge > 0 && (
-                <span aria-label={`${t.badge} nuovi`} style={{
-                  position: "absolute", top: "2px", right: "calc(50% - 24px)",
-                  background: "#14B8A6", color: "#FFF",
-                  minWidth: "20px", height: "20px", padding: "0 6px",
-                  borderRadius: "10px", fontSize: "11px", fontWeight: 800,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
-                  lineHeight: 1,
-                }}>{t.badge > 9 ? "9+" : t.badge}</span>
-              )}
-            </button>
+            <NavButton key={t.id} active={tab === t.id} label={t.label} Icon={t.Icon} onClick={() => setTab(t.id)} />
+          ))}
+          <button
+            onClick={() => setAddOpen(true)}
+            aria-label="Registra allenamento o check"
+            style={{
+              width: "52px", height: "52px", flexShrink: 0,
+              margin: "0 4px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
+              border: "none", borderRadius: "16px",
+              color: "#052E2A", cursor: "pointer",
+              boxShadow: "0 4px 14px rgba(20,184,166,0.35)",
+            }}
+          >
+            <Plus size={24} strokeWidth={2.5} />
+          </button>
+          {([
+            { id: "diary" as const, label: "Diario", Icon: BookOpen },
+            { id: "trends" as const, label: "Trend", Icon: TrendingUp },
+          ]).map(t => (
+            <NavButton key={t.id} active={tab === t.id} label={t.label} Icon={t.Icon} onClick={() => setTab(t.id)} />
           ))}
         </div>
       </nav>
     </>
+  );
+}
+
+function NavButton({ active, label, Icon, onClick }: {
+  active: boolean;
+  label: string;
+  Icon: typeof Home;
+  onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} aria-label={label} aria-current={active ? "page" : undefined}
+      style={{
+        flex: 1, padding: "8px 4px", background: "transparent",
+        border: "none", borderRadius: "10px",
+        color: active ? "#14B8A6" : "#94A3B8",
+        fontSize: "10px", fontWeight: 700, cursor: "pointer",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: "3px",
+        minHeight: "52px", transition: "color 150ms ease-out",
+      }}>
+      <Icon size={21} strokeWidth={active ? 2.4 : 2} />
+      <span>{label}</span>
+    </button>
   );
 }

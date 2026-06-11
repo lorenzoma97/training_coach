@@ -4,6 +4,10 @@ import { events } from "../lib/events";
 import { uiCard, TYPE } from "../lib/theme";
 import Sparkline, { type SparklinePoint } from "../components/Sparkline";
 import LoadingSpinner from "../components/LoadingSpinner";
+import ZonesCard from "../components/ZonesCard";
+import ZonesAnalytics from "../components/ZonesAnalytics";
+import FCMaxTestSection from "../components/FCMaxTestSection";
+import LTThresholdSection from "../components/LTThresholdSection";
 
 type Period = 7 | 14 | 30 | 90;
 
@@ -533,10 +537,22 @@ export default function TrendsPage() {
             </div>
           </details>
 
+          {/* Zone FC — migrate qui dall'ex tab Tools (P1 nav piatta): sono
+              analytics di allenamento, casa naturale = Trend. */}
+          <details style={{ background: "#16213E", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px", overflow: "hidden" }}>
+            <summary style={{ cursor: "pointer", listStyle: "none", padding: "14px 16px", minHeight: "44px", display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", color: "#0891B2", textTransform: "uppercase" }}>
+              <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span> Zone FC e soglie
+            </summary>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "0 16px 16px" }}>
+              <ZonesCard />
+              <ZonesAnalytics />
+              <FCMaxTestSection />
+              <LTThresholdSection />
+            </div>
+          </details>
+
           <div style={{ fontSize: "11px", color: "#64748B", textAlign: "center", padding: "8px 0 20px" }}>
             Trend calcolati localmente dal diario. Periodo: ultimi {period} giorni.
-            <br />
-            Le tue Zone FC sono nel tab <b>Coach → Zone</b>.
           </div>
         </div>
       )}
