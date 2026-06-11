@@ -20,7 +20,7 @@ import { getJSON } from "../lib/storage";
 import { uiCard, uiLabel, uiValue } from "../lib/theme";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
-import { ClipboardList, ChevronRight, HeartPulse, TrendingUp, Inbox, AlertTriangle, CircleAlert, Dumbbell, Moon, Play, ClipboardCopy, RefreshCw, Zap } from "lucide-react";
+import { ClipboardList, ChevronRight, HeartPulse, TrendingUp, Inbox, AlertTriangle, CircleAlert, Dumbbell, Moon, Play, ClipboardCopy, RefreshCw, Zap, Check } from "lucide-react";
 import Skeleton from "../components/ui/skeleton";
 import type { UserProfile, TrainingPlan } from "../lib/types";
 import { events } from "../lib/events";
@@ -323,6 +323,8 @@ function SessionDetailCard({
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<SessionDetailResult["meta"] | null>(null);
   const [playerOpen, setPlayerOpen] = useState(false);
+  // Celebrazione breve a fine sessione guidata (n. set completati), poi diario.
+  const [celebration, setCelebration] = useState<number | null>(null);
 
   if (!session) {
     return (
@@ -401,17 +403,24 @@ function SessionDetailCard({
     // Pattern allineato a "Copia in diario": emit diary:openAdd con prefill che
     // include le ExercisePerformance reali (sets compilati) invece di sets vuoti.
     // L'utente vede il form pre-popolato con i valori reali e conferma il save.
+    const totalSets = performances.reduce((a, p) => a + p.sets.length, 0);
     const prefill: Record<string, unknown> = {
       subtype: session.subtype,
       durata_totale: session.duration_min,
       exercises: performances,
     };
-    events.emit("diary:openAdd", {
+    const payload = {
       type: session.type,
       prefill,
-      notes: `Allenamento guidato completato (${performances.reduce((a, p) => a + p.sets.length, 0)} set).`,
-    });
-    events.emit("nav:goto", { tab: "diary" });
+      notes: `Allenamento guidato completato (${totalSets} set).`,
+    };
+    // Celebrazione breve (l'unico momento "caldo" del design), poi al diario.
+    setCelebration(totalSets);
+    setTimeout(() => {
+      setCelebration(null);
+      events.emit("diary:openAdd", payload);
+      events.emit("nav:goto", { tab: "diary" });
+    }, 1400);
   }
 
   function handleCopyToDiary() {
@@ -578,6 +587,31 @@ function SessionDetailCard({
           onClose={() => setPlayerOpen(false)}
           onComplete={handlePlayerComplete}
         />
+      )}
+
+      {/* Celebrazione fine sessione: badge teal che "poppa", 1.4s, poi diario. */}
+      {celebration !== null && (
+        <div role="status" aria-live="polite" style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "rgba(5, 10, 20, 0.85)",
+          backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+        }}>
+          <div style={{ textAlign: "center", animation: "popIn 400ms cubic-bezier(0.16, 1, 0.3, 1)" }}>
+            <div style={{
+              width: "84px", height: "84px", margin: "0 auto 16px", borderRadius: "50%",
+              background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 8px 40px rgba(20,184,166,0.45)",
+            }}>
+              <Check size={44} strokeWidth={3} color="#052E2A" />
+            </div>
+            <div style={{ fontSize: "22px", fontWeight: 800, color: "#E2E8F0" }}>Sessione completata</div>
+            <div style={{ fontSize: "14px", color: "#94A3B8", marginTop: "4px", fontFamily: "'JetBrains Mono', monospace" }}>
+              {celebration} set portati a casa
+            </div>
+          </div>
+        </div>
       )}
 
       {!hasDetail && !supportsDetail && (

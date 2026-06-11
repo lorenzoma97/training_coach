@@ -952,7 +952,7 @@ export default function DiaryApp() {
                   background: "rgba(255,255,255,0.1)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: "18px", flexShrink: 0,
-                }}>{todayPlannedSession.done ? "✓" : "📋"}</div>
+                }}>{todayPlannedSession.done ? "✓" : <ClipboardCheck size={18} />}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: "11px", color: todayPlannedSession.done ? "#86EFAC" : "#93C5FD", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "2px" }}>
                     {todayPlannedSession.done ? "Sessione del piano fatta" : "Sessione di oggi (dal piano)"}
@@ -1024,7 +1024,7 @@ export default function DiaryApp() {
               <div style={{ textAlign: "center", padding: "40px", color: "#475569" }}>Caricamento...</div>
             ) : index.length === 0 ? (
               <div style={{ textAlign: "center", padding: "50px 20px", color: "#475569" }}>
-                <div style={{ fontSize: "40px", marginBottom: "12px" }}>📓</div>
+                <Dumbbell size={36} style={{ marginBottom: "12px", opacity: 0.5 }} />
                 <div style={{ fontSize: "15px", fontWeight: 600 }}>Nessun allenamento registrato</div>
                 <div style={{ fontSize: "13px", marginTop: "6px" }}>Tocca "Registra allenamento" per iniziare</div>
               </div>
@@ -1057,16 +1057,19 @@ export default function DiaryApp() {
                   {weekGroups.map((wg) => (
                     <div key={wg.label}>
                       <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "8px", paddingLeft: "4px" }}>
-                        📅 {wg.label}
+                        {wg.label}
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                         {wg.dates.map(date => {
                           const isToday = date === today();
                           const summary = daySummaries.get(date);
-                          const badges: string[] = [];
-                          if (summary?.icons?.length) badges.push(...summary.icons);
-                          else if (summary?.hasWorkouts) badges.push("🏋️");
-                          if (summary?.hasDaily) badges.push("📊");
+                          // Indicatori a punto (linguaggio strumento): teal = allenamenti,
+                          // cyan = check biometrico. Niente più emoji-badge.
+                          const hasW = !!summary?.hasWorkouts;
+                          const hasD = !!summary?.hasDaily;
+                          const dot = (color: string, key: string) => (
+                            <span key={key} style={{ width: "8px", height: "8px", borderRadius: "50%", background: color, display: "inline-block" }} />
+                          );
                           return (
                             <button key={date} onClick={() => openDetail(date)} style={{
                               width: "100%", textAlign: "left", padding: "12px 14px",
@@ -1075,7 +1078,11 @@ export default function DiaryApp() {
                               borderRadius: "12px", cursor: "pointer", color: "#E2E8F0",
                               display: "flex", alignItems: "center", gap: "10px",
                             }}>
-                              <div style={{ fontSize: "13px", minWidth: "26px" }}>{badges.join("") || "📓"}</div>
+                              <div style={{ minWidth: "26px", display: "flex", gap: "4px", alignItems: "center" }}>
+                                {hasW && dot("#14B8A6", "w")}
+                                {hasD && dot("#0891B2", "d")}
+                                {!hasW && !hasD && dot("rgba(148,163,184,0.35)", "e")}
+                              </div>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: "13px", fontWeight: 700, textTransform: "capitalize" }}>
                                   {isToday ? "Oggi" : fmtDate(date)}

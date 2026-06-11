@@ -3,7 +3,7 @@ import { getAllDays } from "../lib/diaryContext";
 import { events } from "../lib/events";
 import { uiCard, TYPE } from "../lib/theme";
 import Sparkline, { type SparklinePoint } from "../components/Sparkline";
-import LoadingSpinner from "../components/LoadingSpinner";
+import Skeleton from "../components/ui/skeleton";
 import ZonesCard from "../components/ZonesCard";
 import ZonesAnalytics from "../components/ZonesAnalytics";
 import FCMaxTestSection from "../components/FCMaxTestSection";
@@ -322,7 +322,13 @@ export default function TrendsPage() {
       )}
 
       {loading ? (
-        <LoadingSpinner variant="block" label="Caricamento…" data-testid="trends-loading" />
+        // Skeleton con la STRUTTURA della pagina (stat row + grafici): appare
+        // subito la forma dei contenuti invece di uno spinner generico.
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }} aria-busy="true" aria-label="Caricamento" data-testid="trends-loading">
+          <Skeleton height={76} style={{ borderRadius: "14px" }} />
+          <Skeleton height={150} style={{ borderRadius: "14px" }} />
+          <Skeleton height={150} style={{ borderRadius: "14px" }} />
+        </div>
       ) : !hasAnyData ? (
         <div style={{ ...cardStyle, textAlign: "center", padding: "40px 20px" }}>
           <div style={{ fontSize: "36px", marginBottom: "10px" }}>📈</div>
