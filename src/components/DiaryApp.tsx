@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useId, useRef } from "react";
+import { Dumbbell, ClipboardCheck, Download } from "lucide-react";
 import { storage, getJSON, setJSON, StorageQuotaError, StorageValueTooLargeError } from "../lib/storage";
 import { events } from "../lib/events";
 import type { TrainingPlan, PlannedSession } from "../lib/types";
@@ -993,12 +994,14 @@ export default function DiaryApp() {
             <button onClick={() => { setAddDate(today()); setAddType(null); setAddStrengthMode(false); setAddExercises([]); setEditingWorkoutId(null); setEditingOriginalDate(null); setScreen("add"); }} style={{
               flex: 1, padding: "16px", background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
               border: "none", borderRadius: "14px", color: "#052E2A", fontSize: "15px", fontWeight: 800, cursor: "pointer",
-            }}>🏋️ Registra allenamento</button>
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+            }}><Dumbbell size={18} /> Registra allenamento</button>
             <button onClick={() => { setDailyDate(today()); resetDailyFields(); setEditingDaily(false); setScreen("daily"); }} style={{
               flex: 1, padding: "16px", background: "#16213E",
               border: "1px solid rgba(255,255,255,0.08)", borderRadius: "14px", color: "#E2E8F0",
               fontSize: "15px", fontWeight: 700, cursor: "pointer",
-            }}>📊 Registra dati biometrici</button>
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+            }}><ClipboardCheck size={18} /> Registra dati biometrici</button>
           </div>
 
           {index.length > 0 && (
@@ -1008,7 +1011,8 @@ export default function DiaryApp() {
                 border: "1px solid rgba(255,255,255,0.06)", borderRadius: "10px",
                 color: "#94A3B8", fontSize: "12px", fontWeight: 600,
                 cursor: exporting ? "wait" : "pointer", opacity: exporting ? 0.5 : 1,
-              }}>📊 Scarica CSV</button>
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "7px",
+              }}><Download size={14} /> Scarica CSV</button>
             </div>
           )}
 

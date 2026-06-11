@@ -230,7 +230,8 @@ function AppShell() {
       {/* Install PWA prompt (iOS Safari istruzioni / Android Chrome beforeinstallprompt) */}
       <PwaInstallBanner />
 
-      <div className="page-pad-bottom">
+      {/* key={tab} rimonta il wrapper al cambio tab → riparte l'animazione pageIn. */}
+      <div key={tab} className="page-pad-bottom page-enter">
         {/* Un ErrorBoundary per pagina: un crash in una pagina non deve abbattere
             il menu di navigazione, l'utente può passare ad altra tab. */}
         {tab === "today" && (
