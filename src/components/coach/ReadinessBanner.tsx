@@ -98,9 +98,11 @@ export function ReadinessBanner({ loader }: ReadinessBannerProps = {}) {
         aria-live="assertive"
         aria-label="Readiness bassa"
         style={{
-          backgroundColor: "#fef3c7", // amber-100
-          color: "#78350f",           // amber-900
-          border: "1px solid #fcd34d", // amber-300
+          // Dark theme (P2 redesign): token attention su superficie scura.
+          // Prima era amber-100 chiaro → riquadro pastello fuori tema.
+          backgroundColor: "#F59E0B14",
+          color: "#FCD34D",
+          border: "1px solid #F59E0B55",
           borderRadius: "12px",
           padding: "12px 16px",
           marginBottom: "12px",
@@ -147,7 +149,7 @@ export function ReadinessBanner({ loader }: ReadinessBannerProps = {}) {
           <div id="readiness-details" style={{
             marginTop: "8px",
             fontSize: "12px",
-            borderTop: "1px solid #fcd34d",
+            borderTop: "1px solid #F59E0B33",
             paddingTop: "8px",
             display: "flex",
             flexDirection: "column",
@@ -181,9 +183,10 @@ export function ReadinessBanner({ loader }: ReadinessBannerProps = {}) {
         aria-live="polite"
         aria-label="Readiness alta"
         style={{
-          backgroundColor: "#d1fae5", // emerald-100
-          color: "#064e3b",           // emerald-900
-          border: "1px solid #6ee7b7", // emerald-300
+          // Dark theme (P2): token success su superficie scura.
+          backgroundColor: "#22C55E12",
+          color: "#4ADE80",
+          border: "1px solid #22C55E44",
           borderRadius: "12px",
           padding: "8px 16px",
           marginBottom: "12px",

@@ -973,7 +973,7 @@ export default function TrainingPlanView() {
       }}
     >
       {regenerating
-        ? <span role="progressbar" aria-label={`Generazione in corso — ${llmElapsedSec} secondi`} aria-busy="true">⏳ Generazione… {llmElapsedSec}s</span>
+        ? <span role="progressbar" aria-label={`Generazione in corso — ${llmElapsedSec} secondi`} aria-busy="true">Generazione… {llmElapsedSec}s</span>
         : "🎯 Genera piano"}
     </button>
   );
@@ -1138,7 +1138,7 @@ export default function TrainingPlanView() {
               title="Piano scaduto"
               body="Il microciclo è terminato: rigenera per riallinearti alla settimana corrente."
               cta="Rigenera ora"
-              busyLabel={`⏳ Rigenerazione… ${llmElapsedSec}s`}
+              busyLabel={`Rigenerazione… ${llmElapsedSec}s`}
               onCta={() => { setRegenPickerOpen(true); setAdaptOpen(false); }}
               disabled={regenerating}
             />
@@ -1180,7 +1180,7 @@ export default function TrainingPlanView() {
             display: "flex", alignItems: "center", gap: "6px", userSelect: "none",
           }}>
             <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace" }}>▸</span>
-            ⚙ {plan.sourceMacro.adaptations.length} adattament{plan.sourceMacro.adaptations.length === 1 ? "o" : "i"} alla settimana
+            {plan.sourceMacro.adaptations.length} adattament{plan.sourceMacro.adaptations.length === 1 ? "o" : "i"} alla settimana
           </summary>
           <ul style={{ margin: "8px 0 0 18px", padding: 0, fontSize: "11px", color: "#CBD5E1", lineHeight: 1.6 }}>
             {plan.sourceMacro.adaptations.map((a, i) => <li key={i}>{a}</li>)}
@@ -1200,7 +1200,7 @@ export default function TrainingPlanView() {
           display: "flex", flexDirection: "column", gap: "10px",
         }}>
           <div style={{ fontSize: "12px", color: "#F59E0B", fontWeight: 700 }}>
-            ⚡ {pendingEvents.length} evento{pendingEvents.length === 1 ? "" : " (i)"} nella settimana
+            {pendingEvents.length} evento{pendingEvents.length === 1 ? "" : " (i)"} nella settimana
           </div>
           <ul style={{ margin: 0, padding: "0 0 0 16px", fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>
             {pendingEvents.slice(0, 4).map((e, i) => <li key={i}>{e.detail}</li>)}
@@ -1219,7 +1219,7 @@ export default function TrainingPlanView() {
                 border: "none", borderRadius: "9px", color: "#FFF",
                 fontSize: "13px", fontWeight: 700, cursor: "pointer", flex: 1, minWidth: "140px",
               }}
-            >🔧 Adatta al programma</button>
+            >Adatta al programma</button>
             <button
               onClick={() => setEventsBannerDismissed(true)}
               disabled={adapting || regenerating}
@@ -1363,7 +1363,7 @@ export default function TrainingPlanView() {
                     border: "1px solid rgba(239, 68, 68, 0.4)", borderRadius: "8px",
                     color: "#FCA5A5", fontSize: "12px", fontWeight: 600, cursor: "pointer",
                   }}
-                >🗑 Scarta preview</button>
+                >Scarta preview</button>
                 <div style={{ flex: 1, fontSize: "11px", color: "#94A3B8", lineHeight: 1.4, alignSelf: "center" }}>
                   Diventerà il piano corrente automaticamente lun {formatWeekRange(nextPlan.startDate).split(" ")[0]}.
                 </div>
@@ -1402,7 +1402,7 @@ export default function TrainingPlanView() {
         const smartRegen = {
           mode: "rest-of-week" as const,
           useAdapt,
-          icon: useAdapt ? "🔧" : "🔁",
+          icon: "",
           label: useAdapt ? "Adatta piano alle deviazioni" : "Aggiorna giorni rimanenti",
           sub1: todayIdx === 6
             ? `solo ${formatDay(today)} (settimana quasi conclusa)`
@@ -1442,10 +1442,10 @@ export default function TrainingPlanView() {
                 }}
               >
                 {(regenerating || adapting) ? (
-                  <span role="progressbar" aria-busy="true">⏳ {regenerating ? "Rigenerazione" : "Adatto piano"}… {llmElapsedSec}s</span>
+                  <span role="progressbar" aria-busy="true">{regenerating ? "Rigenerazione" : "Adatto piano"}… {llmElapsedSec}s</span>
                 ) : (
                   <>
-                    <span style={{ fontSize: "14px", fontWeight: 700 }}>{smartRegen.icon} {smartRegen.label}</span>
+                    <span style={{ fontSize: "14px", fontWeight: 700 }}>{smartRegen.label}</span>
                     <span style={{ fontSize: "12px", fontWeight: 500, opacity: 0.92 }}>{smartRegen.sub1}</span>
                     {smartRegen.sub2 && (
                       <span style={{ fontSize: "11px", fontWeight: 500, opacity: 0.85 }}>{smartRegen.sub2}</span>
@@ -1548,7 +1548,7 @@ export default function TrainingPlanView() {
                       border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
                       color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
                     }}
-                  >↺ Reset</button>
+                  >Reset</button>
                 </div>
 
                 <div style={{ fontSize: "12px", color: "#CBD5E1", fontWeight: 600, marginTop: "4px" }}>Come vuoi rigenerare?</div>
@@ -1674,7 +1674,7 @@ export default function TrainingPlanView() {
                 <textarea value={adaptRequest} onChange={e => setAdaptRequest(e.target.value)} placeholder="es. 'settimana più leggera perché ho un viaggio' o 'aumenta le ripetute'" disabled={adapting} rows={2} style={{ width: "100%", padding: "10px 12px", background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#E2E8F0", fontSize: "14px", fontFamily: "inherit", resize: "vertical", minHeight: "60px", outline: "none", boxSizing: "border-box" }} />
                 <div style={{ display: "flex", gap: "8px" }}>
                   <button onClick={() => handleAdapt()} disabled={adapting || !adaptRequest.trim()} aria-busy={adapting || undefined} role={adapting ? "status" : undefined} aria-label={adapting ? "Adattamento piano in corso" : undefined} style={{ flex: 1, padding: "10px", background: adapting ? "#1E293B" : "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)", border: "none", borderRadius: "10px", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: adapting ? "wait" : "pointer", opacity: (adapting || !adaptRequest.trim()) ? 0.5 : 1 }}>
-                    {adapting ? `⏳ Adatto il piano… ${llmElapsedSec}s` : "Applica modifica"}
+                    {adapting ? `Adatto il piano… ${llmElapsedSec}s` : "Applica modifica"}
                   </button>
                   <button onClick={() => { setAdaptOpen(false); setAdaptRequest(""); setAdaptError(null); }} disabled={adapting} style={{ padding: "10px 14px", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#94A3B8", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>Annulla</button>
                 </div>
@@ -1969,12 +1969,12 @@ export default function TrainingPlanView() {
                       <button
                         onClick={() => { askCoachAboutSession(s, w.weekNumber); setActionsKey(null); }}
                         style={ALT_BTN_STYLE}
-                      >💬 Chiedi al coach</button>
+                      >Chiedi al coach</button>
                       {plan.sourceMacro && !isCompleted && (
                         <button
                           onClick={() => { const k = `${w.weekNumber}-${s.day}`; setSubMenuKey(subMenuKey === k ? null : k); setSubAltroOpen(false); }}
                           style={ALT_BTN_STYLE}
-                        >🔁 Non posso / sostituisci</button>
+                        >Non posso / sostituisci</button>
                       )}
                     </div>
                   )}
@@ -1992,7 +1992,7 @@ export default function TrainingPlanView() {
                         Riposo (togli la sessione)
                       </button>
                       <button onClick={() => setSubAltroOpen(v => !v)} disabled={adapting} style={{ ...ALT_BTN_STYLE, borderStyle: "dashed" }}>
-                        ✦ Altro (chiedi al coach)
+                        Altro (chiedi al coach)
                       </button>
                       {subAltroOpen && (
                         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -2007,7 +2007,7 @@ export default function TrainingPlanView() {
                             disabled={adapting}
                             style={{ padding: "9px 12px", background: "linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border: "none", borderRadius: "8px", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: adapting ? "wait" : "pointer" }}
                           >
-                            {adapting ? `⏳ Il coach propone… ${llmElapsedSec}s` : "Proponi alternativa"}
+                            {adapting ? `Il coach propone… ${llmElapsedSec}s` : "Proponi alternativa"}
                           </button>
                         </div>
                       )}

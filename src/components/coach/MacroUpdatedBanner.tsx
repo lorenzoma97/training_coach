@@ -88,9 +88,11 @@ export function MacroUpdatedBanner({ onRegenerate }: MacroUpdatedBannerProps = {
       aria-live="polite"
       aria-label="Macrociclo aggiornato"
       style={{
-        backgroundColor: "#dbeafe", // blue-100
-        color: "#1e3a8a",           // blue-900
-        border: "1px solid #93c5fd", // blue-300
+        // Dark theme (P2): token info su superficie scura.
+        // Prima era blue-100 chiaro → riquadro pastello fuori tema.
+        backgroundColor: "#0891B214",
+        color: "#67E8F9",
+        border: "1px solid #0891B255",
         borderRadius: "12px",
         padding: "12px 16px",
         marginBottom: "12px",
@@ -135,14 +137,14 @@ export function MacroUpdatedBanner({ onRegenerate }: MacroUpdatedBannerProps = {
           onClick={onRegenerate}
           style={{
             marginTop: "8px",
-            backgroundColor: "#1e40af", // blue-800 (contrast 8.6:1 vs white — WCAG AAA)
-            color: "white",
+            background: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
+            color: "#052E2A",
             fontSize: "14px",
-            fontWeight: 700,
+            fontWeight: 800,
             // a11y WCAG 2.5.5 — touch target min 44x44px
             minHeight: "44px",
             padding: "10px 16px",
-            borderRadius: "4px",
+            borderRadius: "10px",
             border: "none",
             cursor: "pointer",
           }}

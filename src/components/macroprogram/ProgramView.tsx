@@ -1,9 +1,12 @@
-// ProgramView (Sprint 4.2, 2026-05-26).
+// ProgramView (Sprint 4.2 → P2 redesign, 2026-06-11).
 // Visualizzazione macroprogramma con timeline + week navigator + session cards.
-// Pattern UX Op3 enhanced: focus su settimana corrente, navigazione fluida,
-// drawer riferimenti accessibile in 1 click.
+//
+// P2 "strumento": monocromo + teal (via i 5 colori-fase arbitrari), icone lucide
+// al posto delle emoji, niente pulse animation, superfici quiete. La fase è
+// un'etichetta (chip neutra, corrente evidenziata), non un arcobaleno.
 
 import { useMemo, useRef, useState } from "react";
+import { ArrowLeft, Bookmark, ChevronDown, ChevronUp, Dumbbell, Footprints, Trophy, Activity, Check } from "lucide-react";
 import type { MacroProgram, MacroProgramSession, DayLabel } from "../../lib/types/macroprogram";
 import { computeMacroProgress } from "../../lib/macroprogram/storage";
 import { lookupExerciseHybrid } from "../../lib/macroprogram/customCatalog";
@@ -11,25 +14,10 @@ import { useSwipeNavigation } from "./useSwipeNavigation";
 import ReferencesDrawer from "./ReferencesDrawer";
 import { useModalBackButton } from "../../lib/useModalBackButton";
 
-// ─── Phase color theme ────────────────────────────────────────────────────
-
-const PHASE_COLORS = [
-  { fg: "#22C55E", bg: "#22C55E22", border: "#22C55E66" }, // verde
-  { fg: "#F97316", bg: "#F9731622", border: "#F9731666" }, // arancio
-  { fg: "#EF4444", bg: "#EF444422", border: "#EF444466" }, // rosso
-  { fg: "#0891B2", bg: "#0891B222", border: "#0891B266" }, // cyan
-  { fg: "#A78BFA", bg: "#A78BFA22", border: "#A78BFA66" }, // viola
-];
-
-function phaseColorFor(phaseIdx: number) {
-  return PHASE_COLORS[phaseIdx % PHASE_COLORS.length];
-}
-
 // ─── Styles base ──────────────────────────────────────────────────────────
 
 const cardStyle: React.CSSProperties = {
   background: "#16213E",
-  border: "1px solid rgba(255,255,255,0.06)",
   borderRadius: "14px",
   padding: "14px 16px",
 };
@@ -74,7 +62,7 @@ export default function ProgramView({
   const initialViewWeek = Math.max(1, Math.min(program.metadata.weeks_total, macroCurrentWeek));
   const [viewWeek, setViewWeek] = useState(initialViewWeek);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Sprint E: tasto indietro Android chiude ProgramView (montato = aperto).
+  // Tasto indietro Android chiude ProgramView (montato = aperto).
   useModalBackButton(true, onClose);
 
   const swipeRef = useRef<HTMLDivElement>(null);
@@ -86,7 +74,6 @@ export default function ProgramView({
 
   const currentPhase = phaseForWeek(program, viewWeek);
   const phaseDef = currentPhase ? program.phases[currentPhase.idx] : null;
-  const phaseColor = currentPhase ? phaseColorFor(currentPhase.idx) : phaseColorFor(0);
 
   const weekData = program.weeks.find(w => w.week === viewWeek);
   const sortedSessions = weekData ? sortSessionsByDay(weekData.sessions) : [];
@@ -107,42 +94,47 @@ export default function ProgramView({
         position: "sticky", top: 0, zIndex: 10,
         display: "flex", justifyContent: "space-between", alignItems: "center",
         padding: "12px 16px",
-        background: "#16213E",
+        background: "rgba(11, 15, 26, 0.92)",
+        backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
         borderBottom: "1px solid rgba(255,255,255,0.08)",
       }}>
         <button onClick={onClose} style={{
           background: "transparent", border: "none",
-          color: "#94A3B8", fontSize: "13px", cursor: "pointer",
-          display: "flex", alignItems: "center", gap: "4px",
+          color: "#CBD5E1", fontSize: "13px", fontWeight: 600, cursor: "pointer",
+          display: "flex", alignItems: "center", gap: "6px", minHeight: "44px",
         }} aria-label="Chiudi programma">
-          ← Indietro
+          <ArrowLeft size={17} /> Indietro
         </button>
-        <div style={{ fontSize: "11px", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+        <div style={{ fontSize: "11px", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>
           Programma
         </div>
         <button
           onClick={() => setDrawerOpen(true)}
           style={{
             background: "transparent", border: "1px solid rgba(255,255,255,0.16)",
-            borderRadius: "8px", padding: "6px 10px",
+            borderRadius: "10px", padding: "8px 12px", minHeight: "40px",
             color: "#94A3B8", fontSize: "11px", fontWeight: 600, cursor: "pointer",
+            display: "flex", alignItems: "center", gap: "6px",
           }}
           aria-label="Apri riferimenti"
-        >🔖 Riferimenti</button>
+        ><Bookmark size={13} /> Riferimenti</button>
       </div>
 
       {/* Drawer riferimenti */}
       <ReferencesDrawer program={program} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
       {/* Content */}
-      <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+      <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "14px", maxWidth: "560px", margin: "0 auto", width: "100%" }}>
         {/* Title + meta */}
-        <div style={cardStyle}>
-          <div style={{ fontSize: "16px", fontWeight: 800, color: "#E2E8F0", marginBottom: "4px" }}>
+        <div>
+          <div style={{ fontSize: "20px", fontWeight: 800, color: "#E2E8F0", lineHeight: 1.25, letterSpacing: "-0.02em", marginBottom: "6px" }}>
             {program.metadata.title}
           </div>
-          <div style={{ fontSize: "12px", color: "#94A3B8", lineHeight: 1.5 }}>
-            {program.metadata.sport} · {program.metadata.weeks_total} settimane · {program.phases.length} fasi · Obiettivo: {program.metadata.goal}
+          <div style={{ fontSize: "13px", color: "#94A3B8", lineHeight: 1.5 }}>
+            {program.metadata.sport} · {program.metadata.weeks_total} settimane · {program.phases.length} fasi
+          </div>
+          <div style={{ fontSize: "12px", color: "#64748B", lineHeight: 1.5, marginTop: "2px" }}>
+            {program.metadata.goal}
           </div>
         </div>
 
@@ -154,21 +146,21 @@ export default function ProgramView({
           onJumpToWeek={setViewWeek}
         />
 
-        {/* Back to current badge */}
+        {/* Back to current */}
         {!isViewingCurrent && macroCurrentWeek >= 1 && macroCurrentWeek <= program.metadata.weeks_total && (
           <button
             onClick={() => setViewWeek(macroCurrentWeek)}
             style={{
-              padding: "8px 14px",
+              padding: "8px 14px", minHeight: "40px",
               background: "transparent",
-              border: "1px solid #0891B266",
+              border: "1px solid rgba(20,184,166,0.4)",
               borderRadius: "10px",
-              color: "#0891B2",
-              fontSize: "12px", fontWeight: 600,
+              color: "#14B8A6",
+              fontSize: "12px", fontWeight: 700,
               cursor: "pointer", alignSelf: "flex-start",
             }}
           >
-            ↺ Torna a settimana corrente (S{macroCurrentWeek})
+            Torna a settimana corrente (S{macroCurrentWeek})
           </button>
         )}
 
@@ -181,21 +173,21 @@ export default function ProgramView({
             onClick={() => setViewWeek(w => w - 1)}
             disabled={!canPrev}
             style={{
-              padding: "8px 12px",
+              width: "44px", height: "44px",
               background: "transparent",
-              border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.12)", borderRadius: "12px",
               color: canPrev ? "#E2E8F0" : "#64748B",
-              fontSize: "16px", cursor: canPrev ? "pointer" : "not-allowed",
+              fontSize: "18px", cursor: canPrev ? "pointer" : "not-allowed",
               opacity: canPrev ? 1 : 0.4,
             }}
             aria-label="Settimana precedente"
           >‹</button>
           <div style={{ textAlign: "center", flex: 1 }}>
-            <div style={{ fontSize: "14px", fontWeight: 700, color: "#E2E8F0" }}>
+            <div style={{ fontSize: "16px", fontWeight: 800, color: "#E2E8F0" }}>
               Settimana {viewWeek}{phaseDef ? ` — ${phaseDef.name}` : ""}
             </div>
             {phaseDef && (
-              <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "2px" }}>
+              <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "2px", fontFamily: "'JetBrains Mono', monospace" }}>
                 {phaseDef.rpe_target_min && phaseDef.rpe_target_max
                   ? `RPE ${phaseDef.rpe_target_min}-${phaseDef.rpe_target_max}`
                   : "—"}
@@ -207,29 +199,24 @@ export default function ProgramView({
             onClick={() => setViewWeek(w => w + 1)}
             disabled={!canNext}
             style={{
-              padding: "8px 12px",
+              width: "44px", height: "44px",
               background: "transparent",
-              border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.12)", borderRadius: "12px",
               color: canNext ? "#E2E8F0" : "#64748B",
-              fontSize: "16px", cursor: canNext ? "pointer" : "not-allowed",
+              fontSize: "18px", cursor: canNext ? "pointer" : "not-allowed",
               opacity: canNext ? 1 : 0.4,
             }}
             aria-label="Settimana successiva"
           >›</button>
         </div>
 
-        {/* Week notes if present */}
+        {/* Week notes if present — superficie quieta, label teal */}
         {weekData?.notes && (
-          <div style={{
-            ...cardStyle,
-            background: `${phaseColor.bg}`,
-            border: `1px solid ${phaseColor.border}`,
-            padding: "10px 14px",
-          }}>
-            <div style={{ fontSize: "11px", color: phaseColor.fg, fontWeight: 700, marginBottom: "4px" }}>
+          <div style={{ ...cardStyle, padding: "12px 14px" }}>
+            <div style={{ fontSize: "10px", color: "#14B8A6", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "4px" }}>
               Note settimana
             </div>
-            <div style={{ fontSize: "12px", color: "#CBD5E1", lineHeight: 1.5 }}>
+            <div style={{ fontSize: "13px", color: "#CBD5E1", lineHeight: 1.55 }}>
               {weekData.notes}
             </div>
           </div>
@@ -248,7 +235,7 @@ export default function ProgramView({
 
         {/* Footer hint swipe */}
         <div style={{ textAlign: "center", fontSize: "10px", color: "#64748B", padding: "8px 0" }}>
-          ← Swipe per cambiare settimana →
+          Swipe per cambiare settimana
         </div>
       </div>
     </div>
@@ -256,6 +243,8 @@ export default function ProgramView({
 }
 
 // ─── ProgramTimeline ──────────────────────────────────────────────────────
+// Monocromo + teal: passato = check teal attenuato, corrente = teal pieno,
+// futuro = outline neutro; la settimana visualizzata ha l'anello chiaro.
 
 function ProgramTimeline({
   program, viewWeek, macroCurrentWeek, onJumpToWeek,
@@ -266,6 +255,7 @@ function ProgramTimeline({
   onJumpToWeek: (w: number) => void;
 }) {
   const weeks = Array.from({ length: program.metadata.weeks_total }, (_, i) => i + 1);
+  const currentPhaseIdx = phaseForWeek(program, macroCurrentWeek)?.idx ?? -1;
   return (
     <div style={cardStyle}>
       <div style={labelStyle}>Timeline</div>
@@ -277,67 +267,67 @@ function ProgramTimeline({
           const isPast = w < macroCurrentWeek;
           const isCurrent = w === macroCurrentWeek;
           const isViewing = w === viewWeek;
-          const phase = phaseForWeek(program, w);
-          const color = phase ? phaseColorFor(phase.idx) : { fg: "#64748B", bg: "#64748B22", border: "#64748B66" };
           return (
             <button
               key={w}
               onClick={() => onJumpToWeek(w)}
               aria-label={`Vai a settimana ${w}`}
               style={{
-                width: "36px", height: "36px",
+                width: "38px", height: "38px",
                 borderRadius: "50%",
-                background: isPast ? color.bg : (isCurrent ? color.fg : "transparent"),
-                border: isViewing ? `2px solid #14B8A6` : `1px solid ${color.border}`,
-                color: isCurrent ? "#FFF" : color.fg,
-                fontSize: "11px", fontWeight: 700,
+                background: isCurrent ? "#14B8A6" : isPast ? "rgba(20,184,166,0.14)" : "transparent",
+                border: isViewing ? "2px solid #E2E8F0" : "1px solid rgba(255,255,255,0.14)",
+                color: isCurrent ? "#052E2A" : isPast ? "#14B8A6" : "#94A3B8",
+                fontSize: "12px", fontWeight: 700,
                 fontFamily: "'JetBrains Mono', monospace",
                 cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                animation: isCurrent ? "pulse 2s ease-in-out infinite" : undefined,
               }}
             >
-              {isPast ? "✓" : w}
+              {isPast ? <Check size={15} strokeWidth={2.6} /> : w}
             </button>
           );
         })}
       </div>
-      {/* Phase legend */}
-      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "10px" }}>
+      {/* Phase legend — chip neutre, la fase corrente è evidenziata */}
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "10px" }}>
         {program.phases.map((p, i) => {
-          const c = phaseColorFor(i);
+          const isCurrentPhase = i === currentPhaseIdx;
           const weeksLabel = p.weeks.length === 2 && p.weeks[0] <= p.weeks[1]
             ? `S${p.weeks[0]}-${p.weeks[1]}`
             : `S${p.weeks.join("/")}`;
           return (
             <div key={i} style={{
-              fontSize: "10px", color: c.fg, padding: "3px 8px",
-              background: c.bg, border: `1px solid ${c.border}`, borderRadius: "999px",
+              fontSize: "11px",
+              color: isCurrentPhase ? "#14B8A6" : "#94A3B8",
+              padding: "4px 10px",
+              background: isCurrentPhase ? "rgba(20,184,166,0.12)" : "#1A1A2E",
+              border: isCurrentPhase ? "1px solid rgba(20,184,166,0.4)" : "1px solid transparent",
+              borderRadius: "999px",
               fontWeight: 600,
             }}>
-              {p.name} ({weeksLabel})
+              {p.name} <span style={{ fontFamily: "'JetBrains Mono', monospace", opacity: 0.8 }}>{weeksLabel}</span>
             </div>
           );
         })}
       </div>
-      <style>{`@keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.1); } }`}</style>
     </div>
   );
 }
 
 // ─── SessionCard ──────────────────────────────────────────────────────────
 
+const TYPE_ICONS: Record<string, typeof Dumbbell> = {
+  forza_gambe: Dumbbell,
+  forza_upper: Dumbbell,
+  corsa: Footprints,
+  sport: Trophy,
+  mobilita: Activity,
+};
+
 function SessionCard({ session }: { session: MacroProgramSession }) {
   const [expanded, setExpanded] = useState(false);
-  const typeIcon: Record<string, string> = {
-    forza_gambe: "🏋",
-    forza_upper: "💪",
-    corsa: "🏃",
-    sport: "⚽",
-    mobilita: "🧘",
-  };
-  const icon = typeIcon[session.type] ?? "•";
-  const totalItems = session.exercises.length + session.intervals.length;
+  const Icon = TYPE_ICONS[session.type] ?? Activity;
   return (
     <div style={{ ...cardStyle, padding: "0", overflow: "hidden" }}>
       <button
@@ -351,30 +341,34 @@ function SessionCard({ session }: { session: MacroProgramSession }) {
         }}
       >
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: "11px", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "4px" }}>
+          <div style={{ fontSize: "10px", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "4px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>
             {session.day}
           </div>
-          <div style={{ fontSize: "14px", fontWeight: 700 }}>
-            {icon} {session.type.replace("_", " ")} <span style={{ color: "#94A3B8", fontWeight: 500 }}>· {session.duration_min} min</span>
+          <div style={{ fontSize: "15px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
+            <Icon size={16} style={{ color: "#14B8A6", flexShrink: 0 }} />
+            <span style={{ textTransform: "capitalize" }}>{session.type.replace("_", " ")}</span>
+            <span style={{ color: "#94A3B8", fontWeight: 500, fontFamily: "'JetBrains Mono', monospace", fontSize: "13px" }}>{session.duration_min}′</span>
           </div>
           {session.notes_text && (
-            <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px", fontStyle: "italic" }}>
+            <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px", lineHeight: 1.45 }}>
               {session.notes_text}
             </div>
           )}
         </div>
-        <div style={{ fontSize: "16px", color: "#64748B" }}>{expanded ? "▴" : "▾"}</div>
+        <div style={{ color: "#64748B", flexShrink: 0 }}>
+          {expanded ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
+        </div>
       </button>
 
       {expanded && (
         <div style={{ padding: "0 16px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
           {session.setup_spatial && (
             <div style={{
-              fontSize: "11px", color: "#94A3B8", lineHeight: 1.4,
+              fontSize: "12px", color: "#94A3B8", lineHeight: 1.5,
               padding: "8px 10px", margin: "10px 0",
-              background: "#0B0F1A", borderRadius: "8px",
+              background: "#0F172A", borderRadius: "8px",
             }}>
-              📐 Setup: {session.setup_spatial}
+              <span style={{ fontWeight: 700, color: "#CBD5E1" }}>Setup:</span> {session.setup_spatial}
             </div>
           )}
 
@@ -387,14 +381,14 @@ function SessionCard({ session }: { session: MacroProgramSession }) {
                 const load = ex.rpe_target ? `RPE ${ex.rpe_target}` : "";
                 return (
                   <li key={i} style={{
-                    background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.06)",
+                    background: "#1A1A2E",
                     borderRadius: "8px", padding: "10px 12px",
                   }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "baseline", flexWrap: "wrap" }}>
                       <div style={{ fontSize: "13px", fontWeight: 700, color: "#E2E8F0" }}>
                         {i + 1}. {name}
                       </div>
-                      <div style={{ fontSize: "11px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>
+                      <div style={{ fontSize: "12px", color: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" }}>
                         {ex.sets} × {repsStr}{load ? ` @ ${load}` : ""}
                       </div>
                     </div>
@@ -421,7 +415,7 @@ function SessionCard({ session }: { session: MacroProgramSession }) {
                 const repBit = iv.reps ? `${iv.reps}× ${measure}` : measure;
                 return (
                   <li key={i} style={{
-                    background: "#1A1A2E", border: "1px solid rgba(255,255,255,0.06)",
+                    background: "#1A1A2E",
                     borderRadius: "8px", padding: "8px 12px",
                     display: "flex", justifyContent: "space-between", gap: "8px",
                   }}>
