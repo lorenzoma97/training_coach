@@ -488,13 +488,16 @@ export default function DiaryApp() {
           continue;
         }
         if (k === "subtype" && wt) {
-          const tipoField = wt.fields.find((f: any) => f.key === "tipo" && "options" in f);
-          if (tipoField && typeof v === "string") {
-            const opts = (tipoField as any).options as string[];
+          // Fix C1-bis (Fase 1): il select del sottotipo si chiama "tipo" per
+          // corsa/forza/mobilita ma "sport" per il tipo sport — prima il
+          // subtype delle sessioni sport veniva scartato in silenzio.
+          const subField = wt.fields.find((f: any) => (f.key === "tipo" || f.key === "sport") && "options" in f);
+          if (subField && typeof v === "string") {
+            const opts = (subField as any).options as string[];
             const match = opts.find(o => o.toLowerCase() === v.toLowerCase())
               || opts.find(o => o.toLowerCase().includes(v.toLowerCase()))
               || opts.find(o => v.toLowerCase().includes(o.toLowerCase()));
-            if (match) mapped.tipo = match;
+            if (match) mapped[(subField as any).key] = match;
           }
         } else {
           mapped[k] = v;

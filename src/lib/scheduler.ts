@@ -1,7 +1,7 @@
 import { getJSON, setJSON, storage } from "./storage";
 import { generateWeeklyReport } from "./coach/weeklyReport";
 import { regenerateNextWeek } from "./coach/planGenerator";
-import { savePlanWithHistory } from "./coach/planHistory";
+import { savePlanWithHistory, saveNextPlan } from "./coach/planHistory";
 import { generateText } from "./llm";
 import { PROMPTS } from "./coach/systemPrompts";
 import { profileAsPrompt, goalsAsPrompt, getLastNDays } from "./diaryContext";
@@ -102,13 +102,16 @@ async function _runWeekly(force: boolean): Promise<CoachFeedItem | null> {
   await setJSON(WEEKLY_LOCK_KEY, { ts: Date.now(), tabId } satisfies WeeklyLock);
 
   try {
-    // Marca subito la data per evitare duplicati se più tab aperte
-    await setJSON(LAST_REPORT_KEY, todayStr);
-
     const profile = await getJSON<UserProfile | null>("user-profile", null);
     if (!profile) return null;
 
     const report = await generateWeeklyReport();
+    // Fix A3 (Fase 1): la data è marcata DOPO il successo della generazione.
+    // Prima era scritta in anticipo "per evitare duplicati", ma i duplicati
+    // sono già coperti dal lock in-memory + soft-mutex cross-tab (TTL 60s);
+    // il costo reale era che un errore LLM il lunedì consumava il giorno:
+    // niente report né piano fino al retry retroattivo (>=7 giorni).
+    await setJSON(LAST_REPORT_KEY, todayStr);
     const item: CoachFeedItem = {
       id: Date.now().toString(36),
       date: today.toISOString(),
@@ -147,23 +150,59 @@ async function _runWeekly(force: boolean): Promise<CoachFeedItem | null> {
         adjustmentsHints: report.adjustments,
       };
       const nextPlan = await regenerateNextWeek(profile, goals, currentPlan, ctx.recentDaysText, "next-week", undefined, previousReport);
-      // Archivia il piano precedente nello storico prima di sovrascrivere.
-      await savePlanWithHistory(nextPlan);
+      // Fix C2 (Fase 1): stesso routing dello slot del path manuale
+      // (TrainingPlanView.handleRegenerate). Prima la regen "next-week" — che
+      // in mode next-week ha startDate = lunedì PROSSIMO anche quando gira di
+      // lunedì — finiva SEMPRE nello slot corrente: ogni lunedì il piano
+      // appena iniziato veniva archiviato e sostituito da quello della
+      // settimana dopo (nessuna riga OGGI per tutta la settimana).
+      const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
+      const newPlanStart = nextPlan.startDate ? new Date(`${nextPlan.startDate}T00:00:00`) : todayMid;
+      const currentStillActive = !!currentPlan && !!currentPlan.validUntil && new Date(currentPlan.validUntil) > todayMid;
+      const currentIsStale = (() => {
+        if (!currentPlan?.startDate) return false;
+        const planStart = new Date(`${currentPlan.startDate}T00:00:00`);
+        return Math.floor((todayMid.getTime() - planStart.getTime()) / 86400000) > 7;
+      })();
+      const saveAsPreview = currentStillActive && newPlanStart > todayMid && !currentIsStale;
+      if (saveAsPreview) {
+        // Piano corrente ancora attivo: la nuova settimana va in anteprima.
+        // maybePromoteNextPlan la attiverà al lunedì (App mount / load Piano).
+        await saveNextPlan(nextPlan);
+      } else {
+        await savePlanWithHistory(nextPlan);
+      }
       events.emit("plan:updated", { at: new Date().toISOString() });
 
       const planUpdate: CoachFeedItem = {
         id: Date.now().toString(36) + "p",
         date: new Date().toISOString(),
         type: "plan-update",
-        title: "Piano aggiornato",
+        title: saveAsPreview ? "Prossima settimana in anteprima" : "Piano aggiornato",
         severity: "info",
-        content: nextPlan.rationale,
+        content: saveAsPreview
+          ? `La settimana corrente resta attiva; la prossima è pronta e si attiverà lunedì.\n\n${nextPlan.rationale}`
+          : nextPlan.rationale,
       };
       const f2 = await getJSON<CoachFeedItem[]>("coach-feed", []);
       f2.unshift(planUpdate);
       await setJSON("coach-feed", f2.slice(0, 200));
     } catch (e) {
       console.error("[scheduler] plan regen failed", e);
+      // Fix A3-bis (Fase 1): prima il fallimento era solo un console.error e
+      // l'utente restava col piano vecchio senza saperlo. Ora lo dice il feed.
+      try {
+        const ferr = await getJSON<CoachFeedItem[]>("coach-feed", []);
+        ferr.unshift({
+          id: Date.now().toString(36) + "e",
+          date: new Date().toISOString(),
+          type: "alert",
+          title: "Aggiornamento piano non riuscito",
+          severity: "warn",
+          content: "Il report settimanale è pronto, ma la rigenerazione del piano è fallita (problema temporaneo del modello o di rete). Il piano attuale resta attivo: puoi riprovare con \"Aggiorna piano\" dal tab Piano.",
+        });
+        await setJSON("coach-feed", ferr.slice(0, 200));
+      } catch { /* best-effort */ }
     }
 
     return item;

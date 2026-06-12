@@ -17,8 +17,9 @@ import {
   computeMacroProgress,
   type MacroProgressInfo,
 } from "../../lib/macroprogram/storage";
-import { refreshCustomCache } from "../../lib/macroprogram/customCatalog";
+import { refreshCustomCache, loadCustomExercises, deleteCustomExercise } from "../../lib/macroprogram/customCatalog";
 import type { MacroProgram, MacroProgramParseResult } from "../../lib/types/macroprogram";
+import { events } from "../../lib/events";
 import ProgramView from "./ProgramView";
 
 const cardStyle: React.CSSProperties = {
@@ -51,6 +52,10 @@ export default function MacroProgramUploadSection() {
   const [activeProgram, setActiveProgram] = useState<MacroProgram | null>(null);
   const [progress, setProgress] = useState<MacroProgressInfo | null>(null);
   const [pendingResult, setPendingResult] = useState<MacroProgramParseResult | null>(null);
+  // Fix C4 (Fase 1): id degli esercizi custom CREATI da questo parse (il parse
+  // li scrive nel catalog prima della conferma, per il preview). Se l'utente
+  // scarta, vanno rimossi — prima restavano come esercizi fantasma permanenti.
+  const [createdCustomIds, setCreatedCustomIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -75,7 +80,14 @@ export default function MacroProgramUploadSection() {
     setBusy(true);
     try {
       const text = await file.text();
+      // Snapshot del catalog custom PRIMA del parse: ci dice quali orphan
+      // sono stati creati da QUESTO import (e vanno rimossi su "Scarta")
+      // senza toccare esercizi pre-esistenti di programmi già attivi.
+      const preIds = new Set((await loadCustomExercises()).map(ex => ex.id));
       const result = await parseAndResolveMacroProgram(text);
+      setCreatedCustomIds(
+        result.orphanExercises.map(o => o.exerciseId).filter(id => !preIds.has(id)),
+      );
       setPendingResult(result);
     } catch (err) {
       if (err instanceof MacroProgramParseError) {
@@ -99,12 +111,26 @@ export default function MacroProgramUploadSection() {
       setActiveProgram(pendingResult.program);
       setProgress(computeMacroProgress(pendingResult.program));
       setPendingResult(null);
+      setCreatedCustomIds([]); // committati col programma
+      // Fix C4 (Fase 1): notifica il resto dell'app. Senza questo emit,
+      // PlanTab e TrainingPlanView restavano stali fino al prossimo cambio
+      // tab (la chiave user-macroprogram non è coperta né dal polling né dal
+      // re-emit dello storage event). TrainingPlanView su plan:updated rifà
+      // load() → auto-proiezione della settimana del nuovo programma.
+      events.emit("plan:updated", { at: new Date().toISOString() });
     } finally {
       setBusy(false);
     }
   }
 
   async function handleDiscard() {
+    // Fix C4 (Fase 1): rollback degli esercizi custom creati dal parse
+    // scartato — prima restavano per sempre nel catalog personale.
+    for (const id of createdCustomIds) {
+      await deleteCustomExercise(id);
+    }
+    if (createdCustomIds.length > 0) await refreshCustomCache();
+    setCreatedCustomIds([]);
     setPendingResult(null);
   }
 
@@ -115,6 +141,8 @@ export default function MacroProgramUploadSection() {
       await clearActiveMacroProgram();
       setActiveProgram(null);
       setProgress(null);
+      // Fix C4 (Fase 1): stessa motivazione dell'emit in handleConfirm.
+      events.emit("plan:updated", { at: new Date().toISOString() });
     } finally {
       setBusy(false);
     }

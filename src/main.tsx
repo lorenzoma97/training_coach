@@ -3,7 +3,16 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { registerSW } from "virtual:pwa-register";
+import { refreshCustomCache } from "./lib/macroprogram/customCatalog";
 import "./styles.css";
+
+// Fix C4 (Fase 1): carica la cache in-memory degli esercizi custom al boot.
+// Prima veniva popolata SOLO al mount della sezione upload o dopo un import:
+// a freddo lookupExerciseHybrid non risolveva gli id custom → la UI mostrava
+// l'id grezzo al posto del nome e macroAdapter validava i diff a vuoto.
+void refreshCustomCache().catch(e =>
+  console.warn("[main] refreshCustomCache al boot fallita:", e),
+);
 
 // Service Worker registration + update notification.
 // vite-plugin-pwa emette `virtual:pwa-register` con callback:

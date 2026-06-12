@@ -404,9 +404,12 @@ function SessionDetailCard({
     // include le ExercisePerformance reali (sets compilati) invece di sets vuoti.
     // L'utente vede il form pre-popolato con i valori reali e conferma il save.
     const totalSets = performances.reduce((a, p) => a + p.sets.length, 0);
+    // corsa usa durata_totale, gli altri tipi (forza_*, sport, mobilita) durata
+    // — stessi field key del form diario (allineato a registerFromPlan).
+    const durationField = session.type === "corsa" ? "durata_totale" : "durata";
     const prefill: Record<string, unknown> = {
       subtype: session.subtype,
-      durata_totale: session.duration_min,
+      [durationField]: session.duration_min,
       exercises: performances,
     };
     const payload = {
@@ -414,6 +417,11 @@ function SessionDetailCard({
       prefill,
       notes: `Allenamento guidato completato (${totalSets} set).`,
     };
+    // Fix C1 (Fase 1): persisti il payload PRIMA dell'emit. DiaryApp è montato
+    // solo sul tab "diary": l'evento emesso da qui (tab "today") non ha listener
+    // e le ExercisePerformance reali andrebbero perse. DiaryApp consuma
+    // pending-diary-openAdd al mount (stesso pattern di registerFromPlan).
+    void setJSON("pending-diary-openAdd", payload);
     // Celebrazione breve (l'unico momento "caldo" del design), poi al diario.
     setCelebration(totalSets);
     setTimeout(() => {
@@ -429,9 +437,10 @@ function SessionDetailCard({
     // - type/subtype + durata → identificano il tipo workout
     // - exercises[]: per forza, mappato a ExercisePerformance[] con sets vuoti
     //   (l'utente compila reps/peso effettivi)
+    const durationField = session.type === "corsa" ? "durata_totale" : "durata";
     const prefill: Record<string, unknown> = {
       subtype: session.subtype,
-      durata_totale: session.duration_min,
+      [durationField]: session.duration_min,
     };
     if (session.exercises && session.exercises.length > 0) {
       prefill.exercises = session.exercises.map(ex => ({
@@ -439,11 +448,14 @@ function SessionDetailCard({
         sets: Array.from({ length: ex.plannedSets }, () => ({ reps: 0 })),
       }));
     }
-    events.emit("diary:openAdd", {
+    const payload = {
       type: session.type,
       prefill,
       notes: `Sessione pianificata: ${session.subtype ?? session.type}, ${session.duration_min}min.`,
-    });
+    };
+    // Fix C1 (Fase 1): pending prima dell'emit — DiaryApp non è montato qui.
+    void setJSON("pending-diary-openAdd", payload);
+    events.emit("diary:openAdd", payload);
     events.emit("nav:goto", { tab: "diary" });
   }
 
@@ -528,7 +540,7 @@ function SessionDetailCard({
           {/* Sprint E: caption che chiarisce il flusso delle azioni sotto. */}
           <div style={{ fontSize: "11px", color: "#64748B", marginTop: "12px", lineHeight: 1.4 }}>
             {isStrength && session.exercises && session.exercises.length > 0
-              ? "Rivedi la scaletta, poi avvia l'allenamento guidato (salva da solo nel diario a fine sessione). Oppure copia in diario per registrare a mano."
+              ? "Rivedi la scaletta, poi avvia l'allenamento guidato (a fine sessione apre il diario precompilato coi valori reali). Oppure copia in diario per registrare a mano."
               : "Copia in diario per registrare la sessione, oppure rigenera il dettaglio."}
           </div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
@@ -675,11 +687,15 @@ function ResumeSessionBanner({
     onResumed();
     // Se la sessione è stata salvata, redirect al diario
     if (performances.length > 0) {
-      events.emit("diary:openAdd", {
+      const durationField = snapshot.sessionType === "corsa" ? "durata_totale" : "durata";
+      const payload = {
         type: snapshot.sessionType,
-        prefill: { exercises: performances, durata_totale: 60 },
+        prefill: { exercises: performances, [durationField]: 60 },
         notes: `Allenamento ripreso e completato (${performances.reduce((a, p) => a + p.sets.length, 0)} set).`,
-      });
+      };
+      // Fix C1 (Fase 1): pending prima dell'emit — DiaryApp non è montato qui.
+      void setJSON("pending-diary-openAdd", payload);
+      events.emit("diary:openAdd", payload);
       events.emit("nav:goto", { tab: "diary" });
     }
   }

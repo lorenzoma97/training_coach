@@ -97,10 +97,18 @@ export function computeMacroProgress(program: MacroProgram): MacroProgressInfo |
   // sfasate "sab-ven".
   const monday = mondayOf(program.metadata.start_date);
   if (!monday) return null;
-  const startTs = Date.parse(monday);
-  if (!Number.isFinite(startTs)) return null;
+  // Fix A1 (Fase 1): parse del lunedì a mezzanotte LOCALE, come mondayOf e
+  // come il rendering. Prima era `Date.parse(monday)` (mezzanotte UTC)
+  // confrontato con mezzanotte locale: in Europe/Rome (UTC+1/+2) il delta di
+  // -1/-2h faceva scattare la settimana il MARTEDÌ, e il primo lunedì del
+  // programma risultava "non iniziato" per l'intero giorno.
+  // Math.round (non floor): il diff locale-locale attraverso un cambio DST
+  // vale N giorni ±1h — round lo riporta al giorno intero corretto.
+  const [my, mm, md] = monday.split("-").map(Number);
+  const startLocal = new Date(my, mm - 1, md);
+  if (Number.isNaN(startLocal.getTime())) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const days = Math.floor((today.getTime() - startTs) / (24 * 3600 * 1000));
+  const days = Math.round((today.getTime() - startLocal.getTime()) / (24 * 3600 * 1000));
   if (days < 0) {
     return { currentWeek: 0, currentPhase: null, daysFromStart: days };
   }

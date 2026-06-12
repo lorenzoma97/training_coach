@@ -342,10 +342,14 @@ export default function GuidedPlayer({ session, userEquipment, resumeFromSnapsho
   function finishSession() {
     playCompletionBeep();
     setStage("done");
-    void clearGuidedSessionSnapshot();
     // Filter perf con almeno 1 set eseguito (utente potrebbe aver skippato qualche esercizio)
     const validPerformances = completed.filter(p => p.sets.length > 0);
+    // Fix C1 (Fase 1): consegna le performance PRIMA di cancellare lo snapshot.
+    // onComplete (handlePlayerComplete) persiste il payload in
+    // pending-diary-openAdd in modo sincrono; cancellare prima significava
+    // perdere set/reps/pesi se il diario non era montato.
     onComplete(validPerformances);
+    void clearGuidedSessionSnapshot();
   }
 
   function handleExitConfirm(action: "discard" | "save" | "pause") {
