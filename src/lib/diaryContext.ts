@@ -1,4 +1,5 @@
 import { getJSON } from "./storage";
+import { toISO } from "./time";
 import type { UserProfile, UserGoal, TrainingPlan, ExercisePerformance } from "./types";
 import { stripInlineHRRange } from "./coach/zones";
 import { sanitizePII, sanitizePIIList } from "./promptSanitizer";
@@ -770,7 +771,7 @@ export function computeGoalProgress(
   const weekEndTimes = weekStartTimes.map(s => s + 7 * 86400000);
 
   const sparklinePoints: Array<{ date: string; value: number | null }> = weekStartTimes.map(ws => ({
-    date: new Date(ws).toISOString().slice(0, 10),
+    date: toISO(new Date(ws)), // giorno LOCALE (era UTC slice → label sfasata)
     value: null,
   }));
 

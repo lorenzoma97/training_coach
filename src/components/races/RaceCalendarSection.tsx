@@ -20,6 +20,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { getJSON, setJSON, storage } from "../../lib/storage";
+import { toISO } from "../../lib/time";
 import { events } from "../../lib/events";
 import {
   recomputeActiveMacro,
@@ -65,11 +66,11 @@ const PRIORITY_LABELS: Record<RaceEvent["priority"], { label: string; hint: stri
 function minRaceDate(): string {
   const d = new Date();
   d.setDate(d.getDate() + 7);
-  return d.toISOString().slice(0, 10);
+  return toISO(d); // locale (era UTC slice)
 }
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toISO(new Date()); // locale (era UTC slice)
 }
 
 /** Parse "1:45:00" / "45:00" → secondi, undefined se non parsable. */

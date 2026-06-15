@@ -28,6 +28,7 @@
 //   └──────────────────────────────────────────┘
 
 import { useId, useRef, useEffect, useState, useMemo } from "react";
+import { toISO } from "../../lib/time";
 import type { RaceEvent } from "../../lib/types/periodization";
 
 const SPORT_LABELS: Record<RaceEvent["sport"], string> = {
@@ -49,7 +50,7 @@ const PRIORITY_LABELS: Record<RaceEvent["priority"], { label: string; hint: stri
 function minRaceDate(): string {
   const d = new Date();
   d.setDate(d.getDate() + 7);
-  return d.toISOString().slice(0, 10);
+  return toISO(d); // locale (era UTC slice)
 }
 
 // Parse "1:45:00" / "45:00" / "01:45:00" → secondi, undefined se non parsable.
