@@ -22,6 +22,7 @@
 
 import JSZip from "jszip";
 import { decodeSamsungBytes, parseCsvText, normalizeSamsungDatetime } from "./samsungHealth";
+import { toISO } from "../time";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ZIP single-load helper (Reviewer 3.4)
@@ -223,7 +224,7 @@ export function parseHrvCsv(text: string): SamsungHrvSample[] {
 export function aggregateHrvByDay(samples: SamsungHrvSample[]): DailyHrvAggregate[] {
   const buckets = new Map<string, number[]>();
   for (const s of samples) {
-    const date = new Date(s.startTimestamp).toISOString().slice(0, 10);
+    const date = toISO(new Date(s.startTimestamp)); // giorno LOCALE (era UTC)
     const arr = buckets.get(date) ?? [];
     arr.push(s.rmssd_ms);
     buckets.set(date, arr);
@@ -379,7 +380,7 @@ export function parseSleepCsv(text: string): SamsungSleepSample[] {
 export function aggregateSleepByDay(samples: SamsungSleepSample[]): DailySleepAggregate[] {
   const buckets = new Map<string, { dur: number; effSum: number; effWeight: number }>();
   for (const s of samples) {
-    const date = new Date(s.endTimestamp).toISOString().slice(0, 10);
+    const date = toISO(new Date(s.endTimestamp)); // giorno LOCALE (era UTC)
     const cur = buckets.get(date) ?? { dur: 0, effSum: 0, effWeight: 0 };
     cur.dur += s.durationMinutes;
     if (s.efficiency !== undefined) {
