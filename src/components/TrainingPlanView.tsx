@@ -4,6 +4,7 @@ import type { TrainingPlan, UserProfile, UserGoal } from "../lib/types";
 import { events } from "../lib/events";
 import { setJSON } from "../lib/storage";
 import { planStateHash } from "../lib/coach/planValidator";
+import { computeCompletion } from "../lib/coach/completion";
 import { buildCoachContext, getLastNDays } from "../lib/diaryContext";
 import { regenerateNextWeek, generateInitialPlan, adaptPlan } from "../lib/coach/planGenerator";
 import { tryProjectMacroPlan, adaptMacroWeek } from "../lib/coach/macroWeekPlan";
@@ -415,164 +416,15 @@ export default function TrainingPlanView() {
   // Per ogni sessione pianificata, cerca un workout del MEDESIMO TIPO nella settimana
   // del piano (non solo nel giorno esatto). Tiene anche traccia dei workout EXTRA
   // (fatti ma non pianificati) e delle sessioni SALTATE (pianificate ma non fatte).
-  const matchResult = useMemo(() => {
-    const sessionKey = (week: number, day: string, date: number) => `${week}-${day}-${date}`;
-    const isoLocal = (d: Date) => {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      return `${y}-${m}-${dd}`;
-    };
-    if (!plan || !plan.startDate || !recentDays.length) {
-      return {
-        completed: new Map<string, { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string; actualType?: string }>(),
-        extras: [] as Array<{ date: string; workout: any }>,
-        skipped: new Set<string>(),
-      };
-    }
-    // Family matching: forza_gambe e forza_upper sono interscambiabili per
-    // pianificazione. Se pianifico upper ma faccio gambe lo stesso giorno,
-    // conta come VARIAZIONE (non SALTATA + AUTONOMO duplicati).
-    // cardio (corsa/sport) resta distinto — un utente che pianifica corsa
-    // e fa tennis ha davvero saltato la corsa.
-    const typeFamily = (type: string): string => {
-      if (type === "forza_gambe" || type === "forza_upper") return "forza";
-      return type;
-    };
-    const DAY_KEYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
-    const [sy, sm, sd] = plan.startDate.split("-").map(Number);
-    const start = new Date(sy, sm - 1, sd);
-
-    // Oggi (fine giornata) — non matchare sessioni PIANIFICATE nel FUTURO:
-    // l'utente potrebbe ancora farle. Es. mer Fondo Lento non deve essere
-    // associato al sab Fondo Lento ancora in programma.
-    // Inoltre: non contare come "saltata" una sessione di OGGI (giornata in
-    // corso, l'utente può ancora allenarsi).
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    // Set di ID workout già matchati a una sessione del piano (evita doppi match)
-    const usedWorkoutIds = new Set<string>();
-    const completed = new Map<string, { date: string; sameDay: boolean; strictMatch: boolean; actualSubtype?: string; actualType?: string }>();
-    const skipped = new Set<string>();
-
-    for (let w = 0; w < plan.weeks.length; w++) {
-      const week = plan.weeks[w];
-      // Calcola intervallo date della settimana del piano
-      const weekStart = new Date(start);
-      weekStart.setDate(start.getDate() + w * 7);
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 6);
-      const weekStartKey = isoLocal(weekStart);
-      const weekEndKey = isoLocal(weekEnd);
-
-      // Workout di questa settimana nel diario
-      const weekDays = recentDays.filter((rd: { date: string }) => rd.date >= weekStartKey && rd.date <= weekEndKey);
-
-      for (const s of week.sessions) {
-        const dayIdx = DAY_KEYS.indexOf(s.day);
-        if (dayIdx < 0) continue;
-        const plannedDate = new Date(start);
-        plannedDate.setDate(start.getDate() + w * 7 + dayIdx);
-        const plannedKey = isoLocal(plannedDate);
-        const key = sessionKey(week.weekNumber, s.day, plannedDate.getTime());
-
-        // Sessione nel FUTURO: non matchare (l'utente potrebbe ancora farla)
-        // e non contarla come saltata. Stato = "futura" (non marcato né fatta
-        // né saltata, il render mostra OGGI/futuro normalmente).
-        if (plannedDate > todayEnd) continue;
-
-        // Cerca workout dello stesso GIORNO + tipo (+ subtipo se specificato).
-        // Match stretto = stesso giorno + stesso tipo + stesso subtype.
-        // Match parziale = stesso giorno + stesso tipo ma subtype diverso.
-        // NO fallback cross-day: se il mar fondo non è stato fatto e mer ne ho
-        // fatto uno, il piano segna mar come SALTATA e il mer come AUTONOMO.
-        // L'utente può poi cliccare "Adatta alle deviazioni" per riallineare.
-        const plannedSub = (s.subtype || "").toLowerCase().trim();
-        const matchWorkoutSub = (w: any) => {
-          const sub = (w.fields?.tipo || w.fields?.sport || "").toLowerCase().trim();
-          return sub;
-        };
-        const plannedDayEntry = weekDays.find((d: any) => d.date === plannedKey);
-        let match: { dateKey: string; workout: any; strictMatch: boolean } | null = null;
-        if (plannedDayEntry) {
-          // 1° tentativo stesso-giorno: tipo + subtipo identici
-          if (plannedSub) {
-            for (const w of (plannedDayEntry.workouts || [])) {
-              if (usedWorkoutIds.has(w.id)) continue;
-              if (w.type === s.type && matchWorkoutSub(w) === plannedSub) {
-                match = { dateKey: plannedDayEntry.date, workout: w, strictMatch: true };
-                break;
-              }
-            }
-          }
-          // 2° tentativo stesso-giorno: solo tipo (subtype diverso)
-          if (!match) {
-            for (const w of (plannedDayEntry.workouts || [])) {
-              if (usedWorkoutIds.has(w.id)) continue;
-              if (w.type === s.type) {
-                match = { dateKey: plannedDayEntry.date, workout: w, strictMatch: !plannedSub };
-                break;
-              }
-            }
-          }
-          // 3° tentativo stesso-giorno: stessa family (forza_gambe ↔ forza_upper).
-          // Se il piano dice forza upper ma l'utente ha fatto forza gambe, è
-          // comunque una sessione di forza sullo stesso giorno — conta come
-          // VARIAZIONE (not SALTATA + AUTONOMO duplicati).
-          if (!match) {
-            const plannedFamily = typeFamily(s.type);
-            for (const w of (plannedDayEntry.workouts || [])) {
-              if (usedWorkoutIds.has(w.id)) continue;
-              if (typeFamily(w.type) === plannedFamily && w.type !== s.type) {
-                match = { dateKey: plannedDayEntry.date, workout: w, strictMatch: false };
-                break;
-              }
-            }
-          }
-        }
-
-        if (match) {
-          usedWorkoutIds.add(match.workout.id);
-          completed.set(key, {
-            date: match.dateKey,
-            sameDay: match.dateKey === plannedKey,
-            strictMatch: match.strictMatch,
-            actualSubtype: match.workout.fields?.tipo || match.workout.fields?.sport || undefined,
-            // Se il tipo registrato differisce da quello pianificato (family match
-            // forza_gambe↔forza_upper), il render lo mostra per trasparenza.
-            actualType: match.workout.type !== s.type ? match.workout.type : undefined,
-          });
-        } else if (plannedDate < todayStart) {
-          // SALTATA solo se nel passato (giorni precedenti). Oggi senza match
-          // resta "OGGI" nel render (l'utente può ancora allenarsi).
-          skipped.add(key);
-        }
-      }
-    }
-
-    // Workout EXTRA: tutti quelli non matchati con nessuna sessione del piano
-    const extras: Array<{ date: string; workout: any }> = [];
-    for (const rd of recentDays as Array<{ date: string; workouts: any[] }>) {
-      for (const w of (rd.workouts || [])) {
-        if (!usedWorkoutIds.has(w.id)) extras.push({ date: rd.date, workout: w });
-      }
-    }
-    // Limita extras a quelli nelle settimane del piano
-    const planStartKey = isoLocal(start);
-    const planEnd = new Date(start);
-    planEnd.setDate(start.getDate() + plan.weeks.length * 7 - 1);
-    const planEndKey = isoLocal(planEnd);
-    const extrasInPlanWindow = extras.filter(e => e.date >= planStartKey && e.date <= planEndKey);
-
-    return { completed, extras: extrasInPlanWindow, skipped };
-    // currentGoals incluso nelle deps: anche se il body del memo non ne legge
-    // direttamente, un cambio di goals (reorder, priority) può invalidare il
-    // matching logico visto a livello utente (es. priorità modifica quali
-    // sessioni vengono considerate "rilevanti" nelle viste derivate).
-  }, [plan, recentDays, currentGoals]);
+  // Estratto in lib/coach/completion.ts (Fase 2, finding C3): fonte UNICA del
+  // matching piano↔diario, testabile in isolamento. Comportamento invariato.
+  // currentGoals resta nelle deps: anche se computeCompletion non lo legge, un
+  // cambio goals (reorder/priority) può invalidare le viste derivate.
+  const matchResult = useMemo(
+    () => computeCompletion(plan, recentDays),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [plan, recentDays, currentGoals],
+  );
 
   const completedSessions = matchResult.completed;
   const extraWorkouts = matchResult.extras;
