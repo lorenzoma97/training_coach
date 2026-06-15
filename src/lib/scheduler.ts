@@ -170,7 +170,17 @@ async function _runWeekly(force: boolean): Promise<CoachFeedItem | null> {
         // maybePromoteNextPlan la attiverà al lunedì (App mount / load Piano).
         await saveNextPlan(nextPlan);
       } else {
-        await savePlanWithHistory(nextPlan);
+        // Slot corrente: o non c'è un piano valido per questa settimana, o è
+        // stale/scaduto. La regen "next-week" ha startDate = lunedì PROSSIMO:
+        // metterla così nello slot corrente lascerebbe todayPlanWeekNumber=0
+        // per tutta la settimana (il bug C2, nel caso stale/bootstrap). Ri-
+        // ancoriamo startDate al lunedì CORRENTE — il piano è di fatto quello
+        // di questa settimana. validUntil (now+14gg) la copre comunque.
+        const dow = todayMid.getDay();
+        const monday = new Date(todayMid);
+        monday.setDate(todayMid.getDate() - ((dow + 6) % 7));
+        const currentMonday = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
+        await savePlanWithHistory({ ...nextPlan, startDate: currentMonday });
       }
       events.emit("plan:updated", { at: new Date().toISOString() });
 

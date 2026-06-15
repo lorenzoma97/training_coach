@@ -52,6 +52,12 @@ function localDate(offsetDays: number): string {
   d.setDate(d.getDate() + offsetDays);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+/** Lunedì (locale) della settimana corrente — usato per il realign C2 slot-corrente. */
+function currentMonday(): string {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function minimalProfile(): UserProfile {
   return {
@@ -145,12 +151,17 @@ describe("maybeRunWeeklyReport — orchestrazione (caratterizzazione)", () => {
     expect(readJSON<TrainingPlan[]>("plan-history")).toBeNull();
   });
 
-  it("FIX C2: senza piano corrente, la regen va nello slot corrente", async () => {
+  it("FIX C2: senza piano corrente, la regen va nello slot corrente con startDate = lunedì corrente", async () => {
     seed("user-profile", minimalProfile());
 
     await maybeRunWeeklyReport();
 
-    expect(readJSON<TrainingPlan>("training-plan")?.rationale).toBe("piano settimana prossima");
+    const plan = readJSON<TrainingPlan>("training-plan")!;
+    expect(plan.rationale).toBe("piano settimana prossima");
+    // Realign C2: lo slot corrente non contiene mai un piano datato alla
+    // settimana prossima (il mock genera startDate +7, lo scheduler lo riancora
+    // a questo lunedì → todayPlanWeekNumber=1, riga OGGI presente).
+    expect(plan.startDate).toBe(currentMonday());
     expect(readJSON<TrainingPlan>("training-plan-next")).toBeNull();
   });
 
@@ -165,7 +176,9 @@ describe("maybeRunWeeklyReport — orchestrazione (caratterizzazione)", () => {
 
     await maybeRunWeeklyReport();
 
-    expect(readJSON<TrainingPlan>("training-plan")?.rationale).toBe("piano settimana prossima");
+    const plan = readJSON<TrainingPlan>("training-plan")!;
+    expect(plan.rationale).toBe("piano settimana prossima");
+    expect(plan.startDate).toBe(currentMonday()); // realign C2 anche per piano stale
     expect(readJSON<TrainingPlan>("training-plan-next")).toBeNull();
   });
 
