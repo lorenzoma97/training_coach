@@ -16,6 +16,7 @@
 
 import { useEffect, useState } from "react";
 import { events } from "../../lib/events";
+import { todayISO } from "../../lib/time";
 import {
   getCurrentReadiness,
   READINESS_HISTORY_KEY,
@@ -29,9 +30,11 @@ function truncate(s: string, max: number): string {
   return s.slice(0, max - 1).trimEnd() + "…";
 }
 
-/** YYYY-MM-DD locale-agnostic (UTC slice). Usato per match snapshot.date. */
+/** YYYY-MM-DD LOCALE. Deve combaciare con la data degli snapshot readiness
+ *  (ora locale dopo il fix UTC in readinessScoring): con UTC, nella finestra
+ *  mezzanotte–02:00 Europe/Rome il banner non trovava lo snapshot di oggi. */
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayISO();
 }
 
 export interface ReadinessBannerProps {

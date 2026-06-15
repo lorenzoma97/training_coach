@@ -18,6 +18,7 @@
 
 import { events } from "../events";
 import { getJSON, setJSON } from "../storage";
+import { todayISO } from "../time";
 import type { DailyCheck } from "../diaryContext";
 import { getLastNDays } from "../diaryContext";
 import type { ReadinessSnapshot } from "../types/readiness";
@@ -90,7 +91,11 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Fix UTC-bug (Fase 2): prima `new Date().toISOString().slice(0,10)` dava il
+  // giorno UTC → tra mezzanotte e le 02:00 (Europe/Rome) lo snapshot readiness
+  // veniva datato "ieri", mentre readinessValidator/diario usano la data LOCALE
+  // → snapshot appena creato giudicato non-fresco. Ora data locale via time.ts.
+  return todayISO();
 }
 
 /** Mediana di un array di numeri. Ritorna undefined se l'array è vuoto. */
