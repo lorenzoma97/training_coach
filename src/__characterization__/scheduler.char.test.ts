@@ -3,16 +3,12 @@
 // LLM mockato (generateWeeklyReport, regenerateNextWeek): qui si fotografa
 // SOLO l'orchestrazione: trigger, lock, marker data, routing dello slot piano.
 //
-// BUG documentati (audit 2026-06-12):
-//  - C2: lo scheduler salva la regen "next-week" nello slot CORRENTE
-//        `training-plan` (scheduler.ts:151 via savePlanWithHistory), mentre il
-//        path manuale (TrainingPlanView) instrada lo stesso caso su
-//        `training-plan-next`. Di lunedì il piano appena iniziato viene
-//        sostituito da quello della settimana dopo. Il test pinna il
-//        comportamento attuale: col fix di Fase 1 va aggiornato.
-//  - A3: `last-weekly-report-date` è scritto PRIMA della chiamata LLM
-//        (scheduler.ts:106): se l'LLM fallisce, il giorno è consumato e
-//        report+piano saltano fino al retry retroattivo (>=7 giorni).
+// Storia: in Fase 0 questo file pinnava i bug C2 (regen next-week salvata
+// nello slot corrente → ogni lunedì piano sostituito da quello della settimana
+// dopo) e A3 (marker data scritto PRIMA della chiamata LLM → un errore
+// consumava il giorno). Entrambi fixati in Fase 1: ora la regen va in
+// `training-plan-next` quando il piano corrente è attivo (stesso routing del
+// path manuale) e il marker è scritto solo dopo il successo del report.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { TrainingPlan, UserProfile, WeeklyReport } from "../lib/types";
@@ -54,6 +50,12 @@ function readJSON<T>(key: string): T | null {
 function localDate(offsetDays: number): string {
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+/** Lunedì (locale) della settimana corrente — usato per il realign C2 slot-corrente. */
+function currentMonday(): string {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
@@ -133,36 +135,70 @@ describe("maybeRunWeeklyReport — orchestrazione (caratterizzazione)", () => {
     expect(localStorage.getItem("weekly-report-running")).toBeNull();
   });
 
-  it("BUG C2: la regen next-week sostituisce lo slot CORRENTE training-plan (preview slot non usato)", async () => {
+  it("FIX C2: con piano corrente attivo, la regen next-week va in anteprima (training-plan-next)", async () => {
     const current = makePlan({ generatedAt: "2026-01-01T00:00:00.000Z" });
     seed("user-profile", minimalProfile());
     seed("training-plan", current);
 
     await maybeRunWeeklyReport();
 
-    const plan = readJSON<TrainingPlan>("training-plan")!;
-    // Comportamento ATTUALE: piano corrente rimpiazzato dal piano con
-    // startDate = lunedì prossimo; training-plan-next resta vuoto.
-    // Col fix C2 (routing su preview slot) questo test va invertito.
-    expect(plan.rationale).toBe("piano settimana prossima");
-    expect(plan.startDate).toBe(localDate(7));
-    expect(readJSON<TrainingPlan>("training-plan-next")).toBeNull();
-    // Il piano precedente è archiviato in history.
-    const history = readJSON<TrainingPlan[]>("plan-history")!;
-    expect(history[0].generatedAt).toBe(current.generatedAt);
+    // Il piano corrente resta attivo: la nuova settimana è in anteprima e
+    // verrà promossa da maybePromoteNextPlan al lunedì.
+    expect(readJSON<TrainingPlan>("training-plan")?.generatedAt).toBe(current.generatedAt);
+    const next = readJSON<TrainingPlan>("training-plan-next")!;
+    expect(next.rationale).toBe("piano settimana prossima");
+    expect(next.startDate).toBe(localDate(7));
+    expect(readJSON<TrainingPlan[]>("plan-history")).toBeNull();
   });
 
-  it("BUG A3: marker data scritto PRIMA della LLM call — un fallimento consuma il giorno", async () => {
+  it("FIX C2: senza piano corrente, la regen va nello slot corrente con startDate = lunedì corrente", async () => {
+    seed("user-profile", minimalProfile());
+
+    await maybeRunWeeklyReport();
+
+    const plan = readJSON<TrainingPlan>("training-plan")!;
+    expect(plan.rationale).toBe("piano settimana prossima");
+    // Realign C2: lo slot corrente non contiene mai un piano datato alla
+    // settimana prossima (il mock genera startDate +7, lo scheduler lo riancora
+    // a questo lunedì → todayPlanWeekNumber=1, riga OGGI presente).
+    expect(plan.startDate).toBe(currentMonday());
+    expect(readJSON<TrainingPlan>("training-plan-next")).toBeNull();
+  });
+
+  it("FIX C2: con piano corrente STALE (>7gg), la regen sostituisce lo slot corrente", async () => {
+    const stale = makePlan({
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      startDate: localDate(-10),
+      validUntil: new Date(Date.now() + 86400000).toISOString(), // ancora "attivo" ma vecchio
+    });
+    seed("user-profile", minimalProfile());
+    seed("training-plan", stale);
+
+    await maybeRunWeeklyReport();
+
+    const plan = readJSON<TrainingPlan>("training-plan")!;
+    expect(plan.rationale).toBe("piano settimana prossima");
+    expect(plan.startDate).toBe(currentMonday()); // realign C2 anche per piano stale
+    expect(readJSON<TrainingPlan>("training-plan-next")).toBeNull();
+  });
+
+  it("FIX A3: se l'LLM fallisce, il giorno NON è consumato (retry al prossimo mount)", async () => {
     seed("user-profile", minimalProfile());
     mockGenerateWeeklyReport.mockRejectedValue(new Error("503 model overloaded"));
 
     await expect(maybeRunWeeklyReport()).rejects.toThrow("503");
 
-    // Comportamento ATTUALE: il giorno è marcato anche se non è uscito nulla.
-    expect(localStorage.getItem("last-weekly-report-date")).toBe(JSON.stringify(localDate(0)));
+    // Il marker non è scritto: al prossimo mount il report riparte.
+    expect(localStorage.getItem("last-weekly-report-date")).toBeNull();
     expect(readJSON<unknown[]>("coach-feed")).toBeNull();
     // Lock comunque rilasciato (finally).
     expect(localStorage.getItem("weekly-report-running")).toBeNull();
+
+    // Retry: il secondo run (LLM tornato su) completa normalmente.
+    mockGenerateWeeklyReport.mockResolvedValue(fakeReport());
+    const item = await maybeRunWeeklyReport();
+    expect(item?.type).toBe("weekly-report");
+    expect(localStorage.getItem("last-weekly-report-date")).toBe(JSON.stringify(localDate(0)));
   });
 
   it("seconda esecuzione lo stesso giorno: no-op (marker data)", async () => {
@@ -196,7 +232,7 @@ describe("maybeRunWeeklyReport — orchestrazione (caratterizzazione)", () => {
     expect(mockGenerateWeeklyReport).toHaveBeenCalledTimes(1);
   });
 
-  it("errore nella sola regen: report pubblicato, piano vecchio resta, errore swallowed", async () => {
+  it("FIX A3-bis: errore nella sola regen — report pubblicato, piano vecchio resta, ALERT nel feed", async () => {
     const current = makePlan({ generatedAt: "2026-01-01T00:00:00.000Z" });
     seed("user-profile", minimalProfile());
     seed("training-plan", current);
@@ -204,11 +240,11 @@ describe("maybeRunWeeklyReport — orchestrazione (caratterizzazione)", () => {
 
     const item = await maybeRunWeeklyReport();
 
-    // Comportamento ATTUALE (A3-bis): il report esce, la regen fallita è solo
-    // un console.error — il piano resta quello vecchio senza notifica utente.
     expect(item?.type).toBe("weekly-report");
     expect(readJSON<TrainingPlan>("training-plan")?.generatedAt).toBe(current.generatedAt);
+    // Fase 0 pinnava l'errore swallowed (solo console.error); dal fix A3-bis
+    // il fallimento della regen produce un item "alert" visibile nel feed.
     const feed = readJSON<Array<{ type: string }>>("coach-feed")!;
-    expect(feed.map(f => f.type)).toEqual(["weekly-report"]);
+    expect(feed.map(f => f.type)).toEqual(["alert", "weekly-report"]);
   });
 });

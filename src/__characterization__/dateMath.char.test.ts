@@ -3,16 +3,12 @@
 // Fotografa il comportamento ATTUALE di `mondayOf` e `computeMacroProgress`
 // (lib/macroprogram/storage.ts) prima dell'unificazione in time.ts (Fase 2).
 //
-// BUG A1 documentato (audit 2026-06-12): computeMacroProgress confronta
-// `Date.parse(monday)` (mezzanotte UTC) con `today.setHours(0,0,0,0)`
-// (mezzanotte LOCALE) → in TZ Europe/Rome (UTC+1/+2) la settimana del macro
-// avanza il MARTEDÌ: per tutto il lunedì `currentWeek` resta indietro di 1
-// (e vale 0, "non iniziato", l'intero primo lunedì del programma).
-//
-// I test del blocco Rome girano solo con TZ=Europe/Rome (step CI dedicato);
-// pinnano il comportamento corrente GIORNO-PER-GIORNO: di lunedì si aspettano
-// il valore sbagliato. Quando il bug verrà fixato (Fase 2), questi test
-// falliranno di lunedì in CI: aggiornarli togliendo il ramo `isMonday`.
+// Storia: in Fase 0 questo file pinnava il BUG A1 (computeMacroProgress
+// confrontava `Date.parse(monday)` UTC con mezzanotte LOCALE → in Europe/Rome
+// la settimana del macro avanzava il MARTEDÌ e il primo lunedì risultava
+// "non iniziato"). Fixato in Fase 1: parse locale coerente, currentWeek
+// corretto anche di lunedì. Il blocco Rome gira solo con TZ=Europe/Rome
+// (step CI dedicato) e verifica il comportamento corretto in ogni giorno.
 
 import { describe, it, expect } from "vitest";
 import { mondayOf, computeMacroProgress } from "../lib/macroprogram/storage";
@@ -59,28 +55,23 @@ function makeProgram(startDate: string, weeksTotal = 12): MacroProgram {
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 describe.skipIf(tz !== "Europe/Rome")(
-  "computeMacroProgress in Europe/Rome (caratterizzazione BUG A1)",
+  "computeMacroProgress in Europe/Rome (fix A1, Fase 1)",
   () => {
-    const isMonday = new Date().getDay() === 1;
-
-    it("start_date = lunedì della settimana corrente → currentWeek atteso 1 (oggi vale " +
-      `${isMonday ? "0 per il BUG A1" : "1"})`, () => {
+    it("start_date = lunedì della settimana corrente → currentWeek 1, anche di lunedì", () => {
       const monday = mondayOf(localDate(0))!;
       const progress = computeMacroProgress(makeProgram(monday));
       expect(progress).not.toBeNull();
-      // BUG A1: di lunedì days = floor(-2h/24h) = -1 → currentWeek 0 ("non
-      // iniziato") per l'intero primo giorno del programma. Da martedì in poi
-      // il valore è corretto. Col fix: sempre 1.
-      expect(progress!.currentWeek).toBe(isMonday ? 0 : 1);
+      // Fase 0 pinnava il BUG A1: di lunedì usciva 0 ("non iniziato") per il
+      // mix UTC/locale. Dal fix il parse è locale coerente: sempre 1.
+      expect(progress!.currentWeek).toBe(1);
     });
 
-    it("start_date = lunedì di 7 giorni fa → currentWeek atteso 2 (oggi vale " +
-      `${isMonday ? "1 per il BUG A1" : "2"})`, () => {
+    it("start_date = lunedì di 7 giorni fa → currentWeek 2, anche di lunedì", () => {
       const mondayLastWeek = mondayOf(localDate(-7))!;
       const progress = computeMacroProgress(makeProgram(mondayLastWeek));
       expect(progress).not.toBeNull();
-      // BUG A1: la settimana del macro "scatta" il martedì, non il lunedì.
-      expect(progress!.currentWeek).toBe(isMonday ? 1 : 2);
+      // Fase 0 pinnava lo scatto di settimana al martedì; ora scatta al lunedì.
+      expect(progress!.currentWeek).toBe(2);
     });
 
     it("start_date futura (lunedì prossimo) → currentWeek 0, pre-start", () => {

@@ -5,13 +5,11 @@
 // emettere `diary:openAdd`, perché DiaryApp consuma la chiave al mount
 // (DiaryApp.tsx:527-536). Questi test fotografano il lato consumer.
 //
-// BUG documentati (audit 2026-06-12):
-//  - C1 (lato producer, NON testabile qui): CoachPageV2 (GuidedPlayer/Copia in
-//    diario/Resume) emette senza scrivere il pending → payload perso. Il fix
-//    di Fase 1 farà passare quei flussi da questo stesso contratto.
-//  - Subtype per type="sport" scartato: applyOpenAddPayload mappa prefill.subtype
-//    solo sul campo `tipo` (DiaryApp.tsx:490-498); il form sport usa il campo
-//    `sport` → il subtype non viene prefillato (pinnato nel test 3).
+// Storia: in Fase 0 questo file pinnava due bug (C1 lato producer: CoachPageV2
+// emetteva senza scrivere il pending → payload perso; C1-bis: subtype per
+// type="sport" scartato). Entrambi fixati in Fase 1: i 3 emettitori di
+// CoachPageV2 ora scrivono il pending prima dell'emit e applyOpenAddPayload
+// mappa il subtype anche sul campo `sport`.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -86,7 +84,7 @@ describe("DiaryApp consumo pending-diary-openAdd al mount (caratterizzazione)", 
     expect(screen.queryByDisplayValue("Fondo Lento")).toBeNull();
   });
 
-  it("BUG pinnato: type='sport' perde il subtype (mappato solo sul campo 'tipo', sport usa 'sport')", async () => {
+  it("type='sport': subtype prefillato nel select 'sport' (fix C1-bis, Fase 1)", async () => {
     seed("pending-diary-openAdd", {
       type: "sport",
       prefill: { subtype: "Tennis", durata: 60 },
@@ -97,11 +95,9 @@ describe("DiaryApp consumo pending-diary-openAdd al mount (caratterizzazione)", 
     await waitFor(() => {
       expect(localStorage.getItem("pending-diary-openAdd")).toBe("null");
     });
-    // La durata passa (campo generico copiato as-is)...
     expect(await screen.findByDisplayValue("60")).toBeInTheDocument();
-    // ...ma "Tennis" NON è prefillato nel select "Sport".
-    // Comportamento ATTUALE — quando applyOpenAddPayload verrà esteso al campo
-    // `sport`, questo expect va invertito.
-    expect(screen.queryByDisplayValue("Tennis")).toBeNull();
+    // Fase 0 pinnava la perdita del subtype (mappato solo su "tipo");
+    // dal fix C1-bis applyOpenAddPayload mappa anche il campo "sport".
+    expect(await screen.findByDisplayValue("Tennis")).toBeInTheDocument();
   });
 });
