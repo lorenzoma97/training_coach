@@ -4,7 +4,7 @@ Web app mobile-first (PWA) per il diario di allenamento con **coach AI** integra
 
 ## Caratteristiche
 
-- **Diario**: tracciamento sessioni (corsa, forza, sport, mobilità), check giornaliero (peso, sonno, stanchezza), scala dolore polpaccio, RPE, export CSV.
+- **Diario**: tracciamento sessioni (corsa, forza, sport, mobilità), check giornaliero (peso, sonno, stanchezza), scala dolore muscolare, RPE, export CSV.
 - **Coach AI**:
   - Onboarding guidato con intervista + obiettivi SMART e feasibility check
   - Generazione automatica di un microciclo di 2 settimane personalizzato
