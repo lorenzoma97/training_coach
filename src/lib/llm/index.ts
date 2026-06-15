@@ -146,10 +146,6 @@ export async function setLLMConfig(config: LLMConfig): Promise<void> {
   }
 }
 
-export async function clearLLMConfig(): Promise<void> {
-  await storage.delete(CONFIG_KEY);
-}
-
 export function hasLLMConfig(): boolean {
   const c = readConfigSync();
   if (!c) return false;

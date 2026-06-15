@@ -331,13 +331,6 @@ export interface TrainingPlan {
   /** Fase corrente del macrociclo. Audit + UI badge. */
   macroPhase?: MacroPhase;
   /**
-   * Provenienza generazione:
-   * - "single": legacy 1-pass (planGenerator.ts).
-   * - "multi": nuovo orchestrator (Pass 1+2+3, Wave 4.1).
-   * Default undefined per piani pre-v2 — letto come "single".
-   */
-  generationMode?: "single" | "multi";
-  /**
    * Marker di staleness: il piano è ancora valido ma c'è un evento esterno
    * che lo rende sub-ottimale. NON invalida il piano (utente può continuare
    * a usarlo); UI mostra banner "ricalcola consigliato".

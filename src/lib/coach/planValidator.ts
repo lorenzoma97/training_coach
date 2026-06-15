@@ -698,10 +698,6 @@ export function planStateHash(profile: UserProfile, goals: UserGoal[] = []): str
   return (h >>> 0).toString(36);
 }
 
-/** @deprecated usa planStateHash(profile, goals) che include anche i goal. */
-export function profileHashForPlan(profile: UserProfile): string {
-  return planStateHash(profile, []);
-}
 
 /**
  * Data locale del lunedì della settimana CORRENTE (≤ fromDate).
