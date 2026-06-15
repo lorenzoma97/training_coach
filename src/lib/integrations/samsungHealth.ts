@@ -21,6 +21,7 @@
 
 import JSZip from "jszip";
 import { storage, getJSON, setJSON } from "../storage";
+import { toISO } from "../time";
 import { getAllDays, type Workout, type DiaryDay } from "../diaryContext";
 import type { WearableSample } from "../types/wearable";
 import {
@@ -1077,7 +1078,7 @@ async function loadRecentWorkouts(): Promise<Array<{ date: string; workouts: Wor
   const allDays = await getAllDays();
   const ninetyDaysAgo = new Date();
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-  const cutoff = ninetyDaysAgo.toISOString().slice(0, 10);
+  const cutoff = toISO(ninetyDaysAgo); // locale (era UTC slice)
   return allDays.filter(d => d.date >= cutoff).map(d => ({ date: d.date, workouts: d.workouts }));
 }
 
@@ -1508,7 +1509,7 @@ const WEARABLE_HISTORY_DAYS = 90;
 function pruneCutoffDate(): string {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - WEARABLE_HISTORY_DAYS);
-  return cutoff.toISOString().slice(0, 10);
+  return toISO(cutoff); // locale (era UTC slice)
 }
 
 /**
