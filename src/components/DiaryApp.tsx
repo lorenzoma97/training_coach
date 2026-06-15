@@ -5,6 +5,8 @@ import { events } from "../lib/events";
 import type { TrainingPlan, PlannedSession } from "../lib/types";
 import type { ExercisePerformance } from "../lib/types/strength";
 import { stripInlineHRRange } from "../lib/coach/zones";
+import { todayPlannedSession as findTodayPlanned } from "../lib/coach/completion";
+import { getLastNDays } from "../lib/diaryContext";
 import StrengthExercisesForm from "./diary/StrengthExercisesForm";
 // Wave 3.1 (data-integration): hook 1RM updater post-save.
 import { applyOneRepMaxUpdates } from "../lib/coach/oneRepMaxEstimator";
@@ -378,30 +380,21 @@ export default function DiaryApp() {
   >(undefined);
 
   const refreshTodayPlanned = useCallback(async () => {
+    // C3 (Fase 2): unica fonte del completamento = todayPlannedSession (stessa
+    // computeCompletion del Piano). Prima qui c'era logica propria divergente
+    // (settimana da diff-in-ms DST-bug, match solo typeFamily, no dedup) che
+    // poteva dire "fatta" mentre il Piano diceva "variata"/"saltata".
     const plan = await getJSON<TrainingPlan | null>("training-plan", null);
-    if (!plan || !plan.startDate || !plan.weeks?.length) {
-      setTodayPlannedSession(null);
-      return;
-    }
-    // Calcola in che settimana del piano siamo oggi
-    const [sy, sm, sd] = plan.startDate.split("-").map(Number);
-    const start = new Date(sy, sm - 1, sd);
-    const now = new Date();
-    const diffDays = Math.floor((now.getTime() - start.getTime()) / (24 * 3600 * 1000));
-    if (diffDays < 0) { setTodayPlannedSession(null); return; }
-    const weekIdx = Math.floor(diffDays / 7);
-    if (weekIdx >= plan.weeks.length) { setTodayPlannedSession(null); return; }
-    const week = plan.weeks[weekIdx];
-    const DAY_KEYS = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"];
-    const todayKey = DAY_KEYS[now.getDay()];
-    const session = week.sessions.find(s => s.day === todayKey);
-    if (!session) { setTodayPlannedSession(null); return; }
-    // Match con workout di oggi: se c'è stesso type (o family forza) → done.
-    const todayDay = await loadDay(today());
-    const workouts: any[] = todayDay?.workouts || [];
-    const typeFamily = (t: string) => (t === "forza_gambe" || t === "forza_upper") ? "forza" : t;
-    const done = workouts.some(w => typeFamily(w.type) === typeFamily(session.type));
-    setTodayPlannedSession({ session, weekNumber: week.weekNumber, done });
+    const recentDays = await getLastNDays(14);
+    // NB: import aliasato a `findTodayPlanned` perché lo state locale si chiama
+    // `todayPlannedSession` (lo shadowerebbe rendendolo non chiamabile).
+    const tp = findTodayPlanned(plan, recentDays);
+    if (!tp) { setTodayPlannedSession(null); return; }
+    setTodayPlannedSession({
+      session: tp.session,
+      weekNumber: tp.weekNumber,
+      done: tp.status !== "todo",
+    });
   }, []);
 
   useEffect(() => {

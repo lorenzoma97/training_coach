@@ -7,7 +7,7 @@
 // ignorata, dedup per id).
 
 import { describe, it, expect } from "vitest";
-import { computeCompletion, sessionCompletionKey, type RecentDay } from "../completion";
+import { computeCompletion, todayPlannedSession, sessionCompletionKey, type RecentDay } from "../completion";
 import { DAY_LABELS_MON } from "../../time";
 import type { TrainingPlan, PlannedSession } from "../../types";
 
@@ -173,5 +173,73 @@ describe("computeCompletion — no cross-day, dedup, extras", () => {
     );
     expect(r.completed.size).toBe(1);
     expect(r.extras).toHaveLength(0);
+  });
+});
+
+describe("todayPlannedSession — fonte unica Diario/Oggi (C3)", () => {
+  // Mercoledì 2026-06-17 ore 10:00 (2026-06-15 è lunedì).
+  const NOW_WED = new Date(2026, 5, 17, 10, 0, 0);
+
+  function multiWeekPlan(startDate: string, weeks: { weekNumber: number; sessions: PlannedSession[] }[]): TrainingPlan {
+    return {
+      generatedAt: "2026-06-08T00:00:00.000Z",
+      validUntil: "2026-07-01T00:00:00.000Z",
+      startDate,
+      weeks: weeks.map(w => ({ ...w, focus: "test" })),
+      rationale: "",
+    };
+  }
+
+  it("null se manca plan / startDate / weeks", () => {
+    expect(todayPlannedSession(null, [], NOW_WED)).toBeNull();
+    expect(todayPlannedSession({ ...plan([]), startDate: undefined }, [], NOW_WED)).toBeNull();
+    expect(todayPlannedSession({ ...plan([]), weeks: [] }, [], NOW_WED)).toBeNull();
+  });
+
+  it("null se oggi è riposo (nessuna sessione con data odierna)", () => {
+    // settimana lun 06-15: solo lun e mar pianificati, mer (oggi) riposo.
+    const p = plan([session("lun", "corsa"), session("mar", "forza_gambe")], "2026-06-15");
+    expect(todayPlannedSession(p, [], NOW_WED)).toBeNull();
+  });
+
+  it("null se pre-start (startDate futura)", () => {
+    const p = plan([session("mer", "corsa")], "2026-06-22");
+    expect(todayPlannedSession(p, [], NOW_WED)).toBeNull();
+  });
+
+  it("status 'todo' quando oggi è pianificato ma non ancora fatto", () => {
+    const p = plan([session("mer", "corsa", "Fondo Lento")], "2026-06-15");
+    const t = todayPlannedSession(p, [], NOW_WED)!;
+    expect(t).toBeTruthy();
+    expect(t.session.day).toBe("mer");
+    expect(t.weekNumber).toBe(1);
+    expect(t.status).toBe("todo");
+    expect(t.completion).toBeNull();
+  });
+
+  it("status 'done' (strict) quando oggi è fatto col subtype giusto", () => {
+    const p = plan([session("mer", "corsa", "Fondo Lento")], "2026-06-15");
+    const t = todayPlannedSession(p, [day("2026-06-17", [workout("w1", "corsa", "Fondo Lento")])], NOW_WED)!;
+    expect(t.status).toBe("done");
+    expect(t.completion?.strictMatch).toBe(true);
+  });
+
+  it("status 'variata' quando oggi è fatto con subtype diverso", () => {
+    const p = plan([session("mer", "corsa", "Ripetute")], "2026-06-15");
+    const t = todayPlannedSession(p, [day("2026-06-17", [workout("w1", "corsa", "Fondo Lento")])], NOW_WED)!;
+    expect(t.status).toBe("variata");
+    expect(t.completion?.strictMatch).toBe(false);
+  });
+
+  it("PIANO STALE: con startDate di 9 giorni fa restituisce la settimana CORRETTA (non weeks[0])", () => {
+    // startDate lun 06-08; oggi mer 06-17 → settimana 2 (indice 1).
+    // Il vecchio TodayTab usava weeks[0] → mostrava la sessione della settimana 1.
+    const p = multiWeekPlan("2026-06-08", [
+      { weekNumber: 1, sessions: [session("mer", "corsa", "Settimana1 Fondo")] },
+      { weekNumber: 2, sessions: [session("mer", "corsa", "Settimana2 Ripetute")] },
+    ]);
+    const t = todayPlannedSession(p, [], NOW_WED)!;
+    expect(t.weekNumber).toBe(2);
+    expect(t.session.subtype).toBe("Settimana2 Ripetute");
   });
 });

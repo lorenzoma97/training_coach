@@ -19,7 +19,7 @@
 //  - dedup per id workout (un workout matcha al più una sessione).
 //  - SALTATA solo nel passato; oggi senza match resta "oggi"; futuro ignorato.
 
-import type { TrainingPlan } from "../types";
+import type { TrainingPlan, PlannedSession } from "../types";
 import { toISO, parseISO, DAY_LABELS_MON } from "../time";
 
 export interface CompletionInfo {
@@ -175,4 +175,67 @@ export function computeCompletion(
   const extrasInPlanWindow = extras.filter((e) => e.date >= planStartKey && e.date <= planEndKey);
 
   return { completed, extras: extrasInPlanWindow, skipped };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Query "sessione di oggi" — fonte UNICA per i consumer Diario/Oggi.
+//
+// PERCHÉ (finding C3): DiaryApp e TodayTab derivavano "la sessione di oggi" e il
+// suo stato con logiche PROPRIE e divergenti:
+//  - DiaryApp: weekIdx da diff-in-ms (bug DST), match solo typeFamily, no dedup.
+//  - TodayTab: `plan.weeks[0]` per label giorno → IGNORA startDate (settimana
+//    sbagliata se il piano è stale) e non aveva alcuno stato "fatta".
+// Questo helper trova la sessione la cui DATA PIANIFICATA è oggi e ne ricava lo
+// stato dalla stessa computeCompletion del Piano → niente più "Diario dice
+// fatta, Piano dice variata", niente più settimana sbagliata.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type TodayStatus = "done" | "variata" | "todo";
+
+export interface TodayPlanned {
+  session: PlannedSession;
+  /** weekNumber della settimana che contiene oggi. */
+  weekNumber: number;
+  /** Stato unificato, coerente coi badge del Piano. */
+  status: TodayStatus;
+  /** Dettaglio completamento (null se "todo"). */
+  completion: CompletionInfo | null;
+}
+
+/**
+ * Sessione pianificata la cui data cade OGGI, con lo stato di completamento
+ * derivato da computeCompletion. null se oggi è riposo / fuori piano / pre-start.
+ * `now` iniettabile per test deterministici.
+ */
+export function todayPlannedSession(
+  plan: TrainingPlan | null | undefined,
+  recentDays: RecentDay[],
+  now: Date = new Date(),
+): TodayPlanned | null {
+  if (!plan || !plan.startDate || !plan.weeks?.length) return null;
+  const start = parseISO(plan.startDate);
+  if (!start) return null;
+
+  const todayKey = toISO(now);
+  // Stessa fonte del Piano: lo stato deriva da qui, le key combaciano.
+  const result = computeCompletion(plan, recentDays, now);
+
+  for (let w = 0; w < plan.weeks.length; w++) {
+    const week = plan.weeks[w];
+    for (const s of week.sessions) {
+      const dayIdx = DAY_LABELS_MON.indexOf(s.day as typeof DAY_LABELS_MON[number]);
+      if (dayIdx < 0) continue;
+      const plannedDate = new Date(start);
+      plannedDate.setDate(start.getDate() + w * 7 + dayIdx);
+      if (toISO(plannedDate) !== todayKey) continue;
+
+      const key = sessionCompletionKey(week.weekNumber, s.day, plannedDate);
+      const completion = result.completed.get(key) ?? null;
+      const status: TodayStatus = completion
+        ? (completion.strictMatch ? "done" : "variata")
+        : "todo";
+      return { session: s, weekNumber: week.weekNumber, status, completion };
+    }
+  }
+  return null;
 }
