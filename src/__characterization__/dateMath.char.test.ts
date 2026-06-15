@@ -32,14 +32,13 @@ describe("mondayOf (caratterizzazione, TZ-indipendente: parse e format entrambi 
     expect(mondayOf(input)).toBe(expected);
   });
 
-  it("input strutturalmente invalido → null; overflow semantico NON validato", () => {
-    // Struttura non YYYY-MM-DD → null (split non dà 3 parti numeriche).
+  it("input invalido → null (incluso overflow semantico)", () => {
     expect(mondayOf("abc")).toBeNull();
     expect(mondayOf("")).toBeNull();
-    // QUIRK pinnato: storage.ts mondayOf NON valida l'overflow — `new Date(2026,12,45)`
-    // normalizza a una data reale (→ non-null). time.ts.mondayOf (Fase 2) lo
-    // RIFIUTA via isValidISO; la migrazione elimina la divergenza.
-    expect(mondayOf("2026-13-45")).not.toBeNull();
+    // Batch 4 (Fase 2): storage.mondayOf ora DELEGA a time.ts.mondayOf, che
+    // valida via isValidISO → l'overflow "2026-13-45" è rifiutato (null).
+    // Prima la copia locale normalizzava (new Date(2026,12,45)) → non-null.
+    expect(mondayOf("2026-13-45")).toBeNull();
   });
 });
 
