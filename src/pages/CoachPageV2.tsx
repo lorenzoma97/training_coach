@@ -26,6 +26,7 @@ import type { UserProfile, TrainingPlan } from "../lib/types";
 import { events } from "../lib/events";
 import { getLastNDays } from "../lib/diaryContext";
 import { getCurrentReadiness } from "../lib/coach/readinessScoring";
+import { todayPlannedSession } from "../lib/coach/completion";
 import {
   aggregateDailyLoad,
   computeTrainingLoad,
@@ -59,13 +60,15 @@ interface TodayState {
   readiness: Awaited<ReturnType<typeof getCurrentReadiness>>;
   load: TrainingLoadSnapshot | null;
   todaySession: TrainingPlan["weeks"][number]["sessions"][number] | null;
+  /** weekNumber della settimana che contiene oggi (per scrivere il detail nella settimana giusta). */
+  todayWeekNumber: number | null;
   diagnostic: PlanDiagnostic | null;
   loaded: boolean;
 }
 
 function useTodayState(refreshKey: number): TodayState {
   const [s, setS] = useState<TodayState>({
-    readiness: null, load: null, todaySession: null, diagnostic: null, loaded: false,
+    readiness: null, load: null, todaySession: null, todayWeekNumber: null, diagnostic: null, loaded: false,
   });
   useEffect(() => {
     (async () => {
@@ -91,9 +94,16 @@ function useTodayState(refreshKey: number): TodayState {
         }
       }
       const load = computeTrainingLoad(aggregateDailyLoad(workoutsForLoad));
-      const today = todayLabel();
-      const todaySession = plan?.weeks?.[0]?.sessions.find(x => x.day === today) ?? null;
-      setS({ readiness, load, todaySession, diagnostic, loaded: true });
+      // C3 (Fase 2): la sessione di oggi dalla fonte unica (settimana corretta da
+      // startDate + stato coerente col Piano). Prima usava plan.weeks[0] →
+      // ignorava startDate, mostrando la settimana sbagliata se il piano era stale.
+      const tp = todayPlannedSession(plan, recentDays);
+      setS({
+        readiness, load,
+        todaySession: tp?.session ?? null,
+        todayWeekNumber: tp?.weekNumber ?? null,
+        diagnostic, loaded: true,
+      });
     })();
   }, [refreshKey]);
   return s;
@@ -249,6 +259,7 @@ export function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
       {/* 4. ★ EROE — cosa alleni OGGI (il centro della schermata) */}
       <SessionDetailCard
         session={s.todaySession}
+        weekNumber={s.todayWeekNumber ?? undefined}
         onGoToPlan={onGoToPlan}
         onSessionUpdated={() => setRefreshKey(k => k + 1)}
       />
@@ -313,9 +324,11 @@ export function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
 // non viene rigenerato.
 
 function SessionDetailCard({
-  session, onGoToPlan, onSessionUpdated,
+  session, weekNumber, onGoToPlan, onSessionUpdated,
 }: {
   session: PlannedSession | null;
+  /** Settimana da cui proviene `session` (dal reader). Se assente → weeks[0] (legacy). */
+  weekNumber?: number;
   onGoToPlan: () => void;
   onSessionUpdated: () => void;
 }) {
@@ -371,21 +384,29 @@ function SessionDetailCard({
         intervals: result.session.intervals?.length ?? 0,
       });
       // Mutiamo il piano in storage sostituendo la session corrispondente.
+      // C3 (Fase 2): scrivi nella SETTIMANA da cui proviene la sessione mostrata
+      // (weekNumber dal reader), non sempre weeks[0]. Per un piano stale la
+      // sessione di oggi è in una settimana >0: scrivere su weeks[0] avrebbe
+      // attaccato il detail alla settimana sbagliata. Fallback weeks[0] (idx 0)
+      // se weekNumber assente (uso legacy del componente).
       const plan = await getJSON<TrainingPlan | null>("training-plan", null);
-      if (plan && plan.weeks[0]) {
-        const updatedSessions = plan.weeks[0].sessions.map(x =>
+      const targetIdx = plan
+        ? plan.weeks.findIndex(w => weekNumber != null ? w.weekNumber === weekNumber : true)
+        : -1;
+      if (plan && targetIdx >= 0) {
+        const tw = plan.weeks[targetIdx];
+        const updatedSessions = tw.sessions.map(x =>
           x.day === session!.day && x.type === session!.type ? result.session : x,
         );
-        const updatedPlan: TrainingPlan = {
-          ...plan,
-          weeks: [{ ...plan.weeks[0], sessions: updatedSessions }, ...plan.weeks.slice(1)],
-        };
-        await setJSON("training-plan", updatedPlan);
+        const updatedWeeks = plan.weeks.map((w, i) =>
+          i === targetIdx ? { ...tw, sessions: updatedSessions } : w,
+        );
+        await setJSON("training-plan", { ...plan, weeks: updatedWeeks });
         events.emit("plan:updated", { at: new Date().toISOString() });
       } else {
         // Edge: detail generato ma nessun piano in storage. Almeno mostra il
         // risultato in UI per non sembrare "non fa niente".
-        console.warn("[SessionDetailCard] no plan in storage, session detail orphaned");
+        console.warn("[SessionDetailCard] no plan/target week in storage, session detail orphaned");
       }
       setMeta(result.meta);
       onSessionUpdated();
