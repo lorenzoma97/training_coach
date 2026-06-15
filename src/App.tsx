@@ -91,12 +91,25 @@ function AppShell() {
 
   useEffect(() => {
     if (onboarded) {
-      maybeRunWeeklyReport().catch(e => console.error("[scheduler] weekly", e));
-      // Auto-promote del piano "preview" della settimana prossima → se la sua
-      // startDate <= oggi, sostituisce il piano corrente (archiviando il vecchio).
-      // Eseguito qui (App mount) così avviene anche se l'utente non apre il
-      // tab Coach (es. apre l'app per un check rapido del diario).
-      maybePromoteNextPlan().catch(e => console.error("[promote-next-plan]", e));
+      // Fix C2/A2 (Fase 1): promote PRIMA dello scheduler, in sequenza
+      // awaitata. Prima partivano in parallelo non ordinati: entrambi possono
+      // toccare training-plan/training-plan-next e la regen settimanale (che
+      // attende l'LLM) poteva sovrascrivere il piano appena promosso. Promote è
+      // veloce e idempotente: eseguirlo prima rende l'ordine deterministico —
+      // attiva l'eventuale anteprima della settimana, poi lo scheduler genera
+      // il report e la nuova anteprima sopra uno stato già consistente.
+      (async () => {
+        try {
+          await maybePromoteNextPlan();
+        } catch (e) {
+          console.error("[promote-next-plan]", e);
+        }
+        try {
+          await maybeRunWeeklyReport();
+        } catch (e) {
+          console.error("[scheduler] weekly", e);
+        }
+      })();
     }
   }, [onboarded]);
 

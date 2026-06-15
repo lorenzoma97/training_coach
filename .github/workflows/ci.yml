@@ -16,3 +16,11 @@ jobs:
       - run: npm install
       - run: npm run typecheck
       - run: npm test
+      # Fase 0 (2026-06-12): i test di caratterizzazione in src/__characterization__
+      # pinnano comportamenti TZ-dipendenti (bug A1: settimana macro UTC vs locale).
+      # Girano una seconda volta con la timezone reale dell'utente (Europe/Rome):
+      # il run di default (UTC) li skippa via describe.skipIf.
+      - name: Characterization tests (TZ Europe/Rome)
+        run: npx vitest run src/__characterization__
+        env:
+          TZ: Europe/Rome

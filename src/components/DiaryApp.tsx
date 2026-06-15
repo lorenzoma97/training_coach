@@ -488,13 +488,16 @@ export default function DiaryApp() {
           continue;
         }
         if (k === "subtype" && wt) {
-          const tipoField = wt.fields.find((f: any) => f.key === "tipo" && "options" in f);
-          if (tipoField && typeof v === "string") {
-            const opts = (tipoField as any).options as string[];
+          // Fix C1-bis (Fase 1): il select del sottotipo si chiama "tipo" per
+          // corsa/forza/mobilita ma "sport" per il tipo sport — prima il
+          // subtype delle sessioni sport veniva scartato in silenzio.
+          const subField = wt.fields.find((f: any) => (f.key === "tipo" || f.key === "sport") && "options" in f);
+          if (subField && typeof v === "string") {
+            const opts = (subField as any).options as string[];
             const match = opts.find(o => o.toLowerCase() === v.toLowerCase())
               || opts.find(o => o.toLowerCase().includes(v.toLowerCase()))
               || opts.find(o => v.toLowerCase().includes(o.toLowerCase()));
-            if (match) mapped.tipo = match;
+            if (match) mapped[(subField as any).key] = match;
           }
         } else {
           mapped[k] = v;
@@ -1573,7 +1576,7 @@ export default function DiaryApp() {
                     <div key={w.id} style={{ background: "#16213E", borderRadius: "14px", padding: "18px 20px", border: `1px solid ${wt?.color || "#333"}22` }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
                         <span style={{ fontSize: "20px" }}>{wt?.icon}</span>
-                        <span style={{ fontWeight: 700, fontSize: "15px", flex: 1 }}>{wt?.label}{w.fields?.tipo ? ` — ${w.fields.tipo}` : ""}</span>
+                        <span style={{ fontWeight: 700, fontSize: "15px", flex: 1 }}>{wt?.label}{(w.fields?.tipo || w.fields?.sport) ? ` — ${w.fields.tipo || w.fields.sport}` : ""}</span>
                         <button onClick={() => openEditWorkout(detailDate, w)} aria-label="Modifica allenamento" style={{
                           background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
                           color: "#CBD5E1", fontSize: "13px", padding: "10px 14px", cursor: "pointer", fontWeight: 600,

@@ -342,10 +342,14 @@ export default function GuidedPlayer({ session, userEquipment, resumeFromSnapsho
   function finishSession() {
     playCompletionBeep();
     setStage("done");
-    void clearGuidedSessionSnapshot();
     // Filter perf con almeno 1 set eseguito (utente potrebbe aver skippato qualche esercizio)
     const validPerformances = completed.filter(p => p.sets.length > 0);
+    // Fix C1 (Fase 1): consegna le performance PRIMA di cancellare lo snapshot.
+    // (snapshot e pending-diary-openAdd sono chiavi distinte, quindi l'ordine
+    // non incide sul pending; ma teniamo onComplete→clear come invariante: se
+    // in futuro onComplete leggesse lo snapshot, deve trovarlo ancora vivo.)
     onComplete(validPerformances);
+    void clearGuidedSessionSnapshot();
   }
 
   function handleExitConfirm(action: "discard" | "save" | "pause") {
@@ -355,9 +359,10 @@ export default function GuidedPlayer({ session, userEquipment, resumeFromSnapsho
       onClose();
     } else if (action === "save") {
       // Save: salva nel diario E pulisci snapshot (sessione chiusa).
-      void clearGuidedSessionSnapshot();
+      // Stesso ordine di finishSession: onComplete prima, clear dopo.
       const validPerformances = completed.filter(p => p.sets.length > 0);
       onComplete(validPerformances);
+      void clearGuidedSessionSnapshot();
     } else {
       // Pause: NON pulisce lo snapshot — l'utente torna nel TodayTab e
       // vede il banner "Riprendi" per continuare in seguito.
