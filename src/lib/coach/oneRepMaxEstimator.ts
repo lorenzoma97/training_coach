@@ -15,6 +15,7 @@
 
 import { events } from "../events";
 import { getJSON, setJSON } from "../storage";
+import { todayISO } from "../time";
 import type {
   ExercisePerformance,
   OneRepMax,
@@ -167,7 +168,7 @@ export function updateOneRepMaxesFromWorkout(
   // Lavoriamo su una copia mutabile, poi ritorniamo un nuovo array.
   const next = safeCurrent.map(o => ({ ...o }));
   const changed: OneRepMaxChange[] = [];
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const today = todayISO(); // YYYY-MM-DD locale (era UTC slice → off-by-one notturno)
   const workoutId = workout?.id;
 
   for (const [exerciseId, est1RM] of inferred) {

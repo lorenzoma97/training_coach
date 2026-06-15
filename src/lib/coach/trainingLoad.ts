@@ -21,6 +21,8 @@
 // Ref: Banister 1991, Foster 1998 sRPE, Soligard et al. 2016 BJSM consensus
 //      (training load and injury), Coggan TrainingPeaks PMC.
 
+import { todayISO } from "../time";
+
 export interface DayLoadInput {
   /** Data ISO YYYY-MM-DD. */
   date: string;
@@ -110,7 +112,7 @@ export function computeTrainingLoad(
   if (daily.length === 0) {
     return { atl: 0, ctl: 0, tsb: 0, band: "detraining", daysUsed: 0 };
   }
-  const target = targetDateISO ?? new Date().toISOString().slice(0, 10);
+  const target = targetDateISO ?? todayISO(); // locale (era UTC slice)
   const sorted = [...daily].sort((a, b) => a.date.localeCompare(b.date));
   const firstDate = sorted[0].date;
   const start = new Date(`${firstDate}T00:00:00`).getTime();

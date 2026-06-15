@@ -32,6 +32,7 @@ import type {
 import { EXERCISES, EXERCISES_BY_ID } from "../../catalog/exercises";
 import { normalizeEquipmentTags } from "../../equipment/equipmentNormalizer";
 import { resolveSubstitution } from "../equipmentSubstitutor";
+import { toISO, addDays } from "../../time";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Internal helpers
@@ -58,9 +59,8 @@ function maxRecentLoad(
   exerciseId: string,
   todayISO: string,
 ): number | null {
-  const cutoff = new Date(todayISO);
-  cutoff.setDate(cutoff.getDate() - RECENT_WINDOW_DAYS);
-  const cutoffISO = cutoff.toISOString().slice(0, 10);
+  // Aritmetica civile locale via time.ts (era new Date(string)=UTC + slice UTC).
+  const cutoffISO = addDays(todayISO, -RECENT_WINDOW_DAYS) ?? todayISO;
 
   let max: number | null = null;
   for (const w of recentWorkouts) {
@@ -132,7 +132,7 @@ export const validateStrengthLoadProgression: PlanValidator = (
   ctx,
 ): PlanValidationIssue[] => {
   const issues: PlanValidationIssue[] = [];
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = toISO(new Date()); // locale (era UTC slice)
 
   for (const { weekNumber, ex } of iterPlannedExercises(plan)) {
     if (typeof ex.weight_kg !== "number" || !Number.isFinite(ex.weight_kg)) continue;

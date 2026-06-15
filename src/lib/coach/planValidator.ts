@@ -5,6 +5,7 @@
 import type { TrainingPlan, UserProfile, PlanWeek, PlannedSession, UserGoal, ExercisePerformance, ReadinessSnapshot } from "../types";
 import { restDaysMinForAge, SAFETY } from "./safetyRules";
 import { isCanonicalSubtype, WORKOUT_SUBTYPES } from "../workoutCatalog";
+import { toISO } from "../time";
 import {
   validateStrengthLoadProgression,
   validatePct1rmRepsCoherence,
@@ -220,7 +221,7 @@ function historyMediansByType(
 ): Record<string, number | null> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 14);
-  const cutoffISO = cutoff.toISOString().slice(0, 10);
+  const cutoffISO = toISO(cutoff); // locale (era UTC slice → off-by-one notturno)
 
   const byType = new Map<string, number[]>();
   for (const w of recent) {
