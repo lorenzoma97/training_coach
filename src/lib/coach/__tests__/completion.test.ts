@@ -10,6 +10,18 @@ import { describe, it, expect } from "vitest";
 import { computeCompletion, todayPlannedSession, sessionCompletionKey, type RecentDay } from "../completion";
 import { DAY_LABELS_MON } from "../../time";
 import type { TrainingPlan, PlannedSession } from "../../types";
+import type { getLastNDays } from "../../diaryContext";
+
+// Guardia a COMPILE-TIME (regressione CI 2026-06-15): l'output di getLastNDays
+// DEVE essere assegnabile a RecentDay[], altrimenti i consumer (DiaryApp/
+// TodayTab) che passano getLastNDays(...) a computeCompletion/todayPlannedSession
+// non compilano. Questo assert fallisce a `tsc`, non a runtime (i golden test
+// non lo intercetterebbero). Se RecentDay viene ristretto in modo incompatibile,
+// `tsc` qui dà errore invece di scoprirlo solo in CI dopo il merge.
+type _RecentDayAcceptsGetLastNDays =
+  Awaited<ReturnType<typeof getLastNDays>> extends RecentDay[] ? true : never;
+const _recentDayGuard: _RecentDayAcceptsGetLastNDays = true;
+void _recentDayGuard;
 
 // Settimana di riferimento: lun 2026-06-08 … dom 2026-06-14.
 const START = "2026-06-08";

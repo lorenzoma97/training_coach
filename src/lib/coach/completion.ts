@@ -35,14 +35,20 @@ export interface CompletionInfo {
   actualType?: string;
 }
 
-/** Workout/diario in forma lasca (la shape reale del diario è eterogenea). */
+/** Workout/diario in forma lasca, compatibile con `Workout` di diaryContext
+ *  (fields è Record<string, unknown>). NIENTE index signature qui: un'interface
+ *  (Workout) non è assegnabile a un tipo con index signature → romperebbe i
+ *  call-site che passano `getLastNDays()` (Workout[]). I sottotipi (tipo/sport)
+ *  vivono dentro `fields` e si leggono con coercizione unknown→string. */
 type DiaryWorkout = {
   id: string;
   type: string;
-  fields?: { tipo?: string; sport?: string;[k: string]: unknown };
-  [k: string]: unknown;
+  fields?: Record<string, unknown>;
 };
 export type RecentDay = { date: string; workouts?: DiaryWorkout[]; daily?: unknown };
+
+/** Coercizione difensiva unknown→string (fields del diario è Record<string,unknown>). */
+const asStr = (v: unknown): string => (typeof v === "string" ? v : "");
 
 export interface CompletionResult {
   /** key `${weekNumber}-${day}-${plannedDate.getTime()}` → info completamento. */
@@ -108,7 +114,7 @@ export function computeCompletion(
 
       const plannedSub = (s.subtype || "").toLowerCase().trim();
       const workoutSub = (wk: DiaryWorkout) =>
-        (wk.fields?.tipo || wk.fields?.sport || "").toLowerCase().trim();
+        (asStr(wk.fields?.tipo) || asStr(wk.fields?.sport)).toLowerCase().trim();
       const plannedDayEntry = weekDays.find((d) => d.date === plannedKey);
       let match: { dateKey: string; workout: DiaryWorkout; strictMatch: boolean } | null = null;
 
@@ -152,7 +158,7 @@ export function computeCompletion(
           date: match.dateKey,
           sameDay: match.dateKey === plannedKey,
           strictMatch: match.strictMatch,
-          actualSubtype: match.workout.fields?.tipo || match.workout.fields?.sport || undefined,
+          actualSubtype: (asStr(match.workout.fields?.tipo) || asStr(match.workout.fields?.sport)) || undefined,
           actualType: match.workout.type !== s.type ? match.workout.type : undefined,
         });
       } else if (plannedDate < todayStart) {
