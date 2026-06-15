@@ -7,6 +7,7 @@ import type { ExercisePerformance } from "../lib/types/strength";
 import { stripInlineHRRange } from "../lib/coach/zones";
 import { todayPlannedSession as findTodayPlanned } from "../lib/coach/completion";
 import { getLastNDays } from "../lib/diaryContext";
+import { todayISO } from "../lib/time";
 import StrengthExercisesForm from "./diary/StrengthExercisesForm";
 // Wave 3.1 (data-integration): hook 1RM updater post-save.
 import { applyOneRepMaxUpdates } from "../lib/coach/oneRepMaxEstimator";
@@ -88,14 +89,7 @@ const PAIN_LEVELS = [
 ];
 
 const FATIGUE_COLORS = (n: number) => n <= 3 ? "#22C55E" : n <= 6 ? "#EAB308" : n <= 8 ? "#F97316" : "#EF4444";
-const today = () => {
-  // Local date (not UTC) to avoid cross-midnight logging bugs (Europe/Rome UTC+1/+2).
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-};
+const today = () => todayISO(); // fonte unica time.ts (era impl. locale duplicata)
 // Date IT in formato gg/mm/aaaa (canonical) ovunque sia mostrata data piena.
 // Fmt compatto omette l'anno (badge in lista); full include l'anno (detail header).
 const fmtDate = (d: string) => {

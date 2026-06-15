@@ -20,6 +20,7 @@
 
 import type { TrainingPlan, PlannedSession, ReadinessSnapshot } from "../../types";
 import type { PlanValidator, PlanValidationIssue } from "../planValidator";
+import { toISO } from "../../time";
 
 const DAY_ORDER = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
 
@@ -34,12 +35,10 @@ function todayDayKeyFromDate(d: Date = new Date()): string {
   return DAY_ORDER[idx];
 }
 
-/** ISO date locale (YYYY-MM-DD). Usata per check freshness snapshot. */
+/** ISO date locale (YYYY-MM-DD). Usata per check freshness snapshot.
+ *  Delega a time.ts.toISO (fonte unica). */
 function todayISO(d: Date = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return toISO(d);
 }
 
 /**

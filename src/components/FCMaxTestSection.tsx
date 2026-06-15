@@ -5,16 +5,12 @@
 
 import { useEffect, useState } from "react";
 import { getJSON, setJSON } from "../lib/storage";
+import { todayISO } from "../lib/time";
 import type { UserProfile } from "../lib/types";
 import { events } from "../lib/events";
 
 function tanakaFCmax(age: number): number {
   return Math.round(208 - 0.7 * age);
-}
-
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function formatDateIT(iso: string): string {

@@ -1,4 +1,5 @@
 import { getJSON, setJSON, storage } from "./storage";
+import { todayISO, mondayOf } from "./time";
 import { generateWeeklyReport } from "./coach/weeklyReport";
 import { regenerateNextWeek } from "./coach/planGenerator";
 import { savePlanWithHistory, saveNextPlan } from "./coach/planHistory";
@@ -42,11 +43,7 @@ function getTabId(): string {
 }
 
 function todayLocal(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return todayISO(); // fonte unica time.ts (era impl. locale duplicata)
 }
 
 // Lock in-memory per evitare run concorrenti nello stesso mount
@@ -176,10 +173,7 @@ async function _runWeekly(force: boolean): Promise<CoachFeedItem | null> {
         // per tutta la settimana (il bug C2, nel caso stale/bootstrap). Ri-
         // ancoriamo startDate al lunedì CORRENTE — il piano è di fatto quello
         // di questa settimana. validUntil (now+14gg) la copre comunque.
-        const dow = todayMid.getDay();
-        const monday = new Date(todayMid);
-        monday.setDate(todayMid.getDate() - ((dow + 6) % 7));
-        const currentMonday = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
+        const currentMonday = mondayOf(todayISO()) ?? todayISO();
         await savePlanWithHistory({ ...nextPlan, startDate: currentMonday });
       }
       events.emit("plan:updated", { at: new Date().toISOString() });

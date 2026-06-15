@@ -9,7 +9,13 @@
 // - narrative_markdown preservato as-is per render UI
 
 import { getJSON, setJSON } from "../storage";
+import { mondayOf } from "../time";
 import type { MacroProgram } from "../types/macroprogram";
+
+// Re-export: `mondayOf` è la fonte unica in time.ts (prima c'era una copia
+// locale, una delle 5 impl segnalate dall'audit). I caller storici di questo
+// modulo continuano a importarla da qui.
+export { mondayOf };
 
 const ACTIVE_KEY = "user-macroprogram";
 const HISTORY_KEY = "user-macroprogram-history";
@@ -28,18 +34,6 @@ export async function saveActiveMacroProgram(program: MacroProgram): Promise<voi
     await setJSON(HISTORY_KEY, updated);
   }
   await setJSON(ACTIVE_KEY, program);
-}
-
-/** Normalizza una data (YYYY-MM-DD) al LUNEDÌ della sua settimana. null se invalida. */
-export function mondayOf(dateISO: string): string | null {
-  const parts = dateISO.split("-").map(Number);
-  if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return null;
-  const [y, m, d] = parts;
-  const dt = new Date(y, m - 1, d);
-  if (Number.isNaN(dt.getTime())) return null;
-  const dow = (dt.getDay() + 6) % 7; // 0=lun ... 6=dom
-  dt.setDate(dt.getDate() - dow);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 }
 
 /**

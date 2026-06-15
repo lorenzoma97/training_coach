@@ -10,6 +10,7 @@ import TrainingPlanView from "../TrainingPlanView";
 import ProgramView from "./ProgramView";
 import MacroProgramUploadSection from "./MacroProgramUploadSection";
 import { loadActiveMacroProgram, computeMacroProgress, setMacroStartDate, mondayOf } from "../../lib/macroprogram/storage";
+import { todayISO } from "../../lib/time";
 import type { MacroProgram } from "../../lib/types/macroprogram";
 import { events } from "../../lib/events";
 import { uiCard } from "../../lib/theme";
@@ -171,9 +172,7 @@ function StartDateEditor({ program, onChanged }: { program: MacroProgram; onChan
     }
   };
 
-  const now = new Date();
-  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  const thisMonday = mondayOf(todayISO);
+  const thisMonday = mondayOf(todayISO()); // todayISO/mondayOf da time.ts (fonte unica)
 
   const statusLine = !progress
     ? "—"

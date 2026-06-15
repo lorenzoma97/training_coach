@@ -8,11 +8,9 @@ export function parseISODateLocal(iso: string): Date {
   return new Date(y, m - 1, d);
 }
 
-/** Oggi in "YYYY-MM-DD" locale (non UTC). */
-export function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+/** Oggi in "YYYY-MM-DD" locale. Fonte unica: time.ts (re-export per i consumer
+ *  storici di dateFormatters; nuovi moduli importino direttamente da lib/time). */
+export { todayISO } from "./time";
 
 /** "2026-04-17" → "17 apr". Compatto, per assi sparkline e badge. */
 export function formatDayMonth(iso: string): string {
