@@ -25,6 +25,7 @@
 
 import { useId, useMemo, useRef, useEffect, useState } from "react";
 import { EXERCISES, EXERCISES_BY_ID } from "../../lib/catalog/exercises";
+import { todayISO } from "../../lib/time";
 import type { OneRepMax } from "../../lib/types/strength";
 
 // Default lift principali — sempre mostrati. ID coerenti col catalog reale
@@ -59,7 +60,7 @@ export const EMPTY_1RM_DRAFT: Step1RMDraft = {
     exerciseId: id,
     valueKg: "",
     source: "tested",
-    acquiredAt: new Date().toISOString().slice(0, 10),
+    acquiredAt: todayISO(),
   })),
 };
 
@@ -77,7 +78,7 @@ export function buildOneRepMaxesFromDraft(draft: Step1RMDraft): OneRepMax[] {
       exerciseId: e.exerciseId,
       value_kg: Math.round(v * 10) / 10,
       source: e.source,
-      acquiredAt: e.acquiredAt || new Date().toISOString().slice(0, 10),
+      acquiredAt: e.acquiredAt || todayISO(),
     });
   }
   return out;
@@ -168,7 +169,7 @@ export default function StepStrength1RM({ draft, onDraftChange, onSave, onSkip, 
           exerciseId: pickerValue,
           valueKg: "",
           source: "tested",
-          acquiredAt: new Date().toISOString().slice(0, 10),
+          acquiredAt: todayISO(),
         },
       ],
     };
@@ -289,7 +290,7 @@ export default function StepStrength1RM({ draft, onDraftChange, onSave, onSkip, 
                   id={dateId}
                   type="date"
                   value={entry.acquiredAt}
-                  max={new Date().toISOString().slice(0, 10)}
+                  max={todayISO()}
                   onChange={e => updateEntry(idx, { acquiredAt: e.target.value })}
                   style={inputStyle}
                 />

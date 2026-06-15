@@ -3,6 +3,7 @@
 // Estrae sezioni dalla narrative markdown via regex sezione "## ..." → next "## ".
 
 import { useEffect, useMemo, useState } from "react";
+import { todayISO } from "../../lib/time";
 import type { MacroProgram, MacroProgramTrackingMetric } from "../../lib/types/macroprogram";
 import MarkdownLite from "./MarkdownLite";
 import { getJSON, setJSON } from "../../lib/storage";
@@ -261,7 +262,7 @@ function TrackingTab({
       await onAddEntry({
         metricId,
         value: v,
-        date: new Date().toISOString().slice(0, 10),
+        date: todayISO(), // locale (era UTC slice)
       });
       setValue("");
       setActiveMetric(null);
