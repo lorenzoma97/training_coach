@@ -1,3 +1,34 @@
+> ## ATTENZIONE — STATO REALE (2026-06-15), leggere prima
+>
+> Questo e' un **DESIGN DOC STORICO** (maggio 2026). Parti sono superate dal
+> codice: usare i sorgenti come fonte di verita', non questo file.
+>
+> **Non piu' vero rispetto a quanto scritto sotto:**
+> - **Multi-pass orchestrator** (§9 "Wave 4.1 DONE", §11 cost analysis): **RIMOSSO**
+>   (maggio 2026). Il piano si genera **single-pass** in `planGenerator.ts`.
+>   `passOrchestrator`/`skeletonPrompt`/`cardioIntervalPrompt` non esistono piu'.
+> - `contextRouter.ts` citato in §4.2: **non e' mai esistito** in `src/`.
+> - `generationMode`, `dayConstants`, `timingConstants`, `maybeRunMotivationCheckIn`,
+>   il container `CoachPageV2`: **dead code rimosso** (giugno 2026, audit Fase 3).
+>
+> **Fondamenta attuali (refactor giugno 2026, non descritte sotto):**
+> - `src/lib/time.ts` — fonte UNICA per la matematica delle date (semantica
+>   LOCALE, DST-safe). Gli helper `todayISO`/`mondayOf` vi delegano.
+> - `src/lib/coach/completion.ts` — fonte UNICA del matching piano-diario e della
+>   "sessione di oggi" (`computeCompletion`, `todayPlannedSession`); usata da
+>   TrainingPlanView, DiaryApp e TodayTab (prima 3 logiche divergenti).
+>
+> **Due sistemi "macro" distinti** (naming sovrapposto, NON sono lo stesso):
+> - **MacroProgram** (`types/macroprogram.ts`, storage `user-macroprogram`):
+>   programma .md importato con sessioni complete, proiettato deterministicamente.
+> - **MacroCycle** (`types/periodization.ts`, storage `macro-cycle:<id>`):
+>   scheletro fasi base/build/peak/taper generato dalle gare.
+>
+> Il resto del documento (goal, data model, contratti) resta utile come
+> contesto storico delle decisioni.
+
+---
+
 # DESIGN DOC: diario-coach v2 — "Personal Trainer Pro"
 
 **Author:** Architect agent · **Date:** 2026-05-09 · **Target:** ARCHITECTURE.md (root)

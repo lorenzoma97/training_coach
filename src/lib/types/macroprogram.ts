@@ -106,6 +106,11 @@ export interface MacroProgramTrackingMetric {
  * Struct completo del macroprogramma parsed.
  * Persistito in storage `user-macroprogram` (1 attivo per volta).
  */
+// DUE SISTEMI "MACRO" DISTINTI (vedi anche MacroCycle in types/periodization.ts):
+//  - MacroProgram (QUESTO): programma .md IMPORTATO (sessioni complete), storage
+//    `user-macroprogram`, proiezione deterministica in projectToPlan.ts.
+//  - MacroCycle: scheletro fasi race-driven (macroPlanner.ts), storage
+//    `macro-cycle:<id>`. Sistemi separati, naming storicamente sovrapposto.
 export interface MacroProgram {
   metadata: MacroProgramMetadata;
   phases: MacroProgramPhase[];

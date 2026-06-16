@@ -86,6 +86,12 @@ export interface MesoCycle {
  * I3: rigenerare il macro NON rigenera il piano corrente. UI mostra banner
  * "il tuo macrociclo è cambiato, ricalcola il piano corrente?".
  */
+// DUE SISTEMI "MACRO" DISTINTI (vedi anche MacroProgram in types/macroprogram.ts):
+//  - MacroCycle (QUESTO): scheletro fasi base/build/peak/taper generato dalle
+//    RACE (macroPlanner.ts), storage `macro-cycle:<id>`, evento `macro:updated`.
+//  - MacroProgram: programma .md IMPORTATO con sessioni complete, storage
+//    `user-macroprogram`, proiezione deterministica. Sistemi separati, non si
+//    parlano: il naming "macro" e' storicamente sovrapposto.
 export interface MacroCycle {
   /** UUID stabile. */
   id: string;
