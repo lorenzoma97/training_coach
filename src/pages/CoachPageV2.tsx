@@ -1,5 +1,7 @@
 // CoachPageV2 — l'unico Coach (V1 rimossa, Sprint C 2026-05-27).
-// Today-first dashboard. 4 sub-tab.
+// Today-first dashboard. NB (audit Fase 3): il container legacy a 4 sub-tab +
+// ToolsTab sono stati rimossi (dead code, mai montati). Resta solo TodayTab,
+// montato da TodayPage; il blocco "Design" sotto descrive l'assetto storico.
 //
 // Design:
 //   1. 🏠 Oggi  — status (readiness, CTL/ATL/TSB), sessione oggi, feed coach, alert
@@ -8,14 +10,7 @@
 //   4. 📊 Tools — collapsibles: Zone FC, Warm-up/Recovery, Diagnostica
 
 import { useEffect, useState } from "react";
-import PlanTab from "../components/macroprogram/PlanTab";
 import CoachFeedList from "../components/CoachFeedList";
-import CoachChat from "../components/CoachChat";
-import ZonesCard from "../components/ZonesCard";
-import ZonesAnalytics from "../components/ZonesAnalytics";
-import FCMaxTestSection from "../components/FCMaxTestSection";
-import LTThresholdSection from "../components/LTThresholdSection";
-import MobilityLibrary from "../components/mobility/MobilityLibrary";
 import { getJSON } from "../lib/storage";
 import { uiCard, uiLabel, uiValue } from "../lib/theme";
 import { Card } from "../components/ui/card";
@@ -46,7 +41,6 @@ import { loadActiveMacroProgram, computeMacroProgress } from "../lib/macroprogra
 import type { MacroProgram } from "../lib/types/macroprogram";
 import ProgramView from "../components/macroprogram/ProgramView";
 
-type Tab = "today" | "plan" | "chat" | "tools";
 
 const DAY_LABELS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const;
 function todayLabel(): string {
@@ -135,7 +129,7 @@ const TSB_BAND_META: Record<TrainingLoadSnapshot["band"], { color: string; label
 // ─── Tab "Oggi" ────────────────────────────────────────────────────────────
 
 // P1 nav piatta (2026-06-11): TodayTab esportato — è la home dell'app, montata
-// da TodayPage. CoachPageV2 (contenitore a sub-tab) resta solo come legacy.
+// da TodayPage. (Il container CoachPageV2 a sub-tab è stato rimosso — dead code.)
 export function TodayTab({ onGoToPlan }: { onGoToPlan: () => void }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [resumeSnapshot, setResumeSnapshot] = useState<GuidedSessionSnapshot | null>(null);
@@ -882,125 +876,5 @@ function CardioIntervalList({ intervals }: { intervals: NonNullable<PlannedSessi
         );
       })}
     </ol>
-  );
-}
-
-// ─── Tab "Tools" (collapsibles) ────────────────────────────────────────────
-
-const sectionDetailsStyle: React.CSSProperties = {
-  background: "#16213E",
-  border: "1px solid rgba(255,255,255,0.06)",
-  borderRadius: "14px",
-  overflow: "hidden",
-};
-const sectionSummaryStyle: React.CSSProperties = {
-  cursor: "pointer", listStyle: "none",
-  padding: "14px 18px", minHeight: "44px",
-  fontSize: "12px", color: "#94A3B8", fontWeight: 700,
-  letterSpacing: "0.12em", textTransform: "uppercase",
-  display: "flex", alignItems: "center", gap: "8px",
-};
-
-function ToolsTab() {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-      <details style={sectionDetailsStyle}>
-        <summary style={sectionSummaryStyle}><span style={{ flex: 1 }}>📊 Zone FC</span></summary>
-        <div style={{ padding: "0 16px 16px" }}>
-          <ZonesCard />
-          <div style={{ height: "12px" }} />
-          <ZonesAnalytics />
-          <div style={{ height: "12px" }} />
-          <FCMaxTestSection />
-          <div style={{ height: "12px" }} />
-          <LTThresholdSection />
-        </div>
-      </details>
-
-      {/* Sprint C: Obiettivi rimossi da qui — ora vivono SOLO in Settings (editabili).
-          Feed coach rimosso da qui — ora è una card in cima al tab Oggi. */}
-
-      <details style={sectionDetailsStyle}>
-        <summary style={sectionSummaryStyle}><span style={{ flex: 1 }}>🧘 Mobility & Recovery</span></summary>
-        <div style={{ padding: "0 16px 16px" }}>
-          <MobilityLibrary />
-        </div>
-      </details>
-      {/* Sprint D: Diagnostica rimossa da qui (è debug) — resta in Settings. */}
-    </div>
-  );
-}
-
-// ─── Root CoachPageV2 ──────────────────────────────────────────────────────
-
-export default function CoachPageV2() {
-  const [tab, setTab] = useState<Tab>("today");
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      const p = await getJSON<UserProfile | null>("user-profile", null);
-      setProfile(p);
-    })();
-  }, []);
-
-  // Deep link: "Chiedi al coach" da TrainingPlanView emette chat:openWith.
-  // V2 ha sub-tab Chat → dobbiamo switchare lì così CoachChat è montato e
-  // riceve l'evento (altrimenti si perde, listener pattern identico a V1).
-  useEffect(() => {
-    const off = events.on("chat:openWith", () => setTab("chat"));
-    return off;
-  }, []);
-
-  if (!profile) {
-    return (
-      <div style={{ padding: "40px 20px", textAlign: "center", color: "#94A3B8" }}>
-        Completa l'onboarding per usare il coach.
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-      {/* Tab bar 4 tab */}
-      <div role="tablist" style={{
-        display: "flex", gap: "4px",
-        background: "#1A1A2E", padding: "4px", borderRadius: "12px",
-        position: "sticky", top: "0", zIndex: 20,
-        boxShadow: "0 2px 12px rgba(11,15,26,0.65)",
-        overflowX: "auto",
-      }}>
-        {([
-          { id: "today" as const, label: "🏠 Oggi" },
-          { id: "plan" as const, label: "📅 Piano" },
-          { id: "chat" as const, label: "💬 Chat" },
-          { id: "tools" as const, label: "📊 Tools" },
-        ]).map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            role="tab"
-            aria-selected={tab === t.id}
-            style={{
-              flex: 1, minWidth: "70px",
-              padding: "10px 8px", borderRadius: "8px",
-              background: tab === t.id ? "#16213E" : "transparent",
-              border: "none",
-              color: tab === t.id ? "#E2E8F0" : "#94A3B8",
-              fontSize: "12px", fontWeight: 700, cursor: "pointer",
-              minHeight: "44px", whiteSpace: "nowrap",
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab content */}
-      {tab === "today" && <TodayTab onGoToPlan={() => setTab("plan")} />}
-      {tab === "plan" && <PlanTab />}
-      {tab === "chat" && <CoachChat />}
-      {tab === "tools" && <ToolsTab />}
-    </div>
   );
 }
